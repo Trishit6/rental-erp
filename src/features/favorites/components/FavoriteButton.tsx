@@ -7,7 +7,7 @@ import { favoriteButtonLabel } from "./schema";
 /**
  * THE favourite control. One implementation, used by Home, Browse, Product
  * Details, Related products and the wishlist — there is no second heart anywhere
- * in ReLoop.
+ * in Revaro.
  *
  * It comes in two shapes:
  *  - `icon`   a floating round button over a product image (cards).

@@ -728,7 +728,7 @@ async function seed() {
         brand: p.brand ?? null,
         condition: p.condition,
         listingType: p.listingType,
-        status: "ACTIVE",
+        status: "PUBLISHED",
         location: p.location,
         purchasePrice: p.purchasePrice ? paise(p.purchasePrice) : null,
         rentalPricePerDay: p.rentalPricePerDay ? paise(p.rentalPricePerDay) : null,

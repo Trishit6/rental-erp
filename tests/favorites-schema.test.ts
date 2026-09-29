@@ -184,9 +184,9 @@ describe("favourite sort options", () => {
 
 describe("availability", () => {
   it("reads the stock the database actually tracks", () => {
-    expect(favoriteAvailabilityState({ status: "ACTIVE", availableQuantity: 5 })).toBe("AVAILABLE");
-    expect(favoriteAvailabilityState({ status: "ACTIVE", availableQuantity: 2 })).toBe("LIMITED");
-    expect(favoriteAvailabilityState({ status: "ACTIVE", availableQuantity: 0 })).toBe(
+    expect(favoriteAvailabilityState({ status: "PUBLISHED", availableQuantity: 5 })).toBe("AVAILABLE");
+    expect(favoriteAvailabilityState({ status: "PUBLISHED", availableQuantity: 2 })).toBe("LIMITED");
+    expect(favoriteAvailabilityState({ status: "PUBLISHED", availableQuantity: 0 })).toBe(
       "OUT_OF_STOCK",
     );
   });

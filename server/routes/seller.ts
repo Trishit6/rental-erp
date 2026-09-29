@@ -17,6 +17,7 @@ import {
 } from "../schema";
 import { ok, HttpError } from "../lib/api";
 import { requireUser } from "../lib/auth";
+import { PUBLIC_PRODUCT_STATUSES, SELLER_SETTABLE_STATUSES } from "../lib/product-status";
 import { createProduct, productInputSchema } from "./products";
 
 export const sellerRoute = new Hono();
@@ -129,7 +130,9 @@ sellerRoute.patch("/products/:id/status", async (c) => {
   const user = c.get("user")!;
   const id = Number(c.req.param("id"));
   const { status } = (await c.req.json()) as { status: string };
-  const allowed = ["ACTIVE", "PAUSED", "ARCHIVED"];
+  // A seller may not assert `OUT_OF_STOCK` (it is derived from inventory) nor
+  // `DRAFT` (that is a creation-time state, not a transition).
+  const allowed: readonly string[] = SELLER_SETTABLE_STATUSES;
   if (!allowed.includes(status)) {
     throw new HttpError(400, "BAD_REQUEST", "Invalid status.");
   }
@@ -257,7 +260,7 @@ sellerRoute.get("/profile/:id", async (c) => {
   const [listingCount] = await db
     .select({ value: sql<number>`COUNT(*)` })
     .from(products)
-    .where(and(eq(products.sellerId, id), eq(products.status, "ACTIVE")));
+    .where(and(eq(products.sellerId, id), inArray(products.status, [...PUBLIC_PRODUCT_STATUSES])));
 
   const [ratingAgg] = await db
     .select({

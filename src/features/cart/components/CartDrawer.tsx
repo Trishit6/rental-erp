@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ArrowRight, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { formatInr } from "@/lib/pricing";
+import { isPurchasable } from "@/lib/types";
 import { useRemoveCartItem, useUpdateCartItem, cartErrorMessage } from "@/lib/query/cart";
 import { useCartDrawer } from "@/lib/cart/drawer";
 import { Button } from "@/components/ui/button";
@@ -59,7 +60,7 @@ export function CartDrawer({
               <Dialog.Content asChild forceMount aria-describedby={undefined}>
                 <motion.aside
                   // A right-hand panel on desktop, a bottom sheet on mobile —
-                  // the same ReLoop surfaces either way.
+                  // the same Revaro surfaces either way.
                   initial={reduceMotion ? false : { x: "100%" }}
                   animate={{ x: 0 }}
                   exit={reduceMotion ? undefined : { x: "100%" }}
@@ -183,7 +184,7 @@ function CartDrawerItem({ item }: { item: CartItem }) {
   const remove = useRemoveCartItem();
 
   const title = item.product?.title ?? "Unavailable item";
-  const unavailable = !item.product || item.product.status !== "ACTIVE";
+  const unavailable = !item.product || !isPurchasable(item.product.status);
 
   function handleUpdate(patch: UpdateCartItemInput) {
     update.mutate(

@@ -1,12 +1,14 @@
 import { Link } from "@tanstack/react-router";
-import { motion } from "framer-motion";
-import { ArrowRight, Leaf, MapPin, Repeat, ShieldCheck, Star, Truck } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { ArrowRight, ChevronLeft, ChevronRight, Leaf, MapPin, Repeat, ShieldCheck, Star, Truck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { useState } from "react";
 import type { MarketplaceStats } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { HeroSearch } from "./HeroSearch";
 import { TrustPoint } from "./TrustPoint";
+import { HERO_SLIDES, useHeroSlides, useHeroSwipe } from "./schema";
 
 const fadeUp = {
   initial: { opacity: 0, y: 12 },
@@ -37,9 +39,45 @@ function FloatingBadge({
   );
 }
 
+/**
+ * The hero — same composition, living imagery.
+ *
+ * The headline copy, search, CTAs and trust points keep their places; only the
+ * headline text and the image rotate through four marketplace scenarios. The
+ * aspect-ratio box is fixed so images of any size cannot shift the layout, the
+ * next slide's image is preloaded, and auto-advance stops on hover and for
+ * reduced-motion users.
+ */
 export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
+  const prefersReducedMotion = useReducedMotion();
+  const slides = HERO_SLIDES;
+  const { index, next, previous, goTo, setPaused } = useHeroSlides(
+    slides.length,
+    prefersReducedMotion,
+  );
+  const swipe = useHeroSwipe(next, previous);
+  const [imageFailed, setImageFailed] = useState(false);
+
+  const slide = slides[index] ?? slides[0];
+
+  // Preload the next slide's image during idle time, so a transition never
+  // waits on the network. One image ahead — not the whole deck.
+  const nextSlide = slides[(index + 1) % slides.length];
+  if (nextSlide && typeof window !== "undefined" && "requestIdleCallback" in window) {
+    window.requestIdleCallback(() => {
+      const img = new Image();
+      img.src = nextSlide.image;
+    });
+  }
+
   return (
-    <section className="raised-surface grid items-center gap-7 rounded-[32px] p-5 sm:p-8 lg:grid-cols-[1.08fr_.92fr] lg:p-10">
+    <section
+      className="raised-surface grid items-center gap-7 rounded-[32px] p-5 sm:p-8 lg:grid-cols-[1.08fr_.92fr] lg:p-10"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      aria-roledescription="carousel"
+      aria-label="Revaro highlights"
+    >
       <div className="py-2">
         <motion.div {...fadeUp} transition={{ duration: 0.3 }}>
           <Badge className="gap-2 px-4 py-2">
@@ -50,22 +88,35 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
           </Badge>
         </motion.div>
 
-        <motion.h1
-          {...fadeUp}
-          transition={{ delay: 0.08, duration: 0.3, ease: "easeOut" }}
-          className="mt-5 max-w-xl font-heading text-4xl font-black leading-[1.06] tracking-tight sm:text-5xl"
-        >
-          Rent it for the weekend. <span className="text-primary">Own it for life.</span>
-        </motion.h1>
+        <div className="mt-5 max-w-xl" aria-live="polite">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.h1
+              key={slide.id}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={prefersReducedMotion ? undefined : { opacity: 0, y: -8 }}
+              transition={{ duration: 0.28, ease: "easeOut" }}
+              className="font-heading text-4xl font-black leading-[1.06] tracking-tight sm:text-5xl"
+            >
+              {slide.headingA} <span className="text-primary">{slide.headingB}</span>
+            </motion.h1>
+          </AnimatePresence>
+        </div>
 
-        <motion.p
-          {...fadeUp}
-          transition={{ delay: 0.16, duration: 0.3, ease: "easeOut" }}
-          className="mt-4 max-w-lg text-base leading-relaxed text-muted-foreground"
-        >
-          Rent what you need, buy pre-loved, and give your own things a second life — all with
-          neighbours nearby.
-        </motion.p>
+        <div className="mt-4 max-w-lg" aria-live="polite">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.p
+              key={`${slide.id}-body`}
+              initial={prefersReducedMotion ? false : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={prefersReducedMotion ? undefined : { opacity: 0 }}
+              transition={{ duration: 0.22 }}
+              className="text-base leading-relaxed text-muted-foreground"
+            >
+              {slide.body}
+            </motion.p>
+          </AnimatePresence>
+        </div>
 
         <motion.div
           {...fadeUp}
@@ -112,28 +163,96 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
           transition={{ duration: 0.35, ease: "easeOut" }}
           className="inset-surface rounded-[28px] p-3"
         >
-          <div className="relative overflow-hidden rounded-[22px]">
-            <img
-              src="https://storage.googleapis.com/banani-generated-images/generated-images/91925daa-c0cc-4433-acd1-386d9d547a41.jpg"
-              alt="A soft, sculptural lounge chair ready for a new home"
-              className="aspect-[4/3] w-full object-cover"
-            />
+          <div
+            className="relative overflow-hidden rounded-[22px]"
+            {...swipe}
+            role="group"
+            aria-roledescription="slide"
+            aria-label={`${index + 1} of ${slides.length}`}
+          >
+            {/* Fixed aspect box: no layout shift as slides change. */}
+            <div className="aspect-[4/3] w-full bg-[var(--inset-bg)]">
+              {imageFailed ? (
+                <div className="flex h-full w-full items-center justify-center">
+                  <Star size={40} className="text-primary/40" aria-hidden />
+                </div>
+              ) : (
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.img
+                    key={slide.id}
+                    src={slide.image}
+                    alt={slide.imageAlt}
+                    loading={index === 0 ? "eager" : "lazy"}
+                    decoding="async"
+                    onError={() => setImageFailed(true)}
+                    initial={prefersReducedMotion ? false : { opacity: 0, scale: 1.02 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={prefersReducedMotion ? undefined : { opacity: 0 }}
+                    transition={{ duration: 0.4, ease: "easeOut" }}
+                    className="h-full w-full object-cover"
+                  />
+                </AnimatePresence>
+              )}
+            </div>
+
             <Badge className="absolute left-4 top-4 gap-2 bg-background/90 px-3 py-2 text-foreground">
               <span className="size-2 rounded-full bg-accent" />
-              Rent from ₹180/day
+              {slide.captionTitle}
             </Badge>
+
             <div className="absolute inset-x-4 bottom-4 flex items-center justify-between rounded-2xl bg-background/95 px-4 py-3 shadow-lg backdrop-blur">
               <div>
-                <p className="text-xs font-medium text-muted-foreground">A neighbour's favourite</p>
-                <p className="font-heading text-sm font-extrabold">Scandinavian lounge chair</p>
+                <p className="text-xs font-medium text-muted-foreground">{slide.captionLabel}</p>
+                <p className="font-heading text-sm font-extrabold">{slide.captionTitle}</p>
               </div>
               <span className="flex items-center gap-1 text-xs font-bold">
                 <Star size={13} className="fill-primary text-primary" />
                 4.9
               </span>
             </div>
+
+            {/* Manual controls — always rendered for a11y, visually revealed on
+                hover/focus and always visible on touch screens. */}
+            <div className="absolute inset-y-0 left-0 flex items-center opacity-0 transition-opacity focus-within:opacity-100 hover:opacity-100 max-lg:opacity-100">
+              <button
+                type="button"
+                onClick={previous}
+                aria-label="Previous slide"
+                className="soft-button mx-2 flex size-9 items-center justify-center rounded-full text-foreground"
+              >
+                <ChevronLeft size={18} aria-hidden />
+              </button>
+            </div>
+            <div className="absolute inset-y-0 right-0 flex items-center opacity-0 transition-opacity focus-within:opacity-100 hover:opacity-100 max-lg:opacity-100">
+              <button
+                type="button"
+                onClick={next}
+                aria-label="Next slide"
+                className="soft-button mx-2 flex size-9 items-center justify-center rounded-full text-foreground"
+              >
+                <ChevronRight size={18} aria-hidden />
+              </button>
+            </div>
           </div>
         </motion.div>
+
+        {/* Indicator dots — double as the a11y slide picker. */}
+        <div className="absolute -bottom-5 left-1/2 flex -translate-x-1/2 gap-2 lg:left-auto lg:right-8 lg:translate-x-0">
+          {slides.map((entry, slideIndex) => (
+            <button
+              key={entry.id}
+              type="button"
+              onClick={() => goTo(slideIndex)}
+              aria-label={`Go to slide ${slideIndex + 1}`}
+              aria-current={slideIndex === index}
+              className={
+                slideIndex === index
+                  ? "h-2 w-6 rounded-full bg-primary transition-all"
+                  : "h-2 w-2 rounded-full bg-[var(--divider)] transition-all hover:bg-primary/50"
+              }
+            />
+          ))}
+        </div>
 
         <FloatingBadge
           icon={Repeat}

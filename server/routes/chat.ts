@@ -1,7 +1,10 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { desc, eq } from "drizzle-orm";
 import { ok, rateLimit } from "../lib/api";
 import { productSearchSchema, searchProducts } from "./products";
+import { db } from "../db";
+import { orders } from "../schema";
 import {
   answerFromKnowledge,
   buildSystemPrompt,
@@ -42,10 +45,88 @@ export type ChatSource = "ai" | "assistant";
 
 chatRoute.use("/", rateLimit(30, 60_000));
 
+/**
+ * True when the question is about the caller's own orders/rentals rather than
+ * the marketplace at large. Matched on verbs + nouns; deliberately narrow, so a
+ * "what is a security deposit?" question still goes to the knowledge base.
+ */
+function isOrderStatusQuestion(text: string): boolean {
+  const mentionsOrder = /\b(order|orders|rental|rentals|delivery|delivered|shipment|shipped)\b/i;
+  const asksAboutOwn = /\b(my|mine|latest|last|current|active|where)\b/i;
+  const smalltalk = /\b(what is|what's|how do|how does|explain|meaning of)\b/i;
+  return mentionsOrder.test(text) && asksAboutOwn.test(text) && !smalltalk.test(text);
+}
+
+/**
+ * Answer an order-status question from the *session user's* real orders.
+ *
+ * Returns null for a guest — the honest answer is "sign in", never a fabricated
+ * order. Only the caller's own rows are ever read, and only safe fields leave:
+ * the public order number, status and a date. No address, no money beyond the
+ * total, nothing that another user could be probed for.
+ */
+async function answerOwnOrderQuestion(
+  userId: number | undefined,
+): Promise<{ reply: string; suggestions: string[] } | null> {
+  if (!userId) {
+    return {
+      reply:
+        "Sign in and I can tell you exactly where your orders and rentals stand — I look them up from your account, not guesses.",
+      suggestions: ["How do I sign in?", "How does renting work?"],
+    };
+  }
+
+  const rows = await db
+    .select({
+      orderNumber: orders.orderNumber,
+      status: orders.status,
+      orderType: orders.orderType,
+      createdAt: orders.createdAt,
+      updatedAt: orders.updatedAt,
+    })
+    .from(orders)
+    .where(eq(orders.userId, userId))
+    .orderBy(desc(orders.updatedAt), desc(orders.id))
+    .limit(1);
+
+  const latest = rows[0];
+  if (!latest) {
+    return {
+      reply:
+        "You don't have any orders yet. Browse the marketplace and your orders will show up here once you make one.",
+      suggestions: ["Find something to rent", "What is a security deposit?"],
+    };
+  }
+
+  const ref = latest.orderNumber ?? `#${latest.createdAt.getFullYear()}`;
+  const status = latest.status
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+  return {
+    reply: `Your most recent order ${latest.orderNumber ?? ref} is “${status}”. You can see the full timeline on your orders page — tap a card in My Orders for every step.`,
+    suggestions: ["Where is my latest order?", "How do I cancel an order?", "What is a security deposit?"],
+  };
+}
+
 chatRoute.post("/", async (c) => {
   const { messages } = chatSchema.parse(await c.req.json());
   const latest = [...messages].reverse().find((m) => m.role === "user")!;
   const text = latest.content;
+
+  // Authenticated users asking about *their* orders get real data, before any
+  // product lookup: the answer comes from the session user's rows, never from
+  // the model's imagination.
+  if (isOrderStatusQuestion(text)) {
+    const user = c.get("user") ?? null;
+    const orderAnswer = await answerOwnOrderQuestion(user?.id);
+    if (orderAnswer) {
+      return c.json(
+        ok({ ...orderAnswer, source: "assistant" as const, products: [] }),
+      );
+    }
+  }
 
   const products = await recommendProducts(text);
   const productContext = products.length

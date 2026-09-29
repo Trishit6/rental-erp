@@ -1,5 +1,5 @@
 /**
- * Bulk product seeder for ReLoop.
+ * Bulk product seeder for Revaro.
  *
  * Inserts N (default 20,000) realistic marketplace products across all
  * categories, each with a primary image plus 2-4 alternative images and alt
@@ -499,7 +499,7 @@ async function main() {
         brand,
         condition,
         listingType,
-        status: "ACTIVE",
+        status: "PUBLISHED",
         location,
         purchasePrice: wantsBuy ? paise(buyPrice) : null,
         rentalPricePerDay: wantsRent ? paise(dayPrice) : null,

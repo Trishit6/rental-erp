@@ -15,7 +15,7 @@ import { favoriteProductIdSchema } from "@/features/favorites/components/schema"
 import type { FavoriteListResponse, FavoriteMutationResult } from "@/features/favorites/types";
 
 /**
- * THE favourite system. Every heart in ReLoop — Home, Browse, Product Details,
+ * THE favourite system. Every heart in Revaro — Home, Browse, Product Details,
  * Related products and the wishlist itself — reads its state from here and
  * mutates through here. There is deliberately no second implementation.
  *

@@ -4,6 +4,7 @@ import { db } from "../db";
 import { orders, products, reports, rentals, reviews, users } from "../schema";
 import { ok, HttpError } from "../lib/api";
 import { requireAdmin } from "../lib/auth";
+import { PRODUCT_STATUSES } from "../lib/product-status";
 
 export const adminRoute = new Hono();
 
@@ -109,7 +110,10 @@ adminRoute.get("/products", async (c) => {
 adminRoute.patch("/products/:id/status", async (c) => {
   const id = Number(c.req.param("id"));
   const body = (await c.req.json()) as { status?: string };
-  const allowed = ["ACTIVE", "PAUSED", "ARCHIVED", "SOLD"];
+  // The same vocabulary the seller uses, plus nothing. (`SOLD` was accepted here
+  // and nowhere else, so a product set to it became uneditable and invisible —
+  // a state nothing else in the app understood.)
+  const allowed: readonly string[] = PRODUCT_STATUSES;
   if (!body.status || !allowed.includes(body.status)) {
     throw new HttpError(400, "BAD_REQUEST", "Invalid status.");
   }

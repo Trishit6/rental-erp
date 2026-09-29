@@ -224,6 +224,57 @@ export type ProductCondition = "NEW" | "LIKE_NEW" | "GOOD" | "FAIR" | "USED";
 /** Stock state the backend can actually answer for. */
 export type ProductAvailability = "available-now" | "for-rent" | "for-buy";
 
+/**
+ * The product (listing) lifecycle — mirrors `PRODUCT_STATUSES` in
+ * `server/lib/product-status.ts` exactly; `tests/listing-status.test.ts` asserts
+ * the two agree, so a value can never exist on one side of the wire only.
+ *
+ * `OUT_OF_STOCK` is still publicly visible (a live listing with no stock), which
+ * is why public visibility is a predicate and not `status === "PUBLISHED"`.
+ */
+export type ProductStatus = "DRAFT" | "PUBLISHED" | "OUT_OF_STOCK" | "PAUSED" | "ARCHIVED";
+
+export const PRODUCT_STATUSES: readonly ProductStatus[] = [
+  "DRAFT",
+  "PUBLISHED",
+  "OUT_OF_STOCK",
+  "PAUSED",
+  "ARCHIVED",
+];
+
+/** Statuses a seller may set by hand — `OUT_OF_STOCK` is derived from inventory. */
+export const SELLER_SETTABLE_STATUSES: readonly ProductStatus[] = [
+  "PUBLISHED",
+  "PAUSED",
+  "ARCHIVED",
+];
+
+/** Statuses that may appear in public discovery and product details. */
+export const PUBLIC_PRODUCT_STATUSES: readonly ProductStatus[] = ["PUBLISHED", "OUT_OF_STOCK"];
+
+/** Human labels for the listing lifecycle (single source for every badge). */
+export const PRODUCT_STATUS_LABELS: Record<ProductStatus, string> = {
+  DRAFT: "Draft",
+  PUBLISHED: "Published",
+  OUT_OF_STOCK: "Out of stock",
+  PAUSED: "Paused",
+  ARCHIVED: "Archived",
+};
+
+/**
+ * Whether a listing may be rendered in public discovery / on its detail page.
+ * Mirrors `isPubliclyVisible` in `server/lib/product-status.ts`. An
+ * `OUT_OF_STOCK` listing is still visible — it has run out, it is not withdrawn.
+ */
+export function isPubliclyVisible(status: string | null | undefined): boolean {
+  return !!status && PUBLIC_PRODUCT_STATUSES.includes(status as ProductStatus);
+}
+
+/** Whether a buyer may actually buy or rent it. */
+export function isPurchasable(status: string | null | undefined): boolean {
+  return status === "PUBLISHED";
+}
+
 /** Sort keys the products API whitelists. */
 export type ProductSort =
   | "recommended"

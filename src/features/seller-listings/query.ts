@@ -31,7 +31,7 @@ export function useProductStatusActions() {
       await api.patch(`/seller/products/${id}/status`, { status });
       void queryClient.invalidateQueries({ queryKey: queryKeys.myProducts });
       toast(
-        `Product ${status === "ACTIVE" ? "activated" : status === "PAUSED" ? "paused" : "archived"}.`,
+        `Listing ${status === "PUBLISHED" ? "published" : status === "PAUSED" ? "paused" : "archived"}.`,
       );
     },
     async deleteProduct(id: number) {

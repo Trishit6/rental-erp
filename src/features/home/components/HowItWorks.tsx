@@ -31,7 +31,7 @@ export function HowItWorks() {
       <div>
         <p className="eyebrow">Simple by design</p>
         <h2 id="how-heading" className="section-title mt-1">
-          How ReLoop works
+          How Revaro works
         </h2>
       </div>
       <div className="grid gap-5 md:grid-cols-3">

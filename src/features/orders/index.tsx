@@ -1,8 +1,8 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion, useReducedMotion } from "framer-motion";
-import { ordersListQueryOptions, useOrder, useOrders } from "./query";
+import { ordersListQueryOptions, syncOrderDetailToCollections, useOrder, useOrders } from "./query";
 import {
   buildOrderTimeline,
   hasActiveFilters,
@@ -14,6 +14,7 @@ import { OrdersHeader } from "./components/OrdersHeader";
 import { OrdersSearch as OrdersSearchField } from "./components/OrdersSearch";
 import { OrdersFilter } from "./components/OrdersFilter";
 import { OrdersSort } from "./components/OrdersSort";
+import { OrderQuickFilters } from "./components/OrderQuickFilters";
 import { OrderList } from "./components/OrderList";
 import { OrdersEmptyState } from "./components/OrdersEmptyState";
 import { OrdersSkeleton } from "./components/OrdersSkeleton";
@@ -28,7 +29,7 @@ import { OrderPaymentSummary } from "./components/OrderPaymentSummary";
 import { OrderDeliverySummary } from "./components/OrderDeliverySummary";
 import { OrderRentalSummary } from "./components/OrderRentalSummary";
 import { OrderSellerInfo } from "./components/OrderSellerInfo";
-import { OrderActions } from "./components/OrderActions";
+import { OrderActionsPanel } from "./components/OrderActionsPanel";
 import { ApiError } from "@/lib/api/client";
 
 /**
@@ -92,6 +93,11 @@ export function OrdersPage() {
         </div>
 
         <div className="space-y-4">
+          {/* Quick pills: the one-tap path to the states customers look for.
+              They write the same URL params as the sidebar, so the two views
+              always agree. */}
+          <OrderQuickFilters search={search} onChange={patchSearch} />
+
           <div className="flex flex-wrap items-center gap-3">
             <OrdersSearchField
               value={search.search ?? ""}
@@ -172,6 +178,12 @@ export function OrderDetailsPage() {
 
   const { order, items, rentals, payment, sellers } = data;
 
+  // Mirror the detail payload into the TanStack DB collections so reactive
+  // readers see the order's lines and rentals without another request.
+  useEffect(() => {
+    syncOrderDetailToCollections(data);
+  }, [data]);
+
   // Derived from real fields only — see `buildOrderTimeline`.
   const timeline = buildOrderTimeline({
     order,
@@ -211,7 +223,7 @@ export function OrderDetailsPage() {
           />
           <OrderRentalSummary rentals={rentals} />
           <OrderSellerInfo sellers={sellers} />
-          <OrderActions order={order} items={items} rentals={rentals} />
+          <OrderActionsPanel order={order} items={items} />
         </div>
       </div>
     </div>

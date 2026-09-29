@@ -35,7 +35,7 @@ export function RegisterForm() {
           email: parsed.data.email,
           password: parsed.data.password,
         });
-        toast("Welcome to ReLoop!");
+        toast("Welcome to Revaro!");
         // Registration signs the user in — go straight to the dashboard.
         void navigate({ to: "/dashboard" });
       } catch (error) {

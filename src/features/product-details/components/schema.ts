@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { format } from "date-fns";
 import { formatInr } from "@/lib/pricing";
-import { CONDITION_LABELS, LISTING_MODE_LABELS, type ReviewItem } from "@/lib/types";
+import {
+  CONDITION_LABELS,
+  isPubliclyVisible,
+  LISTING_MODE_LABELS,
+  type ReviewItem,
+} from "@/lib/types";
 import type {
   AddToCartInput,
   ListingMode,
@@ -183,7 +188,11 @@ export function stockState(
   product: Pick<ProductDetails, "status">,
   availableUnits: number,
 ): StockState {
-  if (product.status !== "ACTIVE") return "UNAVAILABLE";
+  // Withdrawn (draft/paused/archived) is a different answer from sold out, and
+  // the two must not collapse into one message: "unavailable" would be wrong for
+  // a listing the seller is about to restock.
+  if (!isPubliclyVisible(product.status)) return "UNAVAILABLE";
+  if (product.status === "OUT_OF_STOCK") return "OUT_OF_STOCK";
   if (availableUnits <= 0) return "OUT_OF_STOCK";
   if (availableUnits <= 2) return "LIMITED";
   return "AVAILABLE";

@@ -120,8 +120,30 @@ export const products = mysqlTable(
       .references(() => categories.id, { onDelete: "restrict" }),
     brand: varchar("brand", { length: 80 }),
     condition: varchar("condition", { length: 12 }).notNull().default("GOOD"),
+    /**
+     * Seller-entered specification rows, as a JSON array of `{ label, value }`.
+     *
+     * A `text` column of JSON rather than a child table: these are display-only
+     * attributes that are always read as a set with the product and never
+     * queried, filtered or joined on. A `product_specifications` table would add
+     * a join to every product read to buy nothing.
+     *
+     * The shape is validated on write (`specificationSchema` in
+     * `server/routes/seller-listings.ts`) and again on read, because a
+     * malformed value must degrade to "no extra specifications" rather than
+     * throw while rendering a product page.
+     */
+    specifications: text("specifications"),
     listingType: varchar("listing_type", { length: 8 }).notNull().default("SALE"),
-    status: varchar("status", { length: 16 }).notNull().default("ACTIVE"),
+    /**
+     * DRAFT | PUBLISHED | OUT_OF_STOCK | PAUSED | ARCHIVED — see
+     * `server/lib/product-status.ts` for the vocabulary and the visibility rules.
+     *
+     * Defaults to `DRAFT` on purpose: a row inserted without an explicit status
+     * is invisible until someone publishes it, so no future code path can leak a
+     * half-finished listing into Browse by forgetting a field.
+     */
+    status: varchar("status", { length: 16 }).notNull().default("DRAFT"),
     location: varchar("location", { length: 120 }).notNull(),
     latitude: double("latitude"),
     longitude: double("longitude"),
@@ -340,6 +362,34 @@ export const orderItems = mysqlTable(
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
     mode: varchar("mode", { length: 6 }).notNull(),
+    /**
+     * Fulfillment for **this line**, owned by this line's seller.
+     *
+     * `orders.status` is order-wide, and one order can contain lines from
+     * several sellers — so a single order status cannot express "Seller A has
+     * shipped, Seller B has not". Letting one seller write the order's status
+     * would make them speak for every other seller in it, and would rewrite
+     * what the customer sees for goods nobody has touched.
+     *
+     * Nullable, and null is meaningful: "this seller has not acted yet", which
+     * the seller view reads as the order's own status. Values come from the
+     * existing order vocabulary (`server/lib/order-fulfillment.ts`) rather than a
+     * second set of names. The customer-facing `orders.status` is untouched by
+     * seller actions.
+     */
+    fulfillmentStatus: varchar("fulfillment_status", { length: 20 }),
+    /**
+     * Why this seller cancelled this line, as they typed it.
+     *
+     * Stored per line rather than per order for the same reason fulfillment is:
+     * a seller cancels *their* part of an order, and the customer's order as a
+     * whole may still be proceeding for another seller. A single reason column on
+     * `orders` would attribute one seller's explanation to everyone's lines.
+     *
+     * Informational only — no refund logic reads it, because money handling
+     * belongs to the payment architecture, not here.
+     */
+    cancellationReason: varchar("cancellation_reason", { length: 300 }),
     quantity: int("quantity").notNull().default(1),
     /**
      * For a purchase: the sale price per unit. For a rental: the effective
@@ -610,9 +660,17 @@ export const sellerProfiles = mysqlTable("seller_profiles", {
     .primaryKey()
     .references(() => users.id, { onDelete: "cascade" }),
   bio: varchar("bio", { length: 500 }),
+  /**
+   * Where the seller is based. The display name, phone and avatar are
+   * deliberately **not** duplicated here: they already live on `users`
+   * (`name`, `phone`, `avatarUrl`), and a second copy is a second source of
+   * truth that drifts the first time one of the two is updated.
+   */
+  location: varchar("location", { length: 120 }),
   responseRateHours: int("response_rate_hours"),
   verified: boolean("verified").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 /* ------------------------------- transactions ------------------------------- */

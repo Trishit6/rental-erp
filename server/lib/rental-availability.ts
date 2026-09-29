@@ -2,6 +2,7 @@ import { and, eq, gte, inArray, lte, ne, sql } from "drizzle-orm";
 import { db } from "../db";
 import { products, rentals } from "../schema";
 import { HttpError } from "./api";
+import { isPubliclyVisible } from "./product-status";
 import { rentalDays } from "../../src/lib/pricing";
 
 /**
@@ -132,7 +133,10 @@ export async function assertRentalAvailability(
   if (!product.rentalPricePerDay) {
     throw new HttpError(400, "NOT_RENTABLE", "This item is not available for rent.");
   }
-  if (product.status !== "ACTIVE") {
+  // Visibility, not stock: how many units are free for the window is answered
+  // by the overlap check below, so a listing with no units left still gets the
+  // accurate "no units for those dates" answer instead of a blanket refusal.
+  if (!isPubliclyVisible(product.status)) {
     throw new HttpError(409, "UNAVAILABLE", "This item is currently unavailable.");
   }
   if (startDate.getTime() < Date.now() - 24 * 60 * 60 * 1000) {

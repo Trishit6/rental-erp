@@ -53,7 +53,7 @@ export function makeCategoryProduct(overrides: Partial<ProductCardData> = {}): P
     categoryName: "Electronics",
     condition: "LIKE_NEW",
     listingType: "BOTH",
-    status: "ACTIVE",
+    status: "PUBLISHED",
     purchasePrice: 2_990_000,
     rentalPricePerDay: 49_900,
     rentalPricePerWeek: 299_000,

@@ -1,6 +1,7 @@
 import { createRootRouteWithContext, Link, Outlet } from "@tanstack/react-router";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { SiteHeader } from "@/components/layout/site-header";
+import { GoToTop } from "@/components/shared/GoToTop";
 import { Chatbot } from "@/features/chatbot";
 import { CartDrawerHost, CartDrawerProvider } from "@/features/cart";
 import type { AuthUser } from "@/lib/auth/auth-context";
@@ -19,6 +20,7 @@ export function RootLayout() {
           <Outlet />
         </main>
         <SiteFooter />
+        <GoToTop />
         <Chatbot />
         <CartDrawerHost />
       </div>

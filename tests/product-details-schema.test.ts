@@ -185,9 +185,9 @@ describe("stockState", () => {
   });
 
   it("maps unit counts to stock states", () => {
-    expect(stockState({ status: "ACTIVE" }, 0)).toBe("OUT_OF_STOCK");
-    expect(stockState({ status: "ACTIVE" }, 2)).toBe("LIMITED");
-    expect(stockState({ status: "ACTIVE" }, 5)).toBe("AVAILABLE");
+    expect(stockState({ status: "PUBLISHED" }, 0)).toBe("OUT_OF_STOCK");
+    expect(stockState({ status: "PUBLISHED" }, 2)).toBe("LIMITED");
+    expect(stockState({ status: "PUBLISHED" }, 5)).toBe("AVAILABLE");
   });
 });
 

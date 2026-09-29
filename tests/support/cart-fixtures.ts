@@ -16,7 +16,7 @@ export function makeCartProduct(overrides: Partial<CartItemProduct> = {}): CartI
     location: "Bengaluru",
     condition: "LIKE_NEW",
     listingType: "BOTH",
-    status: "ACTIVE",
+    status: "PUBLISHED",
     categoryId: 1,
     purchasePrice: 2_990_000,
     rentalPricePerDay: 49_900,

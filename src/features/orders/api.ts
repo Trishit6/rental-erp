@@ -49,3 +49,43 @@ export async function getOrders(search: OrdersSearch = {}): Promise<OrderListRes
 export async function getOrderByRef(ref: string | number): Promise<OrderDetailsResponse> {
   return (await api.get<OrderDetailsResponse>(`/orders/${encodeURIComponent(String(ref))}`)).data;
 }
+
+/* ------------------------------- mutations --------------------------------- */
+
+/**
+ * Cancel one of the caller's own orders. The reason is information for the
+ * seller; *whether* the cancellation happens is decided entirely by the server.
+ * The body is strict on the server, so no client-side amount or status field
+ * could ever be smuggled through even by accident.
+ */
+export async function cancelOrder(
+  ref: string | number,
+  reason: { reason?: string; reasonCode?: string },
+): Promise<void> {
+  await api.post(`/orders/${encodeURIComponent(String(ref))}/cancel`, reason);
+}
+
+export type OrderAgainResponse = {
+  added: boolean;
+  merged: boolean;
+  itemId: number;
+  productId: number;
+  mode: "BUY" | "RENT";
+};
+
+/**
+ * Repeat an order line ("Buy again" / "Rent again"). The server validates the
+ * product is still listed, purchasable and available before touching the cart —
+ * an unavailable product is a 409 with a readable code, never a silently added
+ * line that checkout would later have to reject.
+ */
+export async function orderAgain(
+  ref: string | number,
+  orderItemId?: number,
+): Promise<OrderAgainResponse> {
+  return (
+    await api.post<OrderAgainResponse>(`/orders/${encodeURIComponent(String(ref))}/again`, {
+      ...(orderItemId !== undefined ? { orderItemId } : {}),
+    })
+  ).data;
+}

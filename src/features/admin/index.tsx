@@ -143,9 +143,9 @@ export function AdminPage() {
                       <Button
                         size="sm"
                         variant="secondary"
-                        onClick={() => void setProductStatus(product.id, "ACTIVE")}
+                        onClick={() => void setProductStatus(product.id, "PUBLISHED")}
                       >
-                        Activate
+                        Publish
                       </Button>
                       <Button
                         size="sm"

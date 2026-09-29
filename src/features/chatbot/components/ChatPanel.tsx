@@ -33,12 +33,15 @@ export function ChatPanel({ chatbot, onClose }: { chatbot: ChatbotState; onClose
   return (
     <motion.section
       role="dialog"
-      aria-label="ReLoop assistant"
+      aria-label="Revaro assistant"
       initial={{ opacity: 0, y: 24, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 24, scale: 0.97 }}
       transition={{ duration: 0.22, ease: "easeOut" }}
-      className="raised-surface fixed bottom-24 left-4 right-4 z-50 flex h-[min(560px,70vh)] flex-col overflow-hidden rounded-[26px] sm:right-auto sm:w-[380px]"
+      /* Mobile: a bottom sheet that never covers the whole viewport. Desktop:
+         anchored bottom-right beside the launcher, opening leftwards so it
+         cannot cover the floating dock. */
+      className="raised-surface fixed inset-x-3 bottom-3 z-50 flex h-[min(560px,72dvh)] flex-col overflow-hidden rounded-[26px] sm:inset-x-auto sm:bottom-24 sm:right-5 sm:w-[380px]"
     >
       {/* Header */}
       <header className="flex items-center gap-3 border-b border-[var(--divider)] px-4 py-3">
@@ -49,7 +52,7 @@ export function ChatPanel({ chatbot, onClose }: { chatbot: ChatbotState; onClose
           <p className="font-heading text-sm font-extrabold leading-none">Loop</p>
           <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <span className="inline-block size-1.5 rounded-full bg-emerald-500" />
-            ReLoop assistant
+            Revaro assistant
           </p>
         </div>
         <button

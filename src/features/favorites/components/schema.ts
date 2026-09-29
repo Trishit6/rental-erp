@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isPubliclyVisible } from "@/lib/types";
 import {
   AVAILABILITY_OPTIONS,
   CONDITION_OPTIONS,
@@ -173,7 +174,8 @@ export function favoriteAvailabilityState(product: {
   status?: string;
   availableQuantity: number;
 }): FavoriteAvailability {
-  if (product.status && product.status !== "ACTIVE") return "UNAVAILABLE";
+  if (product.status && !isPubliclyVisible(product.status)) return "UNAVAILABLE";
+  if (product.status === "OUT_OF_STOCK") return "OUT_OF_STOCK";
   if (product.availableQuantity <= 0) return "OUT_OF_STOCK";
   if (product.availableQuantity <= 2) return "LIMITED";
   return "AVAILABLE";

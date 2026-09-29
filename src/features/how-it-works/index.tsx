@@ -16,7 +16,7 @@ const steps = [
     icon: Handshake,
     title: "Meet your neighbour",
     description:
-      "Agree on the dates and hand-off that work for you. Keep communication friendly, clear and on ReLoop.",
+      "Agree on the dates and hand-off that work for you. Keep communication friendly, clear and on Revaro.",
   },
   {
     number: "03",
@@ -39,7 +39,7 @@ export function HowItWorksPage() {
           More access. Less stuff.
         </h1>
         <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-muted-foreground">
-          ReLoop makes it easy to borrow useful things nearby, earn from what you own, and give
+          Revaro makes it easy to borrow useful things nearby, earn from what you own, and give
           pre-loved pieces a second life.
         </p>
         <Button asChild size="lg" className="mt-6">

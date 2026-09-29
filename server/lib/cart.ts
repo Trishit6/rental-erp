@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db";
 import { cartItems, carts, products, users } from "../schema";
 import { HttpError } from "./api";
+import { isPurchasable } from "./product-status";
 import { effectiveDailyRate, quoteRental, rentalDays } from "../../src/lib/pricing";
 
 /**
@@ -198,7 +199,7 @@ const money = (paise: number) => `₹${Math.round(paise / 100).toLocaleString("e
  * Deliberately narrower than `CartProduct`. Validation is also run by checkout
  * and order creation, which hold a leaner projection; without this they would
  * have to fabricate a dozen fields they never read, and a fabricated
- * `status: "ACTIVE"` would quietly disable the very check being called.
+ * `status: "PUBLISHED"` would quietly disable the very check being called.
  */
 export type ValidatableProduct = {
   status: string;
@@ -232,7 +233,9 @@ export function validateCartLine(input: {
     return issues;
   }
 
-  if (product.status !== "ACTIVE") {
+  // `isPurchasable`, not `isPubliclyVisible`: an `OUT_OF_STOCK` listing is still
+  // browsable and favouritable, but nothing about it may be bought.
+  if (!isPurchasable(product.status)) {
     issues.push({
       code: "PRODUCT_UNAVAILABLE",
       message: "This listing is no longer available.",

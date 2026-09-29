@@ -12,11 +12,14 @@ import { ordersRoute, rentalsRoute } from "./routes/orders";
 import { paymentsRoute } from "./routes/payments";
 import { reviewsRoute, messagesRoute, notificationsRoute, usersRoute } from "./routes/social";
 import { sellerRoute } from "./routes/seller";
+import { storageRoute } from "./routes/storage";
+import { sellerOrdersRoute } from "./routes/seller-orders";
 import { chatRoute } from "./routes/chat";
 import { adminRoute } from "./routes/admin";
-import { sql } from "drizzle-orm";
+import { and, inArray, sql } from "drizzle-orm";
 import { db } from "./db";
 import { products, users } from "./schema";
+import { PUBLIC_PRODUCT_STATUSES } from "./lib/product-status";
 
 const app = new Hono();
 
@@ -46,11 +49,23 @@ app.get("/api/health", async (c) => {
 
 app.get("/api/stats", async (c) => {
   try {
-    const [productCount] = await db.select({ value: sql<number>`COUNT(*)` }).from(products);
+    // `activeListings` means listings a shopper can actually find, so it counts
+    // the publicly visible statuses rather than every row in the table (drafts
+    // and archived listings are not "active" by any reading of the word).
+    const publicStatuses = [...PUBLIC_PRODUCT_STATUSES];
+    const [productCount] = await db
+      .select({ value: sql<number>`COUNT(*)` })
+      .from(products)
+      .where(inArray(products.status, publicStatuses));
     const [rentalCount] = await db
       .select({ value: sql<number>`COUNT(*)` })
       .from(products)
-      .where(sql`${products.listingType} IN ('RENT','BOTH')`);
+      .where(
+        and(
+          inArray(products.status, publicStatuses),
+          inArray(products.listingType, ["RENT", "BOTH"]),
+        ),
+      );
     const [sellerCount] = await db
       .select({ value: sql<number>`COUNT(*)` })
       .from(users)
@@ -84,7 +99,9 @@ app.route("/api/reviews", reviewsRoute);
 app.route("/api/users", usersRoute);
 app.route("/api/conversations", messagesRoute);
 app.route("/api/notifications", notificationsRoute);
+app.route("/api/seller/orders", sellerOrdersRoute);
 app.route("/api/seller", sellerRoute);
+app.route("/api/storage", storageRoute);
 app.route("/api/chat", chatRoute);
 app.route("/api/admin", adminRoute);
 

@@ -57,7 +57,7 @@ export const RENTAL_STATUSES = [
 ] as const;
 export type RentalStatus = (typeof RENTAL_STATUSES)[number];
 
-export const ORDER_SORTS = ["newest", "oldest", "total_desc", "total_asc"] as const;
+export const ORDER_SORTS = ["newest", "oldest", "total_desc", "total_asc", "updated_desc"] as const;
 export type OrderSort = (typeof ORDER_SORTS)[number];
 
 /**
@@ -228,6 +228,10 @@ export function buildOrderListSort(sort: OrderSort) {
       return [desc(orders.total), desc(orders.id)];
     case "total_asc":
       return [asc(orders.total), asc(orders.id)];
+    case "updated_desc":
+      // "Recently updated" surfaces the order whose state last moved (a
+      // cancellation, a fulfillment step) rather than the newest placement.
+      return [desc(orders.updatedAt), desc(orders.id)];
     case "newest":
     default:
       // `id` breaks ties so pagination is stable when two orders share a

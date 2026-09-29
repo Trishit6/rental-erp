@@ -14,7 +14,7 @@ export function makeFavoriteProduct(overrides: Partial<FavoriteProduct> = {}): F
     categoryName: "Audio",
     condition: "LIKE_NEW",
     listingType: "BOTH",
-    status: "ACTIVE",
+    status: "PUBLISHED",
     purchasePrice: 2_990_000,
     rentalPricePerDay: 49_900,
     rentalPricePerWeek: 299_000,

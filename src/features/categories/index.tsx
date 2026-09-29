@@ -80,7 +80,7 @@ export function CategoriesPage() {
       <section className="space-y-4" aria-labelledby="all-categories-heading">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <p className="eyebrow">Everything on ReLoop</p>
+            <p className="eyebrow">Everything on Revaro</p>
             <h2 id="all-categories-heading" className="section-title mt-1">
               All categories
             </h2>

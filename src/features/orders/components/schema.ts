@@ -23,7 +23,7 @@ import {
 
 /* --------------------------------- sorting --------------------------------- */
 
-export const ORDER_SORTS = ["newest", "oldest", "total_desc", "total_asc"] as const;
+export const ORDER_SORTS = ["newest", "oldest", "total_desc", "total_asc", "updated_desc"] as const;
 export type OrderSort = (typeof ORDER_SORTS)[number];
 
 export const ORDER_SORT_OPTIONS: { value: OrderSort; label: string }[] = [
@@ -31,7 +31,31 @@ export const ORDER_SORT_OPTIONS: { value: OrderSort; label: string }[] = [
   { value: "oldest", label: "Oldest first" },
   { value: "total_desc", label: "Highest total" },
   { value: "total_asc", label: "Lowest total" },
+  { value: "updated_desc", label: "Recently updated" },
 ];
+
+/**
+ * Quick-filter pills for the top of the list — one tap to the state a customer
+ * actually looks for. Each maps to the same `status`/`type` URL params the
+ * sidebar filters write, so the two can never disagree about what a pill means.
+ */
+export const ORDER_QUICK_FILTERS: { id: string; label: string; patch: Partial<OrdersSearchShape> }[] = [
+  { id: "all", label: "All", patch: {} },
+  { id: "buying", label: "Buying", patch: { type: "PURCHASE" } },
+  { id: "rentals", label: "Rentals", patch: { type: "RENTAL" } },
+  { id: "rent-and-buy", label: "Rent + Buy", patch: { type: "MIXED" } },
+  { id: "processing", label: "Processing", patch: { status: "PROCESSING" } },
+  { id: "shipped", label: "Shipped", patch: { status: "SHIPPED" } },
+  { id: "delivered", label: "Delivered", patch: { status: "DELIVERED" } },
+  { id: "completed", label: "Completed", patch: { status: "COMPLETED" } },
+  { id: "cancelled", label: "Cancelled", patch: { status: "CANCELLED" } },
+];
+
+/** Minimal structural shape a quick filter may patch (avoids a forward type ref). */
+type OrdersSearchShape = {
+  status?: string;
+  type?: string;
+};
 
 /* --------------------------------- filters --------------------------------- */
 
@@ -82,6 +106,22 @@ const RENTAL_STATUS_FILTER_VALUES = new Set<string>(RENTAL_STATUS_OPTIONS.map((o
 export const MAX_SEARCH_LENGTH = 120;
 export const MAX_PAGE_SIZE = 50;
 export const DEFAULT_PAGE_SIZE = 10;
+
+/**
+ * The customer's cancellation reasons, as the dialog offers them. Mirrors the
+ * server's `CANCELLATION_REASONS` (`server/lib/order-cancellation.ts`) — the
+ * server re-validates the code, and the free-text "Other" note travels as
+ * `reason` when given.
+ */
+export const CANCELLATION_REASON_OPTIONS = [
+  { value: "CHANGED_MIND", label: "Changed my mind" },
+  { value: "ORDERED_BY_MISTAKE", label: "Ordered by mistake" },
+  { value: "FOUND_BETTER_OPTION", label: "Found a better option" },
+  { value: "DELIVERY_TOO_SLOW", label: "Delivery is taking too long" },
+  { value: "OTHER", label: "Other" },
+] as const;
+
+export type CancellationReasonValue = (typeof CANCELLATION_REASON_OPTIONS)[number]["value"];
 
 /* ------------------------------ search params ------------------------------ */
 

@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db";
 import {
@@ -13,6 +13,7 @@ import {
   users,
 } from "../schema";
 import { buildPagination, fail, ok, HttpError } from "../lib/api";
+import { parseAddressSnapshot } from "../lib/address-snapshot";
 import { requireUser } from "../lib/auth";
 import {
   buildOrderListFilters,
@@ -40,6 +41,22 @@ import {
   overlappingRentalCount,
 } from "../lib/rental-availability";
 import { effectiveDailyRate, rentalDays } from "../../src/lib/pricing";
+import {
+  checkCustomerCancellation,
+  cancellationRefusalError,
+  isCancellationReason,
+} from "../lib/order-cancellation";
+import { getOrCreateCart, mergeCartItem } from "../lib/cart";
+import { isPurchasable } from "../lib/product-status";
+
+/** The input shape `mergeCartItem` accepts for one repeated line. */
+type RepeatCartInput = {
+  productId: number;
+  mode: "BUY" | "RENT";
+  quantity: number;
+  startDate?: string;
+  endDate?: string;
+};
 
 export const ordersRoute = new Hono();
 export const rentalsRoute = new Hono();
@@ -286,6 +303,315 @@ ordersRoute.get("/:id", async (c) => {
   );
 });
 
+/* ------------------------------- cancellation ------------------------------ */
+
+/**
+ * Why the customer is cancelling. The vocabulary lives in
+ * `server/lib/order-cancellation.ts` beside the state machine, so the dialog's
+ * options and the column's allowed values cannot drift.
+ */
+const cancelOrderSchema = z
+  .object({
+    reason: z
+      .string()
+      .trim()
+      .max(300)
+      .optional(),
+    /** One of `CANCELLATION_REASONS` when the client sends the structured choice. */
+    reasonCode: z.string().trim().max(40).optional(),
+  })
+  .strict();
+
+/**
+ * The customer cancels their own order.
+ *
+ * Ownership is in the lookup predicate (another customer's order is the same
+ * 404 as a missing one) and the state machine decides *whether* a cancellation
+ * is possible at all — the client's Cancel button is a courtesy, never the
+ * rule. Allowed only before the goods have left; a started rental blocks it.
+ *
+ * The write is one transaction: status + reason on the order, a refund-shaped
+ * ledger row for a paid order, and a notification per affected seller, so a
+ * partial failure can never leave a cancelled order that nobody was told about.
+ * As elsewhere, the REFUND transaction records that the *settlement* is owed —
+ * actually moving money stays with the payment architecture.
+ */
+ordersRoute.post("/:id/cancel", async (c) => {
+  const user = c.get("user")!;
+  const raw = c.req.param("id");
+  const input = cancelOrderSchema.parse(await c.req.json().catch(() => ({})));
+
+  const isOrderNumber = /^RV-\d{4}-[A-Z0-9]{6}$/i.test(raw);
+  const numericId = Number(raw);
+  if (!isOrderNumber && (!Number.isInteger(numericId) || numericId <= 0)) {
+    throw new HttpError(404, "NOT_FOUND", "Order not found.");
+  }
+  const identifier = isOrderNumber
+    ? eq(orders.orderNumber, raw.toUpperCase())
+    : eq(orders.id, numericId);
+
+  const [order] = await db
+    .select()
+    .from(orders)
+    .where(and(identifier, eq(orders.userId, user.id)))
+    .limit(1);
+  if (!order) throw new HttpError(404, "NOT_FOUND", "Order not found.");
+
+  // Any rental that has gone active means the item is physically out — too late.
+  const [{ activeRentals }] = await db
+    .select({ activeRentals: sql<number>`COUNT(*)` })
+    .from(rentals)
+    .where(
+      and(
+        eq(rentals.orderId, order.id),
+        inArray(rentals.status, ["ACTIVE", "RETURN_PENDING", "OVERDUE", "RETURNED"]),
+      ),
+    );
+
+  const check = checkCustomerCancellation({
+    status: order.status,
+    paymentStatus: order.paymentStatus,
+    hasActiveRental: Number(activeRentals) > 0,
+  });
+  if (!check.allowed) throw cancellationRefusalError(check);
+
+  // A free-text reason is optional; a structured one is validated against the
+  // known vocabulary and stored in a readable form either way.
+  const reasonText = input.reason?.trim()
+    ? input.reason.trim().slice(0, 300)
+    : input.reasonCode && isCancellationReason(input.reasonCode)
+      ? input.reasonCode.replace(/_/g, " ").toLowerCase()
+      : "Cancelled by customer";
+
+  const now = new Date();
+  await db.transaction(async (tx) => {
+    await tx
+      .update(orders)
+      .set({ status: "CANCELLED", updatedAt: now })
+      .where(eq(orders.id, order.id));
+
+    // Every untouched line records why it stopped; lines a seller already
+    // cancelled keep their own reason.
+    await tx
+      .update(orderItems)
+      .set({ fulfillmentStatus: "CANCELLED", cancellationReason: reasonText })
+      .where(and(eq(orderItems.orderId, order.id), isNull(orderItems.fulfillmentStatus)));
+
+    // Ledger row for the refund owed. No gateway call happens here — the
+    // payment architecture owns settlement — but the money story is on record.
+    if (order.paymentStatus === "PAID") {
+      await tx.insert(transactions).values({
+        userId: user.id,
+        orderId: order.id,
+        type: "REFUND",
+        amount: order.total,
+        status: "PENDING",
+        provider: order.paymentProvider,
+        providerTransactionId: `cancel_${order.orderNumber ?? order.id}`,
+      });
+    }
+
+    const sellerIds = await tx
+      .selectDistinct({ sellerId: orderItems.sellerId })
+      .from(orderItems)
+      .where(eq(orderItems.orderId, order.id));
+    if (sellerIds.length > 0) {
+      await tx.insert(notifications).values(
+        sellerIds.map((row) => ({
+          userId: row.sellerId,
+          type: "ORDER_CANCELLED",
+          title: "Order cancelled",
+          body: `Order ${order.orderNumber ?? `#${order.id}`} was cancelled by the customer.`,
+          link: "/dashboard/orders",
+        })),
+      );
+    }
+  });
+
+  return c.json(ok({ cancelled: true, orderId: order.id, status: "CANCELLED" as const }));
+});
+
+/* --------------------------- buy again / rent again ------------------------ */
+
+const orderAgainSchema = z
+  .object({
+    /** Which line of the order to repeat. Defaults to the first repeatable one. */
+    orderItemId: z.number().int().positive().optional(),
+  })
+  .strict();
+
+/** What a repeatable line needs from its product *as it is now*. */
+type RepeatableProduct = {
+  id: number;
+  slug: string;
+  title: string;
+  status: string;
+  sellerId: number;
+  purchasePrice: number | null;
+  rentalPricePerDay: number | null;
+  rentalPricePerWeek: number | null;
+  rentalPricePerMonth: number | null;
+  securityDeposit: number | null;
+  minimumRentalDays: number | null;
+  maximumRentalDays: number | null;
+  availableQuantity: number;
+};
+
+/**
+ * Build the cart payload for repeating one line, or say precisely why not.
+ *
+ * Money comes from the product's *current* prices via `priceCartLine` — never
+ * from the historical line — so a repeat at yesterday's price is impossible and
+ * a price change is honoured. Availability uses the same engine checkout uses.
+ */
+async function buildRepeatInput(
+  line: { id: number; mode: string; quantity: number; startDate: Date | null; endDate: Date | null },
+  product: RepeatableProduct,
+  buyerId: number,
+): Promise<{ ok: true; input: RepeatCartInput } | { ok: false; code: string; message: string }> {
+  if (!isPurchasable(product.status)) {
+    return { ok: false, code: "PRODUCT_UNAVAILABLE", message: "This product is no longer available." };
+  }
+  if (product.sellerId === buyerId) {
+    return { ok: false, code: "OWN_LISTING", message: "This is your own listing." };
+  }
+  if (product.availableQuantity < 1) {
+    return { ok: false, code: "PRODUCT_UNAVAILABLE", message: "This item is out of stock." };
+  }
+
+  if (line.mode === "BUY") {
+    if (!product.purchasePrice) {
+      return { ok: false, code: "MODE_UNSUPPORTED", message: "This item is no longer for sale." };
+    }
+    return {
+      ok: true,
+      input: {
+        productId: product.id,
+        mode: "BUY",
+        quantity: Math.min(line.quantity, product.availableQuantity),
+      },
+    };
+  }
+
+  // Rental repeat: the original window, re-validated against today's bookings.
+  if (!line.startDate || !line.endDate || !product.rentalPricePerDay) {
+    return { ok: false, code: "RENTAL_UNAVAILABLE", message: "This item can no longer be rented." };
+  }
+  const days = rentalDays({ startDate: line.startDate, endDate: line.endDate });
+  if (product.minimumRentalDays && days < product.minimumRentalDays) {
+    return { ok: false, code: "MIN_DAYS", message: `The minimum rental for this item is ${product.minimumRentalDays} days.` };
+  }
+  if (product.maximumRentalDays && days > product.maximumRentalDays) {
+    return { ok: false, code: "MAX_DAYS", message: `The maximum rental for this item is ${product.maximumRentalDays} days.` };
+  }
+  try {
+    await assertRentalAvailability(product.id, 1, line.startDate, line.endDate);
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return { ok: false, code: "RENTAL_UNAVAILABLE", message: "Those dates are no longer available." };
+    }
+    throw error;
+  }
+  return {
+    ok: true,
+    input: {
+      productId: product.id,
+      mode: "RENT",
+      quantity: 1,
+      startDate: line.startDate.toISOString(),
+      endDate: line.endDate.toISOString(),
+    },
+  };
+}
+
+/**
+ * Repeat an order line: "Buy again" for a purchase, "Rent again" for a rental.
+ *
+ * The server, not the card's button, decides what is repeatable: the product
+ * must still be listed, purchasable and (for a rental) available for the same
+ * window. Everything the cart needs is derived from the product *as it is now*
+ * — prices are never copied out of the historical line, so a price change since
+ * the original order is honoured, not silently reverted.
+ *
+ * The cart merge (`mergeCartItem`) runs in its own locked transaction, so a
+ * double-click adds one line, not two.
+ */
+ordersRoute.post("/:id/again", async (c) => {
+  const user = c.get("user")!;
+  const raw = c.req.param("id");
+  const input = orderAgainSchema.parse(await c.req.json().catch(() => ({})));
+
+  const isOrderNumber = /^RV-\d{4}-[A-Z0-9]{6}$/i.test(raw);
+  const numericId = Number(raw);
+  if (!isOrderNumber && (!Number.isInteger(numericId) || numericId <= 0)) {
+    throw new HttpError(404, "NOT_FOUND", "Order not found.");
+  }
+  const identifier = isOrderNumber
+    ? eq(orders.orderNumber, raw.toUpperCase())
+    : eq(orders.id, numericId);
+
+  // The order must belong to the caller; the *line* must belong to that order.
+  // Both predicates in the same WHERE keeps the endpoint from being probed.
+  const [order] = await db
+    .select({ id: orders.id })
+    .from(orders)
+    .where(and(identifier, eq(orders.userId, user.id)))
+    .limit(1);
+  if (!order) throw new HttpError(404, "NOT_FOUND", "Order not found.");
+
+  const lines = await db
+    .select({
+      id: orderItems.id,
+      mode: orderItems.mode,
+      quantity: orderItems.quantity,
+      startDate: orderItems.startDate,
+      endDate: orderItems.endDate,
+      product: {
+        id: products.id,
+        slug: products.slug,
+        title: products.title,
+        status: products.status,
+        sellerId: products.sellerId,
+        purchasePrice: products.purchasePrice,
+        rentalPricePerDay: products.rentalPricePerDay,
+        rentalPricePerWeek: products.rentalPricePerWeek,
+        rentalPricePerMonth: products.rentalPricePerMonth,
+        securityDeposit: products.securityDeposit,
+        minimumRentalDays: products.minimumRentalDays,
+        maximumRentalDays: products.maximumRentalDays,
+        availableQuantity: products.availableQuantity,
+      },
+    })
+    .from(orderItems)
+    .innerJoin(products, eq(orderItems.productId, products.id))
+    .where(eq(orderItems.orderId, order.id))
+    .orderBy(asc(orderItems.id));
+
+  const line = input.orderItemId
+    ? lines.find((candidate) => candidate.id === input.orderItemId)
+    : lines[0];
+  if (!line) throw new HttpError(404, "NOT_FOUND", "That item is not part of this order.");
+
+  const repeat = await buildRepeatInput(line, line.product, user.id);
+  if (!repeat.ok) {
+    throw new HttpError(409, repeat.code, repeat.message);
+  }
+
+  // The cart write owns its transaction and its merge rule.
+  const cartId = await getOrCreateCart(user.id);
+  const result = await mergeCartItem({ cartId, ...repeat.input });
+
+  return c.json(
+    ok({
+      added: true,
+      merged: result.merged,
+      itemId: result.itemId,
+      productId: repeat.input.productId,
+      mode: repeat.input.mode,
+    }),
+  );
+});
+
 /* --------------------------- response helpers ------------------------------ */
 
 type OrderPreviewRow = {
@@ -389,24 +715,6 @@ async function loadSellers(sellerIds: number[]) {
     .where(inArray(users.id, sellerIds));
 }
 
-/**
- * `delivery_address_snapshot` holds JSON written at purchase time.
- *
- * Parsed here rather than in the client so a malformed value degrades to "no
- * address shown" instead of throwing during render, and so the type crossing
- * the wire is a real object rather than an opaque string the UI has to guess
- * at.
- */
-function parseAddressSnapshot(raw: string | null) {
-  if (!raw) return null;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) return null;
-    return parsed as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Add the derived fields a rental UI needs, so the client never has to infer

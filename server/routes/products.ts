@@ -6,6 +6,7 @@ import { categories, favorites, productImages, products, productTags, sellerProf
 import { ok, buildPagination, HttpError } from "../lib/api";
 import { requireUser } from "../lib/auth";
 import { checkRentalAvailability } from "../lib/rental-availability";
+import { isPubliclyVisible, PUBLIC_PRODUCT_STATUSES } from "../lib/product-status";
 import { slugify } from "../../src/lib/pricing";
 
 export const productsRoute = new Hono();
@@ -72,7 +73,7 @@ async function loadProductCounts(categoryList: CategoryRow[]): Promise<Map<numbe
   const rows = await db
     .select({ categoryId: products.categoryId, total: sql<number>`COUNT(*)` })
     .from(products)
-    .where(eq(products.status, "ACTIVE"))
+    .where(inArray(products.status, [...PUBLIC_PRODUCT_STATUSES]))
     .groupBy(products.categoryId);
 
   const direct = new Map(rows.map((row) => [row.categoryId, Number(row.total)]));
@@ -371,7 +372,9 @@ function priceConditions(
 
 export async function searchProducts(query: ProductSearchQuery, viewerId?: number) {
   const mode = query.mode ?? normalizeLegacyType(query.type);
-  const conditions = [eq(products.status, "ACTIVE")];
+  // Only publicly visible listings are searchable — a DRAFT, PAUSED or ARCHIVED
+  // row must never appear here, and `OUT_OF_STOCK` must (it is still a listing).
+  const conditions = [inArray(products.status, [...PUBLIC_PRODUCT_STATUSES])];
 
   const term = query.search ?? query.q;
   if (term) {
@@ -550,7 +553,9 @@ async function loadSellerView(sellerId: number): Promise<ProductSellerView | nul
         ratingTotal: sql<number>`COALESCE(SUM(${products.ratingAverage} * ${products.ratingCount}), 0)`,
       })
       .from(products)
-      .where(and(eq(products.sellerId, sellerId), eq(products.status, "ACTIVE"))),
+      .where(
+        and(eq(products.sellerId, sellerId), inArray(products.status, [...PUBLIC_PRODUCT_STATUSES])),
+      ),
   ]);
 
   const ratingCount = Number(stats?.ratingCount ?? 0);
@@ -664,7 +669,7 @@ productsRoute.get("/:idOrSlug/related", async (c) => {
     .innerJoin(categories, eq(products.categoryId, categories.id))
     .where(
       and(
-        eq(products.status, "ACTIVE"),
+        inArray(products.status, [...PUBLIC_PRODUCT_STATUSES]),
         eq(products.categoryId, resolved.product.categoryId),
         ne(products.id, resolved.product.id),
       ),
@@ -695,7 +700,7 @@ productsRoute.get("/:idOrSlug/availability", async (c) => {
   if (!resolved) throw new HttpError(404, "NOT_FOUND", "Product not found.");
   const { product } = resolved;
 
-  const rentable = !!product.rentalPricePerDay && product.status === "ACTIVE";
+  const rentable = !!product.rentalPricePerDay && isPubliclyVisible(product.status);
   const { startDate, endDate } = availabilityQuerySchema.parse(c.req.query());
 
   if (!rentable || !startDate || !endDate) {
@@ -787,7 +792,7 @@ export async function createProduct(sellerId: number, input: ProductInput) {
       brand: input.brand ?? null,
       condition: input.condition,
       listingType: input.listingType,
-      status: "ACTIVE",
+      status: "PUBLISHED",
       location: input.location,
       latitude: input.latitude ?? null,
       longitude: input.longitude ?? null,

@@ -12,7 +12,7 @@ export function ProductActions({
 }) {
   return (
     <div className="flex items-center gap-1">
-      {product.status === "ACTIVE" ? (
+      {product.status === "PUBLISHED" ? (
         <button
           type="button"
           aria-label="Pause"
@@ -24,9 +24,9 @@ export function ProductActions({
       ) : product.status === "PAUSED" ? (
         <button
           type="button"
-          aria-label="Activate"
+          aria-label="Publish"
           className="rounded-full p-1.5 hover:bg-primary/10"
-          onClick={() => void onSetStatus(product.id, "ACTIVE")}
+          onClick={() => void onSetStatus(product.id, "PUBLISHED")}
         >
           <Play size={14} />
         </button>

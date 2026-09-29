@@ -87,9 +87,13 @@ pnpm start:api      # API only, no Vite
 ```
 
 Verify in this order — **typecheck → lint → test**. `pnpm build` type-checks both tsconfigs before
-`vite build`, so a type error blocks the build. The suite is 44 files / ~772 tests (~25s); one file is
+`vite build`, so a type error blocks the build. The suite is 44 files / 777 tests (~2 min); one file is
 `pnpm exec vitest run tests/pricing.test.ts` (add `-t "name"` for a single test). There is no git
 repo and no CI here, so verification is local only.
+
+**Branding**: the product is **Revaro** (`Rent. Buy. Sell. Reuse.`). The MariaDB database name is
+still `reloop` — a frozen internal identifier that changing would force a data migration on every
+existing install, so it is deliberately left alone.
 
 **Do not run `pnpm db:push` in this repo.** It applies the schema directly to the database and
 writes *no* migration file, so it silently diverges from the committed `drizzle/` history.
@@ -121,6 +125,16 @@ writes *no* migration file, so it silently diverges from the committed `drizzle/
   `extension_requested_at` / `_days`) — all nullable, all recording an event that *happened*, never a
   predicted one.
 - `0006_*` `rental_events` — the rental timeline's real history (see Rentals below).
+- `0007_*` **the listing lifecycle** — a *data* migration: every `products.status`
+  `ACTIVE` is rewritten to `PUBLISHED` and `SOLD` (settable by the admin endpoint and
+  understood by nothing else) to `ARCHIVED`, then the column default becomes `DRAFT`.
+  **Required**: skip it and the public queries ask for `PUBLISHED` while every row still
+  says `ACTIVE`, so the entire catalogue silently vanishes from Browse.
+- `0008_*` `products.specifications` (nullable JSON text) and
+  `seller_profiles.location` / `updated_at`. Purely additive.
+- `0009_*` `order_items.fulfillment_status` + `order_items.cancellation_reason` —
+  **per-line** seller fulfillment. Purely additive (both nullable), which is what lets
+  the existing customer-facing `orders.status` stay untouched.
 
 Schema change flow: edit `server/schema.ts` → `pnpm db:generate` → `pnpm db:migrate`.
 
@@ -597,6 +611,101 @@ Schema change flow: edit `server/schema.ts` → `pnpm db:generate` → `pnpm db:
   `tests/rentals{,-details}-page.test.tsx` and `tests/support/rental-fixtures.ts`. Authorization,
   IDOR, filters, the extension quote and the return transition are covered by a scripted end-to-end
   run against the live API.
+
+## The listing lifecycle (Feature 13 foundation)
+
+- **The vocabulary lives in two files, kept honest by a test.**
+  `server/lib/product-status.ts` is the server's source of truth and
+  `src/lib/types.ts` mirrors it (the same duplication the product-filter vocabulary uses,
+  because `src/lib/pricing.ts` is the only `src/` file in `tsconfig.server.json`).
+  `tests/listing-status.test.ts` asserts the two lists, the seller-settable subset and the
+  public subset are identical — so a status can never exist on one side of the wire only.
+- **`DRAFT` is the column default, deliberately.** A row inserted without an explicit
+  status is invisible until someone publishes it, so no future code path can leak a
+  half-finished listing into Browse by forgetting a field.
+- **`OUT_OF_STOCK` is publicly visible but not purchasable.** That distinction is the whole
+  reason `isPubliclyVisible` and `isPurchasable` both exist and are not interchangeable: a
+  listing that ran out is still a listing, and hiding it would drop it out of Browse along
+  with its views and its collected favourites. Cart writes and `searchProducts` therefore
+  use *different* predicates on purpose.
+- **`SOLD` was removed.** It was accepted by `PATCH /api/admin/products/:id/status` and
+  understood by no other code, so a product set to it became invisible and uneditable.
+- Any new public query must filter with `PUBLIC_PRODUCT_STATUSES`, never a hard-coded
+  `status === "PUBLISHED"` — otherwise a sold-out listing disappears without anyone
+  deciding it should.
+
+## Seller order scoping (Feature 14 foundation)
+
+- **Fulfillment is per line, not per order.** `orders.status` is one value for the whole
+  order, and an order can contain lines from several sellers — so one order status cannot
+  express "Seller A has shipped, Seller B has not". Seller actions write
+  `order_items.fulfillment_status` (null = "this seller has not acted", read as the order's
+  own status), and `orders.status` is never written by a seller. Without this, Seller A's
+  "Mark shipped" would speak for Seller B and would rewrite what the customer sees for
+  goods nobody has touched.
+- **The seller's order state is a rollup: the *least advanced* line wins.** A partly-shipped
+  order is not "shipped". `CANCELLED` ranks above everything so it only wins when every line
+  is cancelled. Implemented once in `server/lib/seller-order-queries.ts` and shared by the
+  list filter (as a `HAVING MIN(rank)`) and the detail response.
+- **Ownership is in the WHERE clause, never a check afterwards.** The list joins
+  `order_items` filtered by `seller_id` (so the item count and the subtotal come from that
+  seller's lines only), and the detail reaches the order *through* its items — so another
+  seller's order is the same 404 as a non-existent one. A 403 would confirm the order
+  number is real, which is what an IDOR probe wants.
+- **A seller's subtotal is summed from `order_items.line_total`**, never the order total and
+  never current product prices — so a later price change cannot alter history.
+- **Search predicates must be order-level, not row-level.** A predicate mentioning
+  `order_items.title_snapshot` that is evaluated per joined row would drop the seller's
+  *other* lines out of the `SUM`, silently under-reporting the subtotal. It is therefore
+  written as an `EXISTS` over the seller's own lines. Search also never matches another
+  seller's `title_snapshot`, or a seller could find an order by typing a competitor's
+  product name.
+- **The transition table is a real state machine** (`server/lib/order-fulfillment.ts`), and
+  it reuses the *existing* order vocabulary rather than inventing near-synonyms
+  (`READY_FOR_PICKUP` is this codebase's "ready"; there is deliberately no
+  `OUT_FOR_DELIVERY`, because no code path could produce it). `COMPLETED` and `CANCELLED`
+  are terminal, cancellation is refused once goods have shipped, and an unpaid order
+  (`PENDING_PAYMENT`) cannot be worked at all. A refused transition is a **409** — the
+  request is well-formed, the state forbids it.
+- **Money is never touched here.** Cancellation records a reason
+  (`order_items.cancellation_reason`, per line for the same multi-seller reason) and no
+  refund logic reads it: the payment architecture owns financial handling, and a seller
+  action must not be able to move money.
+- **Customer data is an explicit projection** (`toFulfillmentAddress` in
+  `server/lib/address-snapshot.ts`): name, phone and the address lines only. A snapshot is
+  written from whatever the customer's address form held, so passing it through wholesale
+  would leak any field a future form adds. The same module is used by the customer's
+  receipt — extracted from `routes/orders.ts` so the two can never disagree about what a
+  malformed value means. It rejects arrays (`typeof [] === "object"` was letting one through).
+
+## Image storage (`server/lib/storage/` + `src/lib/storage/`)
+
+- **The provider is an interface**, exactly like payments: `StorageProvider` in
+  `server/lib/storage/types.ts`, with a Supabase adapter (`supabase.ts`) and a local-disk
+  development adapter (`dev.ts`). Nothing outside that folder imports a concrete provider;
+  adding one is a new adapter file plus `STORAGE_PROVIDER`.
+- **The dev adapter is loud, not silent.** It is `isProductionReady: false`, the API
+  surfaces that flag so the seller UI can say so, and `getStorageProvider` **refuses** to
+  return it under `NODE_ENV=production`. A real provider name with no keys is a 503, never a
+  fallback to local disk — falling back would accept uploads onto an ephemeral filesystem
+  and lose them on the next restart. Dev bytes land in `server/uploads/` (gitignored).
+- **The object key is a security boundary**, not a naming convention:
+  `products/<sellerId>/<random>.<ext>`, validated by `OBJECT_KEY_PATTERN` on mint, on upload
+  and on delete. Upload targets are minted from the *authenticated* seller id, never from the
+  request body, so this endpoint cannot be used to write into another seller's prefix.
+- **The extension comes from the MIME type, never the filename**, and the MIME type is
+  whitelisted (`image/jpeg|png|webp|avif`, 5 MB, 8 per listing) on the client *and* again on
+  the server. The dev sink checks `Content-Length` *before* reading the body so an enormous
+  PUT is refused rather than buffered.
+- **No binary ever touches MariaDB** — the row stores a URL. `allowedImageHosts()` restricts
+  those URLs to the configured bucket plus `images.unsplash.com` (the seeded catalogue), so a
+  listing cannot point a product page at an arbitrary third-party host.
+- **Uploads use `XMLHttpRequest`, the one place in the app that does.** `fetch` cannot report
+  upload progress and a 5 MB phone photo is exactly where silence reads as broken. It is
+  confined to `src/lib/storage/index.ts` — components still call a function, and `src/`
+  components never touch a bucket directly.
+- `api.delete` in `src/lib/api/client.ts` takes an optional body (deleting a stored image
+  names the object); omitting it behaves exactly as before.
 
 ## Conventions & gotchas
 - **Two tsconfigs**: `tsconfig.app.json` (`src/`) and `tsconfig.server.json` (`server/` +

@@ -14,7 +14,7 @@ export const CHAT_GREETING: UiMessage = {
   id: "greeting",
   role: "assistant",
   content:
-    "Hi, I'm Loop — your ReLoop assistant. Looking for something to rent or buy? Ask me anything about how the marketplace works.",
+    "Hi, I'm Loop — your Revaro assistant. Looking for something to rent or buy? Ask me anything about how the marketplace works.",
   suggestions: [
     "Find something to rent",
     "How does renting work?",

@@ -7,7 +7,7 @@ import {
 
 describe("assistant knowledge base", () => {
   it("matches the renting topic", () => {
-    const match = answerFromKnowledge("how does renting work on reloop?");
+    const match = answerFromKnowledge("how does renting work on revaro?");
     expect(match?.entry.id).toBe("renting");
     expect(match!.score).toBeGreaterThanOrEqual(2);
   });

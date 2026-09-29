@@ -12,6 +12,7 @@ import {
   users,
 } from "../schema";
 import { ok, buildPagination, HttpError } from "../lib/api";
+import { isPurchasable, PUBLIC_PRODUCT_STATUSES } from "../lib/product-status";
 import { requireUser } from "../lib/auth";
 import { assertRentalAvailability } from "../lib/rental-availability";
 import {
@@ -194,7 +195,7 @@ favoritesRoute.post("/:productId", async (c) => {
   const [product] = await db
     .select({ id: products.id })
     .from(products)
-    .where(and(eq(products.id, productId), eq(products.status, "ACTIVE")))
+    .where(and(eq(products.id, productId), inArray(products.status, [...PUBLIC_PRODUCT_STATUSES])))
     .limit(1);
   if (!product) throw new HttpError(404, "NOT_FOUND", "Product not found.");
 
@@ -429,7 +430,9 @@ cartRoute.post("/items", async (c) => {
   const input = addCartItemSchema.parse(await c.req.json());
 
   const [product] = await db.select().from(products).where(eq(products.id, input.productId)).limit(1);
-  if (!product || product.status !== "ACTIVE") {
+  // Adding to the cart is a purchase intent, so `OUT_OF_STOCK` is refused here
+  // even though the listing itself is still publicly visible.
+  if (!product || !isPurchasable(product.status)) {
     throw new HttpError(404, "NOT_FOUND", "Product not available.");
   }
   if (input.mode === "BUY" && !product.purchasePrice) {
@@ -512,7 +515,7 @@ cartRoute.patch("/items/:id", async (c) => {
 
   const line = row.line;
   const product = row.product;
-  if (!product || product.status !== "ACTIVE") {
+  if (!product || !isPurchasable(product.status)) {
     throw new HttpError(409, "UNAVAILABLE", "This item is no longer available.");
   }
 
