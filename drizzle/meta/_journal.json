@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1790480570034,
+      "tag": "0000_modern_mojo",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1790520673179,
+      "tag": "0001_auth-session-last-used",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1790606996571,
+      "tag": "0002_needy_ozymandias",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1790651270366,
+      "tag": "0003_misty_cargill",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1790656192589,
+      "tag": "0004_supreme_turbo",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1790664822384,
+      "tag": "0005_bizarre_major_mapleleaf",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1790669722518,
+      "tag": "0006_modern_union_jack",
+      "breakpoints": true
+    }
+  ]
+}

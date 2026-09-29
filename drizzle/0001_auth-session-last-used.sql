@@ -1,0 +1,1 @@
+ALTER TABLE `sessions` ADD `last_used_at` timestamp DEFAULT (now()) NOT NULL;
