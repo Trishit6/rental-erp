@@ -7,12 +7,8 @@ import { useCartDrawer } from "@/lib/cart/drawer";
 import { cartErrorMessage, useAddToCart } from "@/lib/query/cart";
 import { queryKeys } from "@/lib/query/keys";
 import { productDetailQueryOptions, shouldRetryRequest } from "@/lib/query/products";
-import type { ProductCardData, ReviewItem } from "@/lib/types";
-import {
-  checkProductAvailability,
-  getProductReviews,
-  getRelatedProducts,
-} from "./api";
+import type { ProductCardData } from "@/lib/types";
+import { checkProductAvailability, getRelatedProducts } from "./api";
 import { buildCartPayload } from "./components/schema";
 import type {
   ProductAction,
@@ -34,7 +30,6 @@ export const productDetailKeys = {
   related: (productIdOrSlug: string) => queryKeys.productRelated(productIdOrSlug),
   availability: (productIdOrSlug: string, range: string) =>
     queryKeys.productAvailability(productIdOrSlug, range),
-  reviews: (productId: number) => queryKeys.reviews(productId),
 };
 
 const RELATED_STALE_MS = 10 * 60_000;
@@ -74,16 +69,6 @@ export function useProductAvailability(
     queryFn: () => checkProductAvailability(productIdOrSlug, range),
     enabled: enabled && productIdOrSlug.length > 0,
     staleTime: AVAILABILITY_STALE_MS,
-    retry: shouldRetryRequest,
-  });
-}
-
-export function useProductReviews(productId: number | undefined) {
-  return useQuery({
-    queryKey: productDetailKeys.reviews(productId ?? 0),
-    queryFn: () => getProductReviews(productId!),
-    enabled: !!productId,
-    staleTime: 5 * 60_000,
     retry: shouldRetryRequest,
   });
 }
@@ -207,4 +192,4 @@ export function prefetchProductDetail(queryClient: QueryClient, productIdOrSlug:
   void queryClient.prefetchQuery(productDetailQueryOptions(productIdOrSlug));
 }
 
-export type { ProductAvailability, RelatedProduct, ReviewItem };
+export type { ProductAvailability, RelatedProduct };

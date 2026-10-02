@@ -1,5 +1,5 @@
 import { api, type Pagination } from "@/lib/api/client";
-import type { Category, ProductCardData } from "@/lib/types";
+import type { ProductCardData } from "@/lib/types";
 import type { BrowseFilters, ProductListResponse } from "./types";
 
 /**
@@ -39,6 +39,4 @@ export async function getProducts(filters: BrowseFilters): Promise<ProductListRe
   return { items: result.data, pagination };
 }
 
-export async function getCategories(): Promise<Category[]> {
-  return (await api.get<Category[]>("/categories")).data;
-}
+/** The category directory lives in `src/lib/categories.ts` — see the note there. */

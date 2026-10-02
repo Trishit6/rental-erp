@@ -11,6 +11,7 @@ import { CONDITION_LABELS, LISTING_MODE_LABELS, type ProductCondition } from "@/
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ProductImage } from "@/components/shared/product-image";
 import { FavoriteButton, type FavoriteController } from "./FavoriteButton";
 import {
   favoriteAvailabilityLabel,
@@ -99,15 +100,18 @@ export function FavoriteProductCard({
       onFocus={() => onPrefetch?.(product.slug)}
       className="group h-full"
     >
-      <Card className="flex h-full flex-col overflow-hidden p-3.5 transition-transform duration-300 hover:-translate-y-1 hover:shadow-[10px_14px_30px_var(--shadow-color-dark),-8px_-8px_22px_var(--shadow-color-light)]">
+      <Card className="card-surface-hover flex h-full flex-col overflow-hidden p-3.5 transition-transform duration-300 hover:-translate-y-1">
         <div className="inset-surface relative rounded-[20px] p-2.5">
-          <Link to="/product/$slug" params={{ slug: product.slug }} className="block">
-            <img
-              src={product.primaryImage ?? ""}
+          <Link
+            to="/product/$slug"
+            params={{ slug: product.slug }}
+            className="block aspect-[4/3] w-full overflow-hidden rounded-2xl"
+          >
+            <ProductImage
+              src={product.primaryImage}
               alt={product.title}
-              loading="lazy"
               /* An unavailable item stays saved, so it is dimmed rather than hidden. */
-              className={`aspect-[4/3] w-full rounded-2xl object-cover transition duration-500 group-hover:scale-[1.03] ${
+              className={`size-full transition-transform duration-500 group-hover:scale-[1.03] ${
                 isAvailable ? "" : "opacity-60 saturate-[0.7]"
               }`}
             />

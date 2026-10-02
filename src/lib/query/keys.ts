@@ -1,10 +1,27 @@
 /** Central TanStack Query key factory — use these everywhere for cache coherence. */
 export const queryKeys = {
   health: ["health"] as const,
+  /**
+   * Image-upload limits, from `GET /api/storage/config`.
+   *
+   * Public and deployment-fixed, so it is cached hard: no secrets, and the values
+   * only change on a deploy. It exists as a key rather than a module constant so
+   * the form and the storage client cannot disagree about the limits.
+   */
+  storageConfig: ["storage", "config"] as const,
   stats: ["stats"] as const,
   categories: ["categories"] as const,
   products: (filters: Record<string, unknown> = {}) => ["products", filters] as const,
   product: (slug: string) => ["product", slug] as const,
+  /**
+   * Prefix every product-detail entry hangs off.
+   *
+   * Needed because a review write changes `ratingAverage`/`ratingCount`, which
+   * are cached on the product row and read by the card badge. `["product", "*"]`
+   * would *not* work: TanStack matches by prefix, so a literal `"*"` element only
+   * matches keys that literally contain it (the same trap as `orderAll`).
+   */
+  productAll: ["product"] as const,
   /** Same-category recommendations for a product. */
   productRelated: (slug: string) => ["product", slug, "related"] as const,
   /** Date-range availability; `range` is a stable signature of the window. */
@@ -71,12 +88,112 @@ export const queryKeys = {
   /** Prefix for every conversation-detail entry. See the `orderAll` note above. */
   conversationAll: ["conversation"] as const,
   conversation: (id: number | string) => ["conversation", id] as const,
+  /**
+   * Reviews.
+   *
+   * `["reviews", productId]` is the **prefix** every entry for one product hangs
+   * off — the list, the summary and the viewer's eligibility — so a write that
+   * changes a product's rating can reconcile all three with one targeted
+   * invalidate instead of guessing at three key shapes.
+   *
+   * The keys deliberately live under the *product* id rather than a flat
+   * `["reviews"]` list: a shopper who pages through product A's reviews must not
+   * evict product B's, and a product page that is revisited renders instantly.
+   *
+   * `myReviews` and `reviewsModeration` are private (see `privateQueryKeys`) —
+   * they are one customer's own words and the admin queue.
+   */
   reviews: (productId: number) => ["reviews", productId] as const,
-  seller: (id: number | string) => ["seller", id] as const,
-  myProducts: ["my-products"] as const,
+  reviewsList: (productId: number, filters: Record<string, unknown>) =>
+    ["reviews", productId, "list", filters] as const,
+  reviewsSummary: (productId: number) => ["reviews", productId, "summary"] as const,
+  myReviews: (filters: Record<string, unknown> = {}) =>
+    ["reviews", "mine", filters] as const,
+  /** Reviews of the signed-in seller's own listings. Private. */
+  sellerReviews: (filters: Record<string, unknown> = {}) =>
+    ["reviews", "seller", filters] as const,
+  /** The admin moderation queue. Private. */
+  reviewsModeration: (filters: Record<string, unknown> = {}) =>
+    ["reviews", "moderation", filters] as const,
+  /**
+   * Whether the signed-in user may review a product, and which of their order
+   * lines to attach it to.
+   *
+   * Under its own root rather than `["reviews", productId]` on purpose: it is
+   * derived from *the viewer's orders*, so it must be evictable by prefix on
+   * logout. Hanging it off a product id would make that impossible without
+   * evicting every product's public reviews as collateral.
+   */
+  reviewsEligibility: (productId: number) =>
+    ["reviews-eligibility", productId] as const,
+  /**
+   * One review by id.
+   *
+   * Under `["reviews", "single"]` rather than a product id because the order
+   * page's "Edit your review" control holds a review id long before it knows
+   * which product it belongs to — and a key that needs a product id the caller
+   * does not have is a key that ends up faked.
+   */
+  reviewSingle: (reviewId: number) => ["reviews", "single", reviewId] as const,
+  /**
+   * A seller's **public** shopfront — `GET /api/sellers/:id`.
+   *
+   * Namespaced under `["seller", "public", …]` rather than a bare
+   * `["seller", id]` so it cannot collide with `sellerMe` below, and so the whole
+   * public family has a prefix of its own to invalidate when a seller edits
+   * their bio. Public: no private content, so it stays cached across sessions
+   * like the catalogue does.
+   */
+  sellerPublic: ["seller", "public"] as const,
+  seller: (id: number | string) => ["seller", "public", String(id)] as const,
+  /**
+   * The seller workspace — everything the signed-in seller manages.
+   *
+   * Nested under `["seller", "me"]` rather than a flat `["seller"]` because
+   * `seller(id)` above is a **public** key (the shopfront a visitor reads) and
+   * `["seller"]` is a prefix that would match it. Putting the private surface
+   * under its own segment means logout eviction hits every seller entry and none
+   * of the public shopfronts, and it removes the ambiguity of a numeric id
+   * sitting next to a string scope.
+   */
+  sellerMe: ["seller", "me"] as const,
+  /** Whether the viewer is a seller, and what their shopfront says. */
+  sellerOnboarding: ["seller", "me", "onboarding"] as const,
+  /** Dashboard cards. Private: a stranger's earnings must never be readable. */
+  sellerSummary: ["seller", "me", "summary"] as const,
+  sellerAnalytics: (params: Record<string, unknown> = {}) =>
+    ["seller", "me", "analytics", params] as const,
+  /** Prefix every seller-listing entry hangs off — list pages and one product. */
+  sellerProducts: ["seller", "me", "products"] as const,
+  sellerProductsList: (filters: Record<string, unknown> = {}) =>
+    ["seller", "me", "products", "list", filters] as const,
+  sellerProduct: (id: number) => ["seller", "me", "products", "detail", id] as const,
+  /** Orders containing this seller's lines — never the customer's own orders. */
+  sellerOrders: ["seller", "me", "orders"] as const,
+  sellerOrdersList: (filters: Record<string, unknown> = {}) =>
+    ["seller", "me", "orders", "list", filters] as const,
+  sellerOrder: (ref: string | number) => ["seller", "me", "orders", "detail", String(ref)] as const,
+  /** Rentals of this seller's own listings (`role=owner`), not the ones they rent. */
+  sellerRentals: ["seller", "me", "rentals"] as const,
+  sellerRentalsList: (filters: Record<string, unknown> = {}) =>
+    ["seller", "me", "rentals", "list", filters] as const,
+  /** The caller's own shopfront (bio, location, response time). */
+  sellerProfile: ["seller", "me", "profile"] as const,
   earnings: ["earnings"] as const,
   transactions: ["transactions"] as const,
   addresses: ["addresses"] as const,
+  /**
+   * Review entries that are one person's own words or one seller's own
+   * customers: the review history, the seller's queue and the moderation queue.
+   * Each is a real prefix, so one `invalidateQueries` on logout clears all of
+   * them. The *public* product reviews (`["reviews", productId]`) are
+   * deliberately absent — those are public data and stay cached, like products.
+   */
+  myReviewsRoot: ["reviews", "mine"] as const,
+  reviewsSingleRoot: ["reviews", "single"] as const,
+  sellerReviewsRoot: ["reviews", "seller"] as const,
+  reviewsModerationRoot: ["reviews", "moderation"] as const,
+  reviewsEligibilityRoot: ["reviews-eligibility"] as const,
   adminStats: ["admin-stats"] as const,
   adminUsers: ["admin-users"] as const,
   adminProducts: ["admin-products"] as const,
@@ -100,11 +217,16 @@ export const privateQueryKeys = [
   queryKeys.notifications,
   queryKeys.conversations,
   queryKeys.conversationAll,
-  queryKeys.myProducts,
+  queryKeys.sellerMe,
   queryKeys.earnings,
   queryKeys.transactions,
   queryKeys.addresses,
   queryKeys.profile,
+  queryKeys.myReviewsRoot,
+  queryKeys.reviewsSingleRoot,
+  queryKeys.sellerReviewsRoot,
+  queryKeys.reviewsModerationRoot,
+  queryKeys.reviewsEligibilityRoot,
   ["admin-stats"],
   ["admin-users"],
   ["admin-products"],

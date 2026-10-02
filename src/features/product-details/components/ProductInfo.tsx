@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils/cn";
 import { AvailabilityStatus } from "./AvailabilityStatus";
 import { ProductCondition } from "./ProductCondition";
-import { RatingStars } from "./RatingStars";
+import { RatingStars } from "@/features/reviews";
 import { listingTypeLabel } from "./schema";
 import type { ProductDetails, StockState } from "../types";
 

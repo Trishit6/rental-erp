@@ -5,7 +5,9 @@ export function Skeleton({ className, ...props }: HTMLAttributes<HTMLDivElement>
   return (
     <div
       aria-hidden
-      className={cn("animate-pulse rounded-2xl bg-[#ddd6c6]/70", className)}
+      /* `--skeleton`, not a literal: the hardcoded warm beige this used to carry
+         rendered as a pale slab against the dark theme's near-black surfaces. */
+      className={cn("animate-pulse rounded-2xl bg-[var(--skeleton)]", className)}
       {...props}
     />
   );

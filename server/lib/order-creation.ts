@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../db";
 import {
   cartItems,
@@ -15,6 +15,7 @@ import { buildCheckoutQuote, type DeliveryMethod } from "./checkout";
 import { createOrderNumber } from "./payments/order-number";
 import { readCheckoutContext } from "./payments/checkout-context";
 import { recordRentalEvent } from "./rental-lifecycle";
+import { adjustProductInventory } from "./product-inventory";
 import type { PaymentMethod, PaymentStatus } from "./payments/types";
 
 /**
@@ -293,15 +294,15 @@ export async function createOrderFromPayment(input: CreateOrderInput): Promise<O
     // date window by the `rentals` row, and the availability engine reads that.
     // Permanently decrementing here would make the listing unsellable for dates
     // the customer never booked.
+    //
+    // The helper (rather than an inline `available_quantity - n`) exists because
+    // the derived status has to be spelled correctly in every writer: this one
+    // used to write `'SOLD'`, which is not in `PRODUCT_STATUSES`, so buying the
+    // last unit made the listing disappear from every public query. It also
+    // clamps, so a replayed order can never drive availability below zero.
     for (const line of lines) {
       if (line.mode !== "BUY") continue;
-      await tx
-        .update(products)
-        .set({
-          availableQuantity: sql`${products.availableQuantity} - ${line.quantity}`,
-          status: sql`CASE WHEN ${products.availableQuantity} - ${line.quantity} <= 0 THEN 'SOLD' ELSE ${products.status} END`,
-        })
-        .where(eq(products.id, line.productId));
+      await adjustProductInventory(tx, line.productId, -line.quantity);
     }
 
     /* --- 9. Close out the payment and clear the purchased cart lines ------- */

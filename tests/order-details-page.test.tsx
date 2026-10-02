@@ -6,7 +6,7 @@ import { OrderDetailsPage } from "@/features/orders";
 import { OrderDetailsTimeline } from "@/features/orders/components/OrderDetailsTimeline";
 import { OrderPaymentSummary } from "@/features/orders/components/OrderPaymentSummary";
 import { OrderSellerInfo } from "@/features/orders/components/OrderSellerInfo";
-import { OrderActions } from "@/features/orders/components/OrderActions";
+import { OrderActionsPanel } from "@/features/orders/components/OrderActionsPanel";
 import { getOrderByRef } from "@/features/orders/api";
 import { ApiError } from "@/lib/api/client";
 import { format } from "date-fns";
@@ -336,41 +336,79 @@ describe("actions are honest about what exists", () => {
 
   it("offers only navigations to real pages", () => {
     render(
-      <OrderActions
+      <OrderActionsPanel
         order={detail}
         items={[makeOrderItem(), makeRentalItem()]}
         rentals={[makeRental()]}
       />,
+      { wrapper },
     );
 
-    expect(screen.getByRole("link", { name: /View first product/i })).toHaveAttribute(
-      "href",
-      "/product/sony-headphones",
-    );
     expect(screen.getByRole("link", { name: /View my rentals/i })).toHaveAttribute(
       "href",
       "/rentals",
     );
-    // No tracking, returns, cancellations or "contact seller": those belong to
-    // features that do not exist, and a dead button is worse than no button.
+    expect(screen.getByRole("link", { name: /Continue shopping/i })).toHaveAttribute(
+      "href",
+      "/browse",
+    );
+    // No tracking or returns: no carrier integration and no returns feature
+    // exist, and a dead button is worse than no button.
     expect(screen.queryByText(/Track/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Return item/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Cancel/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Contact seller/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Buy again/i)).not.toBeInTheDocument();
   });
 
-  it("explains itself when the product no longer exists to link to", () => {
-    render(
-      <OrderActions
-        order={detail}
-        items={[{ ...makeRentalItem(), productSlug: null }]}
+  it("offers cancellation only while the lifecycle still allows it", () => {
+    const { rerender } = render(
+      <OrderActionsPanel
+        order={makeOrderDetail({ status: "CONFIRMED" })}
+        items={[makeOrderItem()]}
+        rentals={[]}
+      />,
+      { wrapper },
+    );
+    expect(screen.getByRole("button", { name: /Cancel order/i })).toBeInTheDocument();
+
+    // Delivered is past the cancellable window in `server/lib/order-cancellation.ts`.
+    rerender(
+      <OrderActionsPanel
+        order={makeOrderDetail({ status: "DELIVERED" })}
+        items={[makeOrderItem()]}
         rentals={[]}
       />,
     );
+    expect(screen.queryByRole("button", { name: /Cancel order/i })).not.toBeInTheDocument();
+  });
 
+  it("repeats a purchase only while the product is still listed", () => {
+    const { rerender } = render(
+      <OrderActionsPanel order={detail} items={[makeOrderItem()]} rentals={[]} />,
+      { wrapper },
+    );
+    expect(screen.getByRole("button", { name: /Buy again/i })).toBeInTheDocument();
+
+    // The listing was removed after the order was placed: the receipt stands, but
+    // there is nothing to add to a cart.
+    rerender(
+      <OrderActionsPanel
+        order={detail}
+        items={[{ ...makeOrderItem(), productSlug: null }]}
+        rentals={[]}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Buy again/i })).not.toBeInTheDocument();
     expect(screen.getByText(/no longer listed/)).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /View product/i })).not.toBeInTheDocument();
+  });
+
+  it("repeats a rental as a rental, not as a purchase", () => {
+    render(
+      <OrderActionsPanel order={detail} items={[makeRentalItem()]} rentals={[makeRental()]} />,
+      { wrapper },
+    );
+
+    expect(screen.getByRole("button", { name: /Rent again/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Buy again/i })).not.toBeInTheDocument();
   });
 });
 

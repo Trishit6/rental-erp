@@ -2,8 +2,8 @@ import { useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query/keys";
 import { productDetailQueryOptions } from "@/lib/query/products";
+import { useCategoryDirectory } from "@/lib/categories";
 import {
-  getCategories,
   getCategoryBySlug,
   getCategoryProducts,
   getFeaturedCategories,
@@ -45,14 +45,13 @@ export const CATEGORY_PRODUCTS_GC_MS = 30 * 60_000;
 
 /* --------------------------------- queries ---------------------------------- */
 
-export function useCategories() {
-  return useQuery({
-    queryKey: categoryKeys.list,
-    queryFn: getCategories,
-    staleTime: CATEGORY_STALE_MS,
-    gcTime: CATEGORY_GC_MS,
-  });
-}
+/**
+ * The directory itself now comes from `src/lib/categories.ts` — one fetch, one
+ * hook — because Browse, Home and the seller's listing form all need it and a
+ * feature may not import another feature. The name and the query key are
+ * unchanged, so this is a move, not a rewrite.
+ */
+export const useCategories = useCategoryDirectory;
 
 export function useFeaturedCategories() {
   return useQuery({

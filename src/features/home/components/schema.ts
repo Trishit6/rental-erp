@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { z } from "zod";
 
 /**
  * The hero's dynamic content — logic only, no rendering.
@@ -10,6 +11,24 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * Kept as a plain hook (not inside the component tree) so the slide maths is
  * unit-testable without rendering anything.
  */
+
+/**
+ * What the hero search box is allowed to submit.
+ *
+ * A blank box navigates nowhere — submitting "   " would send the customer to
+ * Browse with an empty query. The 120-character ceiling matches
+ * `validateQSearch` in `src/lib/browse-search.ts`, so a hero query and a
+ * hand-typed URL cannot disagree about how long a search may be.
+ */
+export const HERO_SEARCH_MAX = 120;
+
+export const heroSearchSchema = z.object({
+  q: z
+    .string()
+    .trim()
+    .min(1)
+    .max(HERO_SEARCH_MAX, "That search is too long."),
+});
 
 export type HeroSlide = {
   id: string;
@@ -81,7 +100,8 @@ const AUTO_ADVANCE_MS = 6_000;
  */
 export function useHeroSlides(
   count: number,
-  prefersReducedMotion: boolean,
+  /** `null` is accepted because `useReducedMotion()` reports `boolean | null`. */
+  prefersReducedMotion: boolean | null,
 ): {
   index: number;
   next: () => void;
@@ -96,7 +116,7 @@ export function useHeroSlides(
 
   const goTo = useCallback(
     (target: number) => {
-      setIndex((current) => ((target % count) + count) % count);
+      setIndex(() => ((target % count) + count) % count);
     },
     [count],
   );

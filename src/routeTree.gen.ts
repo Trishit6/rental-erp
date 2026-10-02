@@ -29,15 +29,21 @@ import { Route as AuthRegisterRouteImport } from './routes/_auth/register'
 import { Route as CategoriesIndexRouteImport } from './routes/categories/index'
 import { Route as CategoriesCategorySlugRouteImport } from './routes/categories/$categorySlug'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
+import { Route as DashboardAnalyticsRouteImport } from './routes/dashboard/analytics'
+import { Route as DashboardBecomeASellerRouteImport } from './routes/dashboard/become-a-seller'
 import { Route as DashboardEarningsRouteImport } from './routes/dashboard/earnings'
 import { Route as DashboardMessagesRouteImport } from './routes/dashboard/messages'
 import { Route as DashboardOrdersRouteImport } from './routes/dashboard/orders'
 import { Route as DashboardProductsRouteImport } from './routes/dashboard/products'
 import { Route as DashboardRentalsRouteImport } from './routes/dashboard/rentals'
+import { Route as DashboardReviewsRouteImport } from './routes/dashboard/reviews'
+import { Route as DashboardSettingsRouteImport } from './routes/dashboard/settings'
 import { Route as OrdersOrderIdRouteImport } from './routes/orders.$orderId'
 import { Route as ProductSlugRouteImport } from './routes/product.$slug'
 import { Route as RentalsRentalIdRouteImport } from './routes/rentals.$rentalId'
 import { Route as SellerIdRouteImport } from './routes/seller.$id'
+import { Route as DashboardProductsNewRouteImport } from './routes/dashboard/products.new'
+import { Route as DashboardProductsProductIdEditRouteImport } from './routes/dashboard/products./$productId.edit'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -138,6 +144,16 @@ const DashboardIndexRoute = DashboardIndexRouteImport.update({
   path: '/dashboard/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardAnalyticsRoute = DashboardAnalyticsRouteImport.update({
+  id: '/dashboard/analytics',
+  path: '/dashboard/analytics',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardBecomeASellerRoute = DashboardBecomeASellerRouteImport.update({
+  id: '/dashboard/become-a-seller',
+  path: '/dashboard/become-a-seller',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardEarningsRoute = DashboardEarningsRouteImport.update({
   id: '/dashboard/earnings',
   path: '/dashboard/earnings',
@@ -163,6 +179,16 @@ const DashboardRentalsRoute = DashboardRentalsRouteImport.update({
   path: '/dashboard/rentals',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardReviewsRoute = DashboardReviewsRouteImport.update({
+  id: '/dashboard/reviews',
+  path: '/dashboard/reviews',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardSettingsRoute = DashboardSettingsRouteImport.update({
+  id: '/dashboard/settings',
+  path: '/dashboard/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OrdersOrderIdRoute = OrdersOrderIdRouteImport.update({
   id: '/$orderId',
   path: '/$orderId',
@@ -183,6 +209,17 @@ const SellerIdRoute = SellerIdRouteImport.update({
   path: '/seller/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardProductsNewRoute = DashboardProductsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => DashboardProductsRoute,
+} as any)
+const DashboardProductsProductIdEditRoute =
+  DashboardProductsProductIdEditRouteImport.update({
+    id: '/$productId/edit',
+    path: '/$productId/edit',
+    getParentRoute: () => DashboardProductsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -202,17 +239,23 @@ export interface FileRoutesByFullPath {
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/categories/$categorySlug': typeof CategoriesCategorySlugRoute
+  '/dashboard/analytics': typeof DashboardAnalyticsRoute
+  '/dashboard/become-a-seller': typeof DashboardBecomeASellerRoute
   '/dashboard/earnings': typeof DashboardEarningsRoute
   '/dashboard/messages': typeof DashboardMessagesRoute
   '/dashboard/orders': typeof DashboardOrdersRoute
-  '/dashboard/products': typeof DashboardProductsRoute
+  '/dashboard/products': typeof DashboardProductsRouteWithChildren
   '/dashboard/rentals': typeof DashboardRentalsRoute
+  '/dashboard/reviews': typeof DashboardReviewsRoute
+  '/dashboard/settings': typeof DashboardSettingsRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
   '/product/$slug': typeof ProductSlugRoute
   '/rentals/$rentalId': typeof RentalsRentalIdRoute
   '/seller/$id': typeof SellerIdRoute
   '/categories/': typeof CategoriesIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/dashboard/products/new': typeof DashboardProductsNewRoute
+  '/dashboard/products/$productId/edit': typeof DashboardProductsProductIdEditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -232,17 +275,23 @@ export interface FileRoutesByTo {
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/categories/$categorySlug': typeof CategoriesCategorySlugRoute
+  '/dashboard/analytics': typeof DashboardAnalyticsRoute
+  '/dashboard/become-a-seller': typeof DashboardBecomeASellerRoute
   '/dashboard/earnings': typeof DashboardEarningsRoute
   '/dashboard/messages': typeof DashboardMessagesRoute
   '/dashboard/orders': typeof DashboardOrdersRoute
-  '/dashboard/products': typeof DashboardProductsRoute
+  '/dashboard/products': typeof DashboardProductsRouteWithChildren
   '/dashboard/rentals': typeof DashboardRentalsRoute
+  '/dashboard/reviews': typeof DashboardReviewsRoute
+  '/dashboard/settings': typeof DashboardSettingsRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
   '/product/$slug': typeof ProductSlugRoute
   '/rentals/$rentalId': typeof RentalsRentalIdRoute
   '/seller/$id': typeof SellerIdRoute
   '/categories': typeof CategoriesIndexRoute
   '/dashboard': typeof DashboardIndexRoute
+  '/dashboard/products/new': typeof DashboardProductsNewRoute
+  '/dashboard/products/$productId/edit': typeof DashboardProductsProductIdEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -264,17 +313,23 @@ export interface FileRoutesById {
   '/_auth/login': typeof AuthLoginRoute
   '/_auth/register': typeof AuthRegisterRoute
   '/categories/$categorySlug': typeof CategoriesCategorySlugRoute
+  '/dashboard/analytics': typeof DashboardAnalyticsRoute
+  '/dashboard/become-a-seller': typeof DashboardBecomeASellerRoute
   '/dashboard/earnings': typeof DashboardEarningsRoute
   '/dashboard/messages': typeof DashboardMessagesRoute
   '/dashboard/orders': typeof DashboardOrdersRoute
-  '/dashboard/products': typeof DashboardProductsRoute
+  '/dashboard/products': typeof DashboardProductsRouteWithChildren
   '/dashboard/rentals': typeof DashboardRentalsRoute
+  '/dashboard/reviews': typeof DashboardReviewsRoute
+  '/dashboard/settings': typeof DashboardSettingsRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
   '/product/$slug': typeof ProductSlugRoute
   '/rentals/$rentalId': typeof RentalsRentalIdRoute
   '/seller/$id': typeof SellerIdRoute
   '/categories/': typeof CategoriesIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/dashboard/products/new': typeof DashboardProductsNewRoute
+  '/dashboard/products/$productId/edit': typeof DashboardProductsProductIdEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -296,17 +351,23 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/categories/$categorySlug'
+    | '/dashboard/analytics'
+    | '/dashboard/become-a-seller'
     | '/dashboard/earnings'
     | '/dashboard/messages'
     | '/dashboard/orders'
     | '/dashboard/products'
     | '/dashboard/rentals'
+    | '/dashboard/reviews'
+    | '/dashboard/settings'
     | '/orders/$orderId'
     | '/product/$slug'
     | '/rentals/$rentalId'
     | '/seller/$id'
     | '/categories/'
     | '/dashboard/'
+    | '/dashboard/products/new'
+    | '/dashboard/products/$productId/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -326,17 +387,23 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/categories/$categorySlug'
+    | '/dashboard/analytics'
+    | '/dashboard/become-a-seller'
     | '/dashboard/earnings'
     | '/dashboard/messages'
     | '/dashboard/orders'
     | '/dashboard/products'
     | '/dashboard/rentals'
+    | '/dashboard/reviews'
+    | '/dashboard/settings'
     | '/orders/$orderId'
     | '/product/$slug'
     | '/rentals/$rentalId'
     | '/seller/$id'
     | '/categories'
     | '/dashboard'
+    | '/dashboard/products/new'
+    | '/dashboard/products/$productId/edit'
   id:
     | '__root__'
     | '/'
@@ -357,17 +424,23 @@ export interface FileRouteTypes {
     | '/_auth/login'
     | '/_auth/register'
     | '/categories/$categorySlug'
+    | '/dashboard/analytics'
+    | '/dashboard/become-a-seller'
     | '/dashboard/earnings'
     | '/dashboard/messages'
     | '/dashboard/orders'
     | '/dashboard/products'
     | '/dashboard/rentals'
+    | '/dashboard/reviews'
+    | '/dashboard/settings'
     | '/orders/$orderId'
     | '/product/$slug'
     | '/rentals/$rentalId'
     | '/seller/$id'
     | '/categories/'
     | '/dashboard/'
+    | '/dashboard/products/new'
+    | '/dashboard/products/$productId/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -387,11 +460,15 @@ export interface RootRouteChildren {
   ProfileRoute: typeof ProfileRoute
   RentalsRoute: typeof RentalsRouteWithChildren
   CategoriesCategorySlugRoute: typeof CategoriesCategorySlugRoute
+  DashboardAnalyticsRoute: typeof DashboardAnalyticsRoute
+  DashboardBecomeASellerRoute: typeof DashboardBecomeASellerRoute
   DashboardEarningsRoute: typeof DashboardEarningsRoute
   DashboardMessagesRoute: typeof DashboardMessagesRoute
   DashboardOrdersRoute: typeof DashboardOrdersRoute
-  DashboardProductsRoute: typeof DashboardProductsRoute
+  DashboardProductsRoute: typeof DashboardProductsRouteWithChildren
   DashboardRentalsRoute: typeof DashboardRentalsRoute
+  DashboardReviewsRoute: typeof DashboardReviewsRoute
+  DashboardSettingsRoute: typeof DashboardSettingsRoute
   ProductSlugRoute: typeof ProductSlugRoute
   SellerIdRoute: typeof SellerIdRoute
   CategoriesIndexRoute: typeof CategoriesIndexRoute
@@ -540,6 +617,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard/analytics': {
+      id: '/dashboard/analytics'
+      path: '/dashboard/analytics'
+      fullPath: '/dashboard/analytics'
+      preLoaderRoute: typeof DashboardAnalyticsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/become-a-seller': {
+      id: '/dashboard/become-a-seller'
+      path: '/dashboard/become-a-seller'
+      fullPath: '/dashboard/become-a-seller'
+      preLoaderRoute: typeof DashboardBecomeASellerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard/earnings': {
       id: '/dashboard/earnings'
       path: '/dashboard/earnings'
@@ -575,6 +666,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRentalsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard/reviews': {
+      id: '/dashboard/reviews'
+      path: '/dashboard/reviews'
+      fullPath: '/dashboard/reviews'
+      preLoaderRoute: typeof DashboardReviewsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/settings': {
+      id: '/dashboard/settings'
+      path: '/dashboard/settings'
+      fullPath: '/dashboard/settings'
+      preLoaderRoute: typeof DashboardSettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/orders/$orderId': {
       id: '/orders/$orderId'
       path: '/$orderId'
@@ -602,6 +707,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/seller/$id'
       preLoaderRoute: typeof SellerIdRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/products/new': {
+      id: '/dashboard/products/new'
+      path: '/new'
+      fullPath: '/dashboard/products/new'
+      preLoaderRoute: typeof DashboardProductsNewRouteImport
+      parentRoute: typeof DashboardProductsRoute
+    }
+    '/dashboard/products/$productId/edit': {
+      id: '/dashboard/products/$productId/edit'
+      path: '/$productId/edit'
+      fullPath: '/dashboard/products/$productId/edit'
+      preLoaderRoute: typeof DashboardProductsProductIdEditRouteImport
+      parentRoute: typeof DashboardProductsRoute
     }
   }
 }
@@ -640,6 +759,19 @@ const RentalsRouteChildren: RentalsRouteChildren = {
 const RentalsRouteWithChildren =
   RentalsRoute._addFileChildren(RentalsRouteChildren)
 
+interface DashboardProductsRouteChildren {
+  DashboardProductsNewRoute: typeof DashboardProductsNewRoute
+  DashboardProductsProductIdEditRoute: typeof DashboardProductsProductIdEditRoute
+}
+
+const DashboardProductsRouteChildren: DashboardProductsRouteChildren = {
+  DashboardProductsNewRoute: DashboardProductsNewRoute,
+  DashboardProductsProductIdEditRoute: DashboardProductsProductIdEditRoute,
+}
+
+const DashboardProductsRouteWithChildren =
+  DashboardProductsRoute._addFileChildren(DashboardProductsRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRouteWithChildren,
@@ -657,11 +789,15 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileRoute: ProfileRoute,
   RentalsRoute: RentalsRouteWithChildren,
   CategoriesCategorySlugRoute: CategoriesCategorySlugRoute,
+  DashboardAnalyticsRoute: DashboardAnalyticsRoute,
+  DashboardBecomeASellerRoute: DashboardBecomeASellerRoute,
   DashboardEarningsRoute: DashboardEarningsRoute,
   DashboardMessagesRoute: DashboardMessagesRoute,
   DashboardOrdersRoute: DashboardOrdersRoute,
-  DashboardProductsRoute: DashboardProductsRoute,
+  DashboardProductsRoute: DashboardProductsRouteWithChildren,
   DashboardRentalsRoute: DashboardRentalsRoute,
+  DashboardReviewsRoute: DashboardReviewsRoute,
+  DashboardSettingsRoute: DashboardSettingsRoute,
   ProductSlugRoute: ProductSlugRoute,
   SellerIdRoute: SellerIdRoute,
   CategoriesIndexRoute: CategoriesIndexRoute,

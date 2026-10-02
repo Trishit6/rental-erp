@@ -44,7 +44,7 @@ export function MobileFavoritesToolbar({
         type="button"
         onClick={() => onOpenChange(true)}
         aria-label={`Filters and sort${activeCount > 0 ? `, ${activeCount} active` : ""}`}
-        className="floating-dock fixed bottom-5 left-5 z-40 flex items-center gap-2 rounded-full px-4 py-3 text-sm font-bold text-foreground shadow-lg lg:hidden"
+        className="floating-dock fixed bottom-5 left-5 z-[var(--layer-floating)] flex items-center gap-2 rounded-full px-4 py-3 text-sm font-bold text-foreground shadow-lg lg:hidden"
       >
         <SlidersHorizontal size={16} aria-hidden className="text-primary" />
         Filters

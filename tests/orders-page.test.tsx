@@ -201,6 +201,18 @@ describe("search, filter and sort drive the URL", () => {
     expect(navigateMock.mock.calls.at(-1)![0].search.status).toBeUndefined();
   });
 
+  it("gives the two filter rails distinct accessible names", async () => {
+    renderPage();
+    await screen.findByText("Sony Headphones");
+
+    // Both rails offer "Delivered". If they shared one accessible name, a screen
+    // reader (or any role+name query) could not say which pill it is on.
+    expect(screen.getByRole("button", { name: "Delivered" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Filter orders: Delivered" }),
+    ).toBeInTheDocument();
+  });
+
   it("keeps the sort when filters are cleared", async () => {
     const user = userEvent.setup();
     searchState.current = { status: "DELIVERED", sort: "total_desc" };

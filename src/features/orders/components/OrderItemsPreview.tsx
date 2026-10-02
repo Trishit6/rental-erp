@@ -1,4 +1,4 @@
-import { Package } from "lucide-react";
+import { ProductImage } from "@/components/shared/product-image";
 import { cn } from "@/lib/utils/cn";
 import type { OrderPreview } from "../types";
 
@@ -24,16 +24,7 @@ export function OrderItemsPreview({
   return (
     <div className={cn("flex min-w-0 items-center gap-3", className)}>
       <span className="raised-surface flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl">
-        {preview?.imageUrl ? (
-          <img
-            src={preview.imageUrl}
-            alt=""
-            loading="lazy"
-            className="size-full object-cover"
-          />
-        ) : (
-          <Package size={20} className="text-muted-foreground" aria-hidden="true" />
-        )}
+        <ProductImage src={preview?.imageUrl} alt="" />
       </span>
 
       <span className="min-w-0 flex-1">

@@ -1,5 +1,5 @@
 import { createCollection, localOnlyCollectionOptions } from "@tanstack/db";
-import { categoryCollectionSchema, orderCollectionSchema, orderItemCollectionSchema, productCollectionSchema, rentalCollectionSchema } from "./schemas";
+import { categoryCollectionSchema, orderCollectionSchema, orderItemCollectionSchema, productCollectionSchema, rentalCollectionSchema, reviewCollectionSchema, sellerProductCollectionSchema } from "./schemas";
 
 /**
  * The client-side reactive store.
@@ -22,6 +22,8 @@ export type OrderItemCollection = ReturnType<typeof createOrderItemsCollection>;
 export type RentalCollection = ReturnType<typeof createRentalsCollection>;
 export type ProductCollection = ReturnType<typeof createProductsCollection>;
 export type CategoryCollection = ReturnType<typeof createCategoriesCollection>;
+export type ReviewCollection = ReturnType<typeof createReviewsCollection>;
+export type SellerProductCollection = ReturnType<typeof createSellerProductsCollection>;
 
 /** Public order history, synced from the `/orders` list responses. */
 export function createOrdersCollection() {
@@ -78,12 +80,50 @@ export function createCategoriesCollection() {
   );
 }
 
+/**
+ * Public reviews, seen by any product page the visitor has opened.
+ *
+ * Deliberately *not* a private collection: these rows are public content the
+ * API serves to guests, so they survive logout exactly as products and
+ * categories do. It holds only the fields a card renders — never the reviewer's
+ * user id, order line, or anything else about the transaction.
+ */
+export function createReviewsCollection() {
+  return createCollection(
+    localOnlyCollectionOptions({
+      id: "reviews",
+      getKey: (row) => row.id,
+      schema: reviewCollectionSchema,
+    }),
+  );
+}
+
+/**
+ * The signed-in seller's own listings.
+ *
+ * The one **private** product collection: `products` below holds public rows
+ * that any visitor could fetch for themselves, whereas these are the seller's
+ * own stock and earnings. It is therefore wiped by `clearPrivateCollections` on
+ * logout rather than surviving like the catalogue does.
+ */
+export function createSellerProductsCollection() {
+  return createCollection(
+    localOnlyCollectionOptions({
+      id: "seller-products",
+      getKey: (row) => row.id,
+      schema: sellerProductCollectionSchema,
+    }),
+  );
+}
+
 export type RevaroCollections = {
   orders: OrderCollection;
   orderItems: OrderItemCollection;
   rentals: RentalCollection;
   products: ProductCollection;
   categories: CategoryCollection;
+  reviews: ReviewCollection;
+  sellerProducts: SellerProductCollection;
 };
 
 /**
@@ -103,6 +143,8 @@ export function getCollections(): RevaroCollections {
       rentals: createRentalsCollection(),
       products: createProductsCollection(),
       categories: createCategoriesCollection(),
+      reviews: createReviewsCollection(),
+      sellerProducts: createSellerProductsCollection(),
     };
   }
   return collections;

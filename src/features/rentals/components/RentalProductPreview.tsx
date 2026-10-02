@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Package } from "lucide-react";
+import { ProductImage } from "@/components/shared/product-image";
 import { cn } from "@/lib/utils/cn";
 import type { Rental } from "../types";
 
@@ -31,15 +31,7 @@ export function RentalProductPreview({
         size === "lg" ? "size-24 rounded-3xl" : "size-16 rounded-2xl",
       )}
     >
-      {image ? (
-        <img src={image} alt="" loading="lazy" className="size-full object-cover" />
-      ) : (
-        <Package
-          size={size === "lg" ? 28 : 20}
-          className="text-muted-foreground"
-          aria-hidden="true"
-        />
-      )}
+      <ProductImage src={image} alt="" />
     </span>
   );
 

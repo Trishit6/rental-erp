@@ -1,13 +1,11 @@
 import { api } from "@/lib/api/client";
-import type { Category, MarketplaceStats, ProductCardData } from "@/lib/types";
+import type { MarketplaceStats, ProductCardData } from "@/lib/types";
 
 export async function getStats(): Promise<MarketplaceStats> {
   return (await api.get<MarketplaceStats>("/stats")).data;
 }
 
-export async function getCategories(): Promise<Category[]> {
-  return (await api.get<Category[]>("/categories")).data;
-}
+/** The category directory lives in `src/lib/categories.ts` — see the note there. */
 
 export async function getFeaturedProducts(): Promise<ProductCardData[]> {
   return (await api.get<ProductCardData[]>("/products?sort=recommended&pageSize=8")).data;

@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { format } from "date-fns";
 import { Calendar, RotateCcw } from "lucide-react";
 import { formatInr } from "@/lib/pricing";
+import { ProductImage } from "@/components/shared/product-image";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -50,10 +51,10 @@ export function DashboardRentalsPage() {
               <h2 className="font-heading text-lg font-extrabold">{section.label}</h2>
               {grouped[section.key].map((rental) => (
                 <Card key={rental.id} className="flex flex-wrap items-center gap-4 p-4">
-                  <img
-                    src={rental.primaryImage ?? ""}
+                  <ProductImage
+                    src={rental.primaryImage}
                     alt=""
-                    className="size-16 rounded-2xl object-cover"
+                    className="size-16 rounded-2xl"
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">

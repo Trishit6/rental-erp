@@ -36,7 +36,13 @@ export function CategoriesSection({ categories }: { categories?: Category[] }) {
             <motion.div
               key={category.id}
               whileHover={{ y: -4 }}
-              transition={{ duration: 0.18, ease: "easeOut" }}
+              // Capped stagger: the rail settles in quickly instead of the last
+              // tile waiting half a second for its turn.
+              transition={{
+                duration: 0.18,
+                ease: "easeOut",
+                delay: Math.min(index, 6) * 0.03,
+              }}
             >
               <Link
                 to="/browse"

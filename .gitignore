@@ -7,3 +7,4 @@ dist
 
 # Development storage adapter (server/lib/storage/dev.ts) writes real uploads here.
 server/uploads
+.aider*

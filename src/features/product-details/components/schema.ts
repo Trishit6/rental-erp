@@ -1,18 +1,12 @@
 import { z } from "zod";
 import { format } from "date-fns";
 import { formatInr } from "@/lib/pricing";
-import {
-  CONDITION_LABELS,
-  isPubliclyVisible,
-  LISTING_MODE_LABELS,
-  type ReviewItem,
-} from "@/lib/types";
+import { CONDITION_LABELS, isPubliclyVisible, LISTING_MODE_LABELS } from "@/lib/types";
 import type {
   AddToCartInput,
   ListingMode,
   ProductAction,
   ProductDetails,
-  ProductReviewSummary,
   ProductSpecification,
   RentalOption,
   StockState,
@@ -311,30 +305,23 @@ export function productSpecifications(product: ProductDetails): ProductSpecifica
   return rows;
 }
 
-/** Rating summary; the distribution is computed from real reviews only. */
-export function reviewSummary(
-  product: Pick<ProductDetails, "ratingAverage" | "ratingCount">,
-  reviews: ReviewItem[] = [],
-): ProductReviewSummary {
-  const buckets = [5, 4, 3, 2, 1].map((stars) => ({
-    stars,
-    count: reviews.filter((review) => Math.round(review.rating) === stars).length,
-  }));
-  const total = buckets.reduce((sum, bucket) => sum + bucket.count, 0);
-
-  const average =
-    product.ratingCount > 0
-      ? product.ratingAverage
-      : total > 0
-        ? reviews.reduce((sum, review) => sum + review.rating, 0) / total
-        : 0;
-
+/**
+ * The rating shown in the page header.
+ *
+ * Read straight off the product row — the same cached `ratingAverage` /
+ * `ratingCount` the card badge shows — rather than being recomputed from whatever
+ * page of reviews happens to be loaded. The full aggregate, with its
+ * distribution, is computed in SQL by `server/lib/rating-aggregate.ts` and rendered
+ * by the reviews feature; this is only the one-line summary that sits beside the
+ * title, and recomputing it here would be a second source of truth for a number
+ * the database already stores.
+ */
+export function headerRatingSummary(product: Pick<ProductDetails, "ratingAverage" | "ratingCount">): {
+  average: number;
+  count: number;
+} {
   return {
-    average,
-    count: product.ratingCount || total,
-    distribution: buckets.map((bucket) => ({
-      ...bucket,
-      share: total > 0 ? bucket.count / total : 0,
-    })),
+    average: product.ratingCount > 0 ? product.ratingAverage : 0,
+    count: product.ratingCount,
   };
 }

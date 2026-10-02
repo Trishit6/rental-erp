@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { MessageCircle, X } from "lucide-react";
+import { Tooltip } from "@/components/ui/tooltip";
+import { FloatingSlotContent } from "@/lib/floating/rail";
 import { useChatbot } from "./query";
 import { ChatPanel } from "./components/ChatPanel";
 
@@ -8,18 +10,16 @@ import { ChatPanel } from "./components/ChatPanel";
  * Global floating assistant. Mounted once in the root layout so it's available on
  * every page.
  *
- * Positioning contract (kept deliberately explicit):
- *  - launcher: bottom-RIGHT (`bottom-5 right-5`) — the "assistant" corner;
- *  - GoToTop (`components/shared/GoToTop.tsx`) sits at `bottom-[104px] right-5`,
- *    stacked directly above this button, so the two never overlap;
- *  - the home page's FloatingActions dock also lives bottom-right but is a
- *    vertical column rising from the same corner with `z-40` — the launcher
- *    clears it because the dock ends ~76px above the corner, and the panel
- *    opens to the left of the corner on desktop rather than over the dock.
+ * Positioning is no longer this component's business: it claims the `chat` slot
+ * of the shared floating rail (bottom-right, the lowest control), and the rail
+ * publishes its own height so the chat panel can clear it. The launcher used to
+ * hard-code `bottom-5 right-5` — the exact corner the home dock also used, which
+ * is why the two sat on top of each other on the home page.
  */
 export function Chatbot() {
   const [open, setOpen] = useState(false);
   const chatbot = useChatbot();
+  const reduceMotion = useReducedMotion();
 
   // Escape closes the panel.
   useEffect(() => {
@@ -31,23 +31,19 @@ export function Chatbot() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
-  return (
-    <>
-      <AnimatePresence>
-        {open && <ChatPanel chatbot={chatbot} onClose={() => setOpen(false)} />}
-      </AnimatePresence>
-
+  const launcher = (
+    <Tooltip label="Revaro assistant" side="left">
       <motion.button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        aria-label={open ? "Close assistant" : "Open the Revaro assistant"}
+        aria-label={open ? "Close Revaro assistant" : "Open Revaro assistant"}
         aria-expanded={open}
-        initial={{ opacity: 0, scale: 0.6 }}
+        initial={reduceMotion ? false : { opacity: 0, scale: 0.6 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: 0.4, duration: 0.25, ease: "easeOut" }}
         whileHover={{ y: -3 }}
         whileTap={{ scale: 0.92 }}
-        className="primary-button fixed bottom-5 right-5 z-50 flex size-14 items-center justify-center rounded-full text-primary-foreground sm:bottom-7 sm:right-7"
+        className="primary-button relative flex size-14 items-center justify-center rounded-full text-primary-foreground"
       >
         <AnimatePresence mode="wait" initial={false}>
           <motion.span
@@ -61,9 +57,26 @@ export function Chatbot() {
           </motion.span>
         </AnimatePresence>
         {!open && (
-          <span className="absolute -right-0.5 -top-0.5 size-3.5 rounded-full bg-emerald-500 ring-2 ring-[var(--color-background)]" />
+          // The availability dot. Inset onto the button and ringed in the page
+          // background so it reads as attached to the launcher rather than
+          // floating above it, and marked decorative — the launcher's label
+          // already carries the meaning for assistive tech.
+          <span
+            className="absolute right-1 top-1 size-3 rounded-full bg-emerald-500 ring-2 ring-[var(--color-background)]"
+            aria-hidden
+          />
         )}
       </motion.button>
+    </Tooltip>
+  );
+
+  return (
+    <>
+      <AnimatePresence>
+        {open && <ChatPanel chatbot={chatbot} onClose={() => setOpen(false)} />}
+      </AnimatePresence>
+
+      <FloatingSlotContent slot="chat">{launcher}</FloatingSlotContent>
     </>
   );
 }

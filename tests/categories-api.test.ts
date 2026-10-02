@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "@/lib/api/client";
+import { fetchCategories } from "../src/lib/categories";
 import {
-  getCategories,
   getCategoryBySlug,
   getCategoryProducts,
   getFeaturedCategories,
@@ -25,7 +25,7 @@ beforeEach(() => {
 describe("category list requests", () => {
   it("reads the whole active taxonomy from /categories", async () => {
     respondWith([makeCategory()]);
-    await expect(getCategories()).resolves.toHaveLength(1);
+    await expect(fetchCategories()).resolves.toHaveLength(1);
     expect(api.get).toHaveBeenCalledWith("/categories");
   });
 

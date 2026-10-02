@@ -6,6 +6,7 @@ import { useState } from "react";
 import type { MarketplaceStats } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ImagePlaceholder } from "@/components/shared/product-image";
 import { HeroSearch } from "./HeroSearch";
 import { TrustPoint } from "./TrustPoint";
 import { HERO_SLIDES, useHeroSlides, useHeroSwipe } from "./schema";
@@ -56,9 +57,19 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
     prefersReducedMotion,
   );
   const swipe = useHeroSwipe(next, previous);
-  const [imageFailed, setImageFailed] = useState(false);
 
   const slide = slides[index] ?? slides[0];
+
+  const [image, setImage] = useState({ id: slide.id, failed: false, ready: false });
+
+  // A new slide is a new image. Resetting during render rather than in an effect
+  // keeps the swap to one render, and guarantees slide 2 can never inherit slide
+  // 1's failure and render a placeholder for the rest of its time on screen.
+  if (image.id !== slide.id) {
+    setImage({ id: slide.id, failed: false, ready: false });
+  }
+  const imageFailed = image.failed;
+  const imageReady = image.ready;
 
   // Preload the next slide's image during idle time, so a transition never
   // waits on the network. One image ahead — not the whole deck.
@@ -170,26 +181,32 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
             aria-roledescription="slide"
             aria-label={`${index + 1} of ${slides.length}`}
           >
-            {/* Fixed aspect box: no layout shift as slides change. */}
+            {/* Fixed aspect box: no layout shift as slides change, and a slide
+                whose image fails leaves the same box behind. */}
             <div className="aspect-[4/3] w-full bg-[var(--inset-bg)]">
               {imageFailed ? (
-                <div className="flex h-full w-full items-center justify-center">
-                  <Star size={40} className="text-primary/40" aria-hidden />
-                </div>
+                /* Deliberately *not* `slide.imageAlt`: the placeholder is a
+                   status, and the alt text is a description — showing the
+                   description would be alt text painted into the page. */
+                <ImagePlaceholder />
               ) : (
                 <AnimatePresence mode="wait" initial={false}>
+                  {/* Skeleton until the bytes land, so the box is never an empty
+                      hole waiting on the network. */}
+                  {!imageReady && <ImagePlaceholder loading className="absolute inset-0" />}
                   <motion.img
                     key={slide.id}
                     src={slide.image}
                     alt={slide.imageAlt}
                     loading={index === 0 ? "eager" : "lazy"}
                     decoding="async"
-                    onError={() => setImageFailed(true)}
+                    onLoad={() => setImage((current) => ({ ...current, ready: true }))}
+                    onError={() => setImage((current) => ({ ...current, failed: true }))}
                     initial={prefersReducedMotion ? false : { opacity: 0, scale: 1.02 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={prefersReducedMotion ? undefined : { opacity: 0 }}
                     transition={{ duration: 0.4, ease: "easeOut" }}
-                    className="h-full w-full object-cover"
+                    className="relative h-full w-full object-cover"
                   />
                 </AnimatePresence>
               )}

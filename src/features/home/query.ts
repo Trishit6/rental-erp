@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { useCategoryDirectory } from "@/lib/categories";
 import {
-  getCategories,
   getFeaturedProducts,
   getPreLovedProducts,
   getRentalProducts,
@@ -24,13 +24,8 @@ export function useMarketplaceStats() {
   return useQuery({ queryKey: homeKeys.stats(), queryFn: getStats, staleTime: PUBLIC_STALE_TIME });
 }
 
-export function useHomeCategories() {
-  return useQuery({
-    queryKey: homeKeys.categories(),
-    queryFn: getCategories,
-    staleTime: 10 * 60_000,
-  });
-}
+/** Delegates to the shared category directory; see `src/lib/categories.ts`. */
+export const useHomeCategories = useCategoryDirectory;
 
 export function useFeaturedProducts() {
   return useQuery({

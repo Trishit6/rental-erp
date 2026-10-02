@@ -38,7 +38,7 @@ export function Sheet({
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.18 }}
-                  className="fixed inset-0 z-[60] bg-black/45 backdrop-blur-[2px]"
+                  className="fixed inset-0 z-[var(--layer-overlay)] bg-black/45 backdrop-blur-[2px]"
                 />
               </Dialog.Overlay>
 
@@ -49,7 +49,7 @@ export function Sheet({
                   exit={{ y: "100%" }}
                   transition={{ type: "spring", damping: 30, stiffness: 320 }}
                   className={cn(
-                    "fixed inset-x-0 bottom-0 z-[70] flex max-h-[88vh] flex-col rounded-t-[28px] border-t border-[var(--raised-border)] bg-[var(--color-background)] shadow-[0_-12px_40px_var(--shadow-color-dark)] outline-none",
+                    "sheet-surface fixed inset-x-0 bottom-0 z-[var(--layer-drawer)] flex max-h-[88vh] flex-col rounded-t-[28px] outline-none",
                     className,
                   )}
                 >

@@ -2,28 +2,41 @@ import { createRootRouteWithContext, Link, Outlet } from "@tanstack/react-router
 import { SiteFooter } from "@/components/layout/site-footer";
 import { SiteHeader } from "@/components/layout/site-header";
 import { GoToTop } from "@/components/shared/GoToTop";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { Chatbot } from "@/features/chatbot";
 import { CartDrawerHost, CartDrawerProvider } from "@/features/cart";
 import type { AuthUser } from "@/lib/auth/auth-context";
+import { FloatingRail, FloatingRailProvider } from "@/lib/floating/rail";
 import type { QueryClient } from "@tanstack/react-query";
 
 type RouterContext = { user: AuthUser | null; queryClient: QueryClient };
 
 export function RootLayout() {
   return (
-    // The cart drawer's open state is shared by the navbar, the floating dock and
-    // the moment after any add-to-cart, so it is owned once, here, above the routes.
+    // Two providers wrap the whole app, in this order:
+    //  - the cart drawer's open state is shared by the navbar, the floating dock
+    //    and the moment after any add-to-cart;
+    //  - the floating rail must sit *above* the routes as well as above the
+    //    controls, because a control can claim a slot from inside any route.
+    // Both are above the tree on purpose; neither belongs to one page.
     <CartDrawerProvider>
-      <div className="min-h-screen">
-        <SiteHeader />
-        <main>
-          <Outlet />
-        </main>
-        <SiteFooter />
-        <GoToTop />
-        <Chatbot />
-        <CartDrawerHost />
-      </div>
+      <FloatingRailProvider>
+        <TooltipProvider>
+          <div className="min-h-screen">
+            <SiteHeader />
+            <main>
+              <Outlet />
+            </main>
+            <SiteFooter />
+            {/* One fixed column owns the bottom-right corner. Controls render
+                into it from wherever they are declared. */}
+            <FloatingRail />
+            <GoToTop />
+            <Chatbot />
+            <CartDrawerHost />
+          </div>
+        </TooltipProvider>
+      </FloatingRailProvider>
     </CartDrawerProvider>
   );
 }

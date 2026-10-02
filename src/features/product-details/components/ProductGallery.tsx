@@ -274,7 +274,7 @@ function ImageViewer({
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.18 }}
-                  className="fixed inset-0 z-[80] bg-black/80 backdrop-blur-sm"
+                  className="fixed inset-0 z-[var(--layer-modal)] bg-black/80 backdrop-blur-sm"
                 />
               </Dialog.Overlay>
               <Dialog.Content
@@ -291,7 +291,7 @@ function ImageViewer({
                   animate={{ opacity: 1, scale: 1 }}
                   exit={reduceMotion ? undefined : { opacity: 0, scale: 0.97 }}
                   transition={{ duration: 0.2, ease: "easeOut" }}
-                  className="fixed inset-0 z-[90] flex items-center justify-center p-4 outline-none"
+                  className="fixed inset-0 z-[var(--layer-lightbox)] flex items-center justify-center p-4 outline-none"
                 >
                   <Dialog.Title className="sr-only">Product image viewer</Dialog.Title>
 

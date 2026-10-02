@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ArrowUp, Trash2 } from "lucide-react";
+import { useReducedMotion } from "framer-motion";
+import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Pagination } from "@/components/shared/pagination";
-import { Button } from "@/components/ui/button";
 import { useClearFavorites, useFavoriteIds, useFavoriteMutation } from "@/lib/query/favorites";
 import { cn } from "@/lib/utils/cn";
 import { FavoritesErrorState } from "./components/FavoritesErrorState";
@@ -222,43 +221,7 @@ export function FavoritesPage() {
         }}
       />
 
-      <BackToTop />
     </div>
   );
 }
 
-/** Appears only once the user is deep enough into the list for it to help. */
-function BackToTop() {
-  const reduceMotion = useReducedMotion();
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const onScroll = () => setVisible(window.scrollY > 480);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  return (
-    <AnimatePresence>
-      {visible && (
-        <motion.div
-          initial={reduceMotion ? false : { opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={reduceMotion ? undefined : { opacity: 0, y: 10 }}
-          transition={{ duration: 0.2, ease: "easeOut" }}
-          className="fixed bottom-24 right-5 z-30 hidden lg:block"
-        >
-          <Button
-            variant="secondary"
-            size="icon"
-            aria-label="Back to top"
-            onClick={() => window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" })}
-          >
-            <ArrowUp size={16} aria-hidden />
-          </Button>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}

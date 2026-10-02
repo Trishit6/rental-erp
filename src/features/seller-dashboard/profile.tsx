@@ -7,25 +7,28 @@ import type { ProductCardData } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { ProductGrid } from "@/components/shared/product-grid";
+import { usePublicSeller } from "./query";
 
-type SellerProfile = {
-  id: number;
-  name: string;
-  avatarUrl: string | null;
-  verified: boolean;
-  bio: string | null;
-  listingCount: number;
-  ratingAverage: number;
-  ratingCount: number;
-};
-
+/**
+ * A seller's public shopfront — `/seller/$id`.
+ *
+ * ## It reads `/api/sellers/:id`, not `/api/seller/profile/:id`
+ *
+ * That read used to live inside the router that every seller-management endpoint
+ * now gates on a role check. It worked only because that router gated on
+ * `requireUser`, i.e. it did not gate at all — so the moment the seller API
+ * started checking roles (which it has to, or "a customer must not reach /seller"
+ * is enforced only by a hidden button) a *stranger's* shopfront would have
+ * started returning 403.
+ *
+ * Moving it to its own prefix makes the absence of a guard a decision visible in
+ * the route tree rather than a property of one handler. See `server/routes/sellers.ts`.
+ */
 export function SellerPage() {
   const { id } = useParams({ from: "/seller/$id" });
+  const sellerId = Number(id);
 
-  const { data: seller } = useQuery({
-    queryKey: queryKeys.seller(id),
-    queryFn: async () => (await api.get<SellerProfile>(`/seller/profile/${id}`)).data,
-  });
+  const { data: seller } = usePublicSeller(sellerId);
 
   const { data: products, isLoading } = useQuery({
     queryKey: queryKeys.products({ seller: id }),

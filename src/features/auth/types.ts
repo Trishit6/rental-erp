@@ -2,6 +2,21 @@
 export const AUTH_ROLES = ["USER", "SELLER", "ADMIN"] as const;
 export type AuthRole = (typeof AUTH_ROLES)[number];
 
+/**
+ * Roles that may open the seller workspace.
+ *
+ * Mirrors `SELLER_ROLES` in `server/lib/seller-access.ts`. It is duplicated
+ * rather than imported because the two live in different tsconfigs and the
+ * client must not reach server code; `tests/seller-access.test.ts` asserts the
+ * two agree, the same way the product-status vocabulary is kept honest in
+ * `tests/listing-status.test.ts`.
+ */
+export const CLIENT_SELLER_ROLES = ["SELLER", "ADMIN"] as const;
+
+export function isSellerRole(role: string | null | undefined): boolean {
+  return !!role && (CLIENT_SELLER_ROLES as readonly string[]).includes(role);
+}
+
 export type User = {
   id: number;
   name: string;

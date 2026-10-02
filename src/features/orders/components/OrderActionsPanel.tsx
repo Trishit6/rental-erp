@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion, useReducedMotion } from "framer-motion";
-import { Loader2, ShoppingCart } from "lucide-react";
+import { CalendarRange, Loader2, ShoppingBag, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,13 +17,13 @@ import { queryKeys } from "@/lib/query/keys";
 import { ApiError } from "@/lib/api/client";
 import { cancelOrder } from "../api";
 import { useOrderAgain } from "../query";
-import type { OrderDetail, OrderItem } from "../types";
+import type { OrderDetail, OrderItem, OrderRental } from "../types";
 import {
   CANCELLATION_REASON_OPTIONS,
   type CancellationReasonValue,
 } from "./schema";
 
-const CANCELLATION_REASONS: { value: CancellationReasonValue; label: string }[] =
+const CANCELLATION_REASONS: readonly { value: CancellationReasonValue; label: string }[] =
   CANCELLATION_REASON_OPTIONS;
 
 /**
@@ -37,10 +37,12 @@ const CANCELLATION_REASONS: { value: CancellationReasonValue; label: string }[] 
 export function OrderActionsPanel({
   order,
   items,
+  rentals,
   onOpenChange,
 }: {
   order: OrderDetail;
   items: OrderItem[];
+  rentals: OrderRental[];
   /** Opens the small "why" dialog; owned by the page so only one dialog shows. */
   onOpenChange?: (open: boolean) => void;
 }) {
@@ -121,7 +123,32 @@ export function OrderActionsPanel({
             {firstRepeatable.mode === "RENT" ? "Rent again" : "Buy again"}
           </Button>
         )}
+
+        {/* The per-line "View product" link lives on the item row itself, so only
+            the navigation that has no other home belongs here. */}
+        {rentals.length > 0 && (
+          <Button asChild variant="secondary">
+            <Link to="/rentals">
+              <CalendarRange size={14} aria-hidden="true" />
+              View my rentals
+            </Link>
+          </Button>
+        )}
+
+        <Button asChild variant="secondary">
+          <Link to="/browse">
+            <ShoppingBag size={14} aria-hidden="true" />
+            {order.status === "CANCELLED" ? "Browse similar items" : "Continue shopping"}
+          </Link>
+        </Button>
       </div>
+
+      {!firstRepeatable && (
+        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+          The products in this order are no longer listed, so buying them again is not
+          possible. Your order record is unaffected.
+        </p>
+      )}
 
       <Dialog open={cancelOpen} onOpenChange={closeDialog}>
         <DialogContent className="sm:max-w-md">

@@ -84,8 +84,8 @@ export function SiteHeader() {
 
   return (
     <header
-      className={`sticky top-0 z-30 border-b border-white/70 bg-background/90 backdrop-blur-xl transition-all duration-300 dark:border-white/5 ${
-        scrolled ? "shadow-[0_6px_24px_var(--shadow-color-dark)]" : ""
+      className={`sticky top-0 z-[var(--layer-header)] border-b border-white/70 bg-background/90 backdrop-blur-xl transition-all duration-300 dark:border-white/5 ${
+        scrolled ? "scrolled-header" : ""
       }`}
     >
       <div className="page-wrap flex h-[76px] items-center justify-between gap-5">
@@ -162,7 +162,7 @@ export function SiteHeader() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -6 }}
                       transition={{ duration: 0.18 }}
-                      className="raised-surface absolute right-0 top-12 z-50 max-h-96 w-80 overflow-y-auto rounded-2xl p-3"
+                      className="raised-surface absolute right-0 top-12 z-[var(--layer-panel)] max-h-96 w-80 overflow-y-auto rounded-2xl p-3"
                     >
                       <div className="flex items-center justify-between px-2 pb-2">
                         <span className="text-sm font-extrabold">Notifications</span>

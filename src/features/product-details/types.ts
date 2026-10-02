@@ -44,13 +44,6 @@ export type ProductAvailability = {
 /** Stock state the backend can actually justify. */
 export type StockState = "AVAILABLE" | "LIMITED" | "UNAVAILABLE" | "OUT_OF_STOCK";
 
-/** Aggregated rating for the review summary block. */
-export type ProductReviewSummary = {
-  average: number;
-  count: number;
-  distribution: { stars: number; count: number; share: number }[];
-};
-
 /** A single row of the specification table. */
 export type ProductSpecification = {
   label: string;

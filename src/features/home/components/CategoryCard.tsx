@@ -21,7 +21,7 @@ export function CategoryCard({
       <Link
         to="/browse"
         search={{ category: slug }}
-        className="raised-surface group flex min-w-[118px] flex-col items-center gap-3 rounded-2xl px-4 py-4 transition-shadow hover:shadow-[10px_10px_26px_var(--shadow-color-dark),-10px_-10px_26px_var(--shadow-color-light)]"
+        className="card-surface card-surface-hover group flex min-w-[118px] flex-col items-center gap-3 rounded-2xl px-4 py-4"
       >
         <motion.span
           className="inset-surface flex size-11 items-center justify-center rounded-full text-primary"

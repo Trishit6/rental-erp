@@ -1,35 +1,28 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Package, Plus, ShoppingCart } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useCartCount } from "@/lib/query/cart";
 import { useCartDrawer } from "@/lib/cart/drawer";
+import { FloatingSlotContent } from "@/lib/floating/rail";
+import { Tooltip } from "@/components/ui/tooltip";
 
-function DockLink({
-  to,
-  label,
-  children,
-}: {
-  to: string;
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <motion.div whileHover={{ y: -3 }} whileTap={{ scale: 0.94 }} transition={{ duration: 0.18 }}>
-      <Link
-        to={to}
-        aria-label={label}
-        title={label}
-        className="soft-button relative flex size-12 items-center justify-center rounded-full text-foreground transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-      >
-        {children}
-      </Link>
-    </motion.div>
-  );
-}
+/** Shared hover/tap response, so every control in the rail reacts identically. */
+const buttonMotion = {
+  whileHover: { y: -3 },
+  whileTap: { scale: 0.94 },
+  transition: { duration: 0.18 },
+};
 
 /**
  * Floating utility dock — high-value actions only.
+ *
+ * These are three slots in the shared floating rail rather than a pill of their
+ * own. The dock used to be `fixed bottom-5 right-5` — the same corner, at the
+ * same offset, as the assistant launcher — so on the home page the two sat on
+ * top of each other. Claiming slots means the rail decides where the cart, the
+ * browse link and the sell action sit relative to each other and to the
+ * assistant, and no three of them have to agree on a pixel value.
  *
  * The cart button opens the shared drawer rather than navigating, and its badge
  * is the shared cart count: the same number the navbar and the cart page show,
@@ -42,24 +35,15 @@ export function FloatingActions() {
   const { open: openCart } = useCartDrawer();
   const reduceMotion = useReducedMotion();
 
-  return (
-    <motion.nav
-      initial={reduceMotion ? false : { opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.6, duration: 0.3, ease: "easeOut" }}
-      aria-label="Quick actions"
-      className="floating-dock fixed bottom-5 right-5 z-40 flex flex-col items-center gap-2.5 rounded-full p-2.5 sm:bottom-7 sm:right-7"
-    >
+  const cart = (
+    <Tooltip label="Open cart" side="left">
       <motion.button
         type="button"
-        whileHover={{ y: -3 }}
-        whileTap={{ scale: 0.94 }}
-        transition={{ duration: 0.18 }}
+        {...buttonMotion}
         onClick={openCart}
         aria-label={
-          cartCount > 0 ? `Cart, ${cartCount} ${cartCount === 1 ? "item" : "items"}` : "Cart, empty"
+          cartCount > 0 ? `Open cart, ${cartCount} ${cartCount === 1 ? "item" : "items"}` : "Open cart"
         }
-        title="Cart"
         className="soft-button relative flex size-12 items-center justify-center rounded-full text-foreground transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
         <ShoppingCart size={18} aria-hidden />
@@ -78,23 +62,43 @@ export function FloatingActions() {
           )}
         </AnimatePresence>
       </motion.button>
+    </Tooltip>
+  );
 
-      <DockLink to="/browse" label="Browse listings">
-        <Package size={18} />
-      </DockLink>
+  const browse = (
+    <Tooltip label="Browse listings" side="left">
+      <motion.div {...buttonMotion}>
+        <Link
+          to="/browse"
+          aria-label="Browse listings"
+          className="soft-button flex size-12 items-center justify-center rounded-full text-foreground transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          <Package size={18} aria-hidden />
+        </Link>
+      </motion.div>
+    </Tooltip>
+  );
 
+  const sellLabel = user ? "Sell an item" : "Sign in to sell an item";
+  const sell = (
+    <Tooltip label={sellLabel} side="left">
       <motion.button
         type="button"
-        whileHover={{ y: -3 }}
-        whileTap={{ scale: 0.94 }}
-        transition={{ duration: 0.18 }}
+        {...buttonMotion}
         onClick={() => navigate({ to: user ? "/list" : "/login" })}
-        aria-label={user ? "Sell an item" : "Sign in to sell an item"}
-        title={user ? "Sell an item" : "Sign in to sell"}
+        aria-label={sellLabel}
         className="primary-button flex size-12 items-center justify-center rounded-full text-primary-foreground"
       >
-        <Plus size={20} />
+        <Plus size={20} aria-hidden />
       </motion.button>
-    </motion.nav>
+    </Tooltip>
+  );
+
+  return (
+    <>
+      <FloatingSlotContent slot="cart">{cart}</FloatingSlotContent>
+      <FloatingSlotContent slot="browse">{browse}</FloatingSlotContent>
+      <FloatingSlotContent slot="sell">{sell}</FloatingSlotContent>
+    </>
   );
 }

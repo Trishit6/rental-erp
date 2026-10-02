@@ -38,10 +38,11 @@ export function ChatPanel({ chatbot, onClose }: { chatbot: ChatbotState; onClose
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 24, scale: 0.97 }}
       transition={{ duration: 0.22, ease: "easeOut" }}
-      /* Mobile: a bottom sheet that never covers the whole viewport. Desktop:
-         anchored bottom-right beside the launcher, opening leftwards so it
-         cannot cover the floating dock. */
-      className="raised-surface fixed inset-x-3 bottom-3 z-50 flex h-[min(560px,72dvh)] flex-col overflow-hidden rounded-[26px] sm:inset-x-auto sm:bottom-24 sm:right-5 sm:w-[380px]"
+      /* Mobile: a bottom sheet that never covers the whole viewport. From `sm`
+         up it docks beside the rail and clears it via `--floating-rail-height`
+         (see `.chat-panel` in `styles.css`), so it cannot cover the launcher or
+         any other floating control. */
+      className="chat-panel raised-surface flex h-[min(560px,72dvh)] flex-col overflow-hidden rounded-[26px]"
     >
       {/* Header */}
       <header className="flex items-center gap-3 border-b border-[var(--divider)] px-4 py-3">

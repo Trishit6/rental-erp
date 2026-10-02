@@ -7,131 +7,15 @@ import {
   conversations,
   messages,
   notifications,
-  orderItems,
-  orders,
   products,
-  rentals,
-  reviews,
   users,
 } from "../schema";
 import { ok, HttpError } from "../lib/api";
 import { requireUser } from "../lib/auth";
 
-export const reviewsRoute = new Hono();
 export const messagesRoute = new Hono();
 export const notificationsRoute = new Hono();
 export const usersRoute = new Hono();
-
-/* --------------------------------- reviews --------------------------------- */
-
-const reviewSchema = z.object({
-  rating: z.number().int().min(1).max(5),
-  title: z.string().trim().max(120).optional(),
-  comment: z.string().trim().min(5).max(2000),
-  orderId: z.number().int().positive().optional(),
-  rentalId: z.number().int().positive().optional(),
-});
-
-const REVIEWABLE_ORDER_STATUSES = ["PAID", "PROCESSING", "SHIPPED", "DELIVERED", "COMPLETED"];
-
-reviewsRoute.get("/product/:id", async (c) => {
-  const productId = Number(c.req.param("id"));
-  const rows = await db
-    .select({
-      id: reviews.id,
-      rating: reviews.rating,
-      title: reviews.title,
-      comment: reviews.comment,
-      createdAt: reviews.createdAt,
-      userName: users.name,
-      userAvatar: users.avatarUrl,
-    })
-    .from(reviews)
-    .innerJoin(users, eq(reviews.userId, users.id))
-    .where(eq(reviews.productId, productId))
-    .orderBy(desc(reviews.createdAt));
-  return c.json(ok(rows));
-});
-
-reviewsRoute.post("/product/:id", async (c) => {
-  const user = requireUser(c);
-  const productId = Number(c.req.param("id"));
-  const input = reviewSchema.parse(await c.req.json());
-
-  const [product] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
-  if (!product) throw new HttpError(404, "NOT_FOUND", "Product not found.");
-
-  const [purchased] = await db
-    .select({ id: orderItems.id })
-    .from(orderItems)
-    .innerJoin(orders, eq(orderItems.orderId, orders.id))
-    .where(
-      and(
-        eq(orderItems.productId, productId),
-        eq(orders.userId, user.id),
-        inArray(orders.status, REVIEWABLE_ORDER_STATUSES),
-      ),
-    )
-    .limit(1);
-
-  const [rented] = await db
-    .select({ id: rentals.id })
-    .from(rentals)
-    .where(and(eq(rentals.productId, productId), eq(rentals.renterId, user.id)))
-    .limit(1);
-
-  if (!purchased && !rented) {
-    throw new HttpError(
-      403,
-      "REVIEW_NOT_ALLOWED",
-      "Only buyers or renters can review this product.",
-    );
-  }
-
-  try {
-    const [created] = await db.insert(reviews).values({
-      userId: user.id,
-      productId,
-      sellerId: product.sellerId,
-      orderId: input.orderId ?? null,
-      rentalId: input.rentalId ?? null,
-      rating: input.rating,
-      title: input.title ?? null,
-      comment: input.comment,
-    });
-
-    // Update product rating aggregate
-    const [agg] = await db
-      .select({
-        avg: sql<number>`AVG(${reviews.rating})`,
-        count: sql<number>`COUNT(*)`,
-      })
-      .from(reviews)
-      .where(eq(reviews.productId, productId));
-    await db
-      .update(products)
-      .set({
-        ratingAverage: Math.round(Number(agg.avg) * 10) / 10,
-        ratingCount: Number(agg.count),
-      })
-      .where(eq(products.id, productId));
-
-    await db.insert(notifications).values({
-      userId: product.sellerId,
-      type: "REVIEW_RECEIVED",
-      title: "New review received",
-      body: `${user.name} left a ${input.rating}-star review.`,
-      link: `/product/${product.slug}`,
-    });
-
-    return c.json(ok(created), 201);
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("Duplicate entry")) {
-      throw new HttpError(409, "DUPLICATE_REVIEW", "You have already reviewed this purchase.");
-    }
-    throw error;
-  }
-});
 
 /* --------------------------------- messages -------------------------------- */
 

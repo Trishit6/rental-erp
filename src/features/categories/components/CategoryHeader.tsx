@@ -1,4 +1,5 @@
 import { Loader2 } from "lucide-react";
+import { ProductImage } from "@/components/shared/product-image";
 import type { CategoryDetail } from "../types";
 import { CategoryIcon } from "./CategoryIcon";
 
@@ -24,19 +25,16 @@ export function CategoryHeader({
     <header className="raised-surface overflow-hidden rounded-3xl">
       <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:p-6">
         <div className="inset-surface shrink-0 rounded-2xl p-2">
-          {category.imageUrl ? (
-            <img
-              src={category.imageUrl}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              className="size-24 rounded-xl object-cover sm:size-28"
-            />
-          ) : (
-            <span className="flex size-24 items-center justify-center rounded-xl text-primary sm:size-28">
-              <CategoryIcon icon={category.icon} name={category.name} size={34} />
-            </span>
-          )}
+          <ProductImage
+            src={category.imageUrl}
+            alt=""
+            className="size-24 rounded-xl sm:size-28"
+            fallback={
+              <span className="flex size-24 items-center justify-center rounded-xl text-primary sm:size-28">
+                <CategoryIcon icon={category.icon} name={category.name} size={34} />
+              </span>
+            }
+          />
         </div>
 
         <div className="min-w-0 flex-1">

@@ -764,71 +764,9 @@ export const productInputSchema = z.object({
 
 export type ProductInput = z.infer<typeof productInputSchema>;
 
-export async function createProduct(sellerId: number, input: ProductInput) {
-  // Verify category exists
-  const [category] = await db
-    .select()
-    .from(categories)
-    .where(eq(categories.id, input.categoryId))
-    .limit(1);
-  if (!category) throw new HttpError(400, "BAD_REQUEST", "Category not found.");
-
-  if (input.listingType !== "SALE" && !input.rentalPricePerDay) {
-    throw new HttpError(400, "BAD_REQUEST", "Rental price per day is required for rentals.");
-  }
-  if (input.listingType !== "RENT" && !input.purchasePrice) {
-    throw new HttpError(400, "BAD_REQUEST", "Sale price is required for sale items.");
-  }
-
-  const slug = `${slugify(input.title)}-${Math.random().toString(36).slice(2, 8)}`;
-  const [created] = await db
-    .insert(products)
-    .values({
-      sellerId,
-      title: input.title,
-      slug,
-      description: input.description,
-      categoryId: input.categoryId,
-      brand: input.brand ?? null,
-      condition: input.condition,
-      listingType: input.listingType,
-      status: "PUBLISHED",
-      location: input.location,
-      latitude: input.latitude ?? null,
-      longitude: input.longitude ?? null,
-      purchasePrice: input.purchasePrice ?? null,
-      rentalPricePerDay: input.rentalPricePerDay ?? null,
-      rentalPricePerWeek: input.rentalPricePerWeek ?? null,
-      rentalPricePerMonth: input.rentalPricePerMonth ?? null,
-      securityDeposit: input.securityDeposit ?? null,
-      minimumRentalDays: input.minimumRentalDays ?? null,
-      maximumRentalDays: input.maximumRentalDays ?? null,
-      rentToOwnEnabled: input.rentToOwnEnabled,
-      rentToOwnPrice: input.rentToOwnPrice ?? null,
-      rentCreditPercentage: input.rentCreditPercentage ?? null,
-      rentCreditCap: input.rentCreditCap ?? null,
-      quantity: input.quantity,
-      availableQuantity: input.quantity,
-      allowsDelivery: input.allowsDelivery,
-      allowsPickup: input.allowsPickup,
-    })
-    .$returningId();
-  const productId = Number(created.id);
-
-  if (input.images.length) {
-    await db.insert(productImages).values(
-      input.images.map((url, index) => ({
-        productId,
-        url,
-        sortOrder: index,
-      })),
-    );
-  }
-  if (input.tags.length) {
-    await db
-      .insert(productTags)
-      .values(input.tags.map((tag) => ({ productId, tag: tag.toLowerCase() })));
-  }
-
-  return { ...created, id: productId, slug };
-}
+// Creation lives in `server/routes/seller.ts` (`createSellerProduct`), not here.
+// The seller writer is the only caller and it needs to do the product row, its
+// images and its tags in one transaction — which a function living in the public
+// products router could not do without this becoming a second way to make a
+// listing. The schema stays, because it is the field vocabulary both the writer
+// and the edit route validate against.

@@ -2,7 +2,8 @@ import { useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query/keys";
 import { productDetailQueryOptions } from "@/lib/query/products";
-import { getCategories, getProducts } from "./api";
+import { useCategoryDirectory } from "@/lib/categories";
+import { getProducts } from "./api";
 import type { BrowseFilters, ProductListResponse } from "./types";
 
 /* ---------------------------------- keys ------------------------------------ */
@@ -45,13 +46,15 @@ export function useBrowseProducts(filters: BrowseFilters) {
   return useQuery(browseQueryOptions(filters));
 }
 
-export function useBrowseCategories() {
-  return useQuery({
-    queryKey: browseKeys.categories,
-    queryFn: getCategories,
-    staleTime: 10 * 60_000,
-  });
-}
+/**
+ * Browse's category filter panel.
+ *
+ * Delegates to `src/lib/categories.ts` so the directory is one request for the
+ * whole app rather than one per feature that needs it. The query key was already
+ * shared (`queryKeys.categories`), so this collapses three identical fetches into
+ * one without splitting any cache.
+ */
+export const useBrowseCategories = useCategoryDirectory;
 
 /** Warm a page in the background so paging feels instant. */
 export function usePrefetchBrowsePage() {

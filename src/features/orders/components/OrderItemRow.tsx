@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { Package } from "lucide-react";
+import { ProductImage } from "@/components/shared/product-image";
 import { formatInr } from "@/lib/pricing";
 import { cn } from "@/lib/utils/cn";
+import { ReviewProductButton } from "@/features/reviews";
 import { itemModeLabel, type OrderItem } from "../types";
 
 /**
@@ -26,11 +27,7 @@ export function OrderItemRow({
   return (
     <li className={cn("flex gap-3 py-4", className)} data-testid={`order-item-${item.id}`}>
       <span className="raised-surface flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl">
-        {item.imageUrl ? (
-          <img src={item.imageUrl} alt="" loading="lazy" className="size-full object-cover" />
-        ) : (
-          <Package size={22} className="text-muted-foreground" aria-hidden="true" />
-        )}
+        <ProductImage src={item.imageUrl} alt="" />
       </span>
 
       <div className="min-w-0 flex-1 space-y-1">
@@ -96,6 +93,18 @@ export function OrderItemRow({
           <p className="text-[11px] text-muted-foreground">
             Includes {formatInr(item.securityDeposit)} refundable security deposit
           </p>
+        )}
+
+        {/* Nothing renders here unless the server marked this line reviewable or
+            already reviewed — see the order detail endpoint's per-line `review`
+            block, which is computed from the same rule that guards POST /reviews. */}
+        {item.review && (
+          <ReviewProductButton
+            orderItemId={item.id}
+            purchaseType={item.review.purchaseType}
+            eligible={item.review.eligible}
+            existingReviewId={item.review.reviewId}
+          />
         )}
       </div>
     </li>

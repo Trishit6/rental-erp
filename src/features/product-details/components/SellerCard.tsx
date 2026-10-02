@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { format } from "date-fns";
 import { BadgeCheck, Package, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Avatar } from "@/components/shared/avatar";
 import { cn } from "@/lib/utils/cn";
 import type { ProductSeller } from "../types";
 
@@ -16,13 +17,7 @@ export function SellerCard({ seller, className }: { seller: ProductSeller; class
   return (
     <section aria-label="Seller" className={cn("raised-surface rounded-3xl p-4", className)}>
       <div className="flex items-center gap-3">
-        <span className="inset-surface flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full font-heading text-base font-black text-primary">
-          {seller.avatarUrl ? (
-            <img src={seller.avatarUrl} alt="" loading="lazy" className="size-full object-cover" />
-          ) : (
-            seller.name.charAt(0).toUpperCase()
-          )}
-        </span>
+        <Avatar name={seller.name} url={seller.avatarUrl} className="size-12 text-base" />
 
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 text-sm font-extrabold">

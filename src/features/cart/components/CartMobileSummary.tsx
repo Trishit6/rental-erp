@@ -31,7 +31,7 @@ export function CartMobileSummary({
           animate={{ y: 0, opacity: 1 }}
           exit={reduceMotion ? undefined : { y: 90, opacity: 0 }}
           transition={{ duration: 0.24, ease: "easeOut" }}
-          className="fixed inset-x-0 bottom-0 z-40 lg:hidden"
+          className="fixed inset-x-0 bottom-0 z-[var(--layer-floating)] lg:hidden"
         >
           <div className="border-t border-white/60 bg-background/95 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur-xl dark:border-white/5">
             <div className="mx-auto flex max-w-3xl items-center gap-3">

@@ -10,8 +10,10 @@ import { productsRoute, categoriesRoute } from "./routes/products";
 import { favoritesRoute, cartRoute, addressesRoute } from "./routes/market";
 import { ordersRoute, rentalsRoute } from "./routes/orders";
 import { paymentsRoute } from "./routes/payments";
-import { reviewsRoute, messagesRoute, notificationsRoute, usersRoute } from "./routes/social";
+import { reviewsRoute } from "./routes/reviews";
+import { messagesRoute, notificationsRoute, usersRoute } from "./routes/social";
 import { sellerRoute } from "./routes/seller";
+import { sellersRoute } from "./routes/sellers";
 import { storageRoute } from "./routes/storage";
 import { sellerOrdersRoute } from "./routes/seller-orders";
 import { chatRoute } from "./routes/chat";
@@ -101,6 +103,9 @@ app.route("/api/conversations", messagesRoute);
 app.route("/api/notifications", notificationsRoute);
 app.route("/api/seller/orders", sellerOrdersRoute);
 app.route("/api/seller", sellerRoute);
+// The public shopfront, deliberately a *different* prefix: it is mounted where no
+// guard applies, which is the point. See the note at the top of `routes/sellers.ts`.
+app.route("/api/sellers", sellersRoute);
 app.route("/api/storage", storageRoute);
 app.route("/api/chat", chatRoute);
 app.route("/api/admin", adminRoute);

@@ -558,20 +558,100 @@ export const reviews = mysqlTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     orderId: int("order_id").references(() => orders.id, { onDelete: "set null" }),
+    /**
+     * The order line this review is about — the row that *proves* the review is
+     * earned rather than invented.
+     *
+     * A unique index on this column is what enforces "one review per order item"
+     * in the database, so a double-submitted form or two tabs racing each other
+     * cannot produce a second review for the same thing. Nullable with
+     * `set null`: a removed order line must not silently delete the customer's
+     * words, so the review survives as an unattributed row rather than vanishing.
+     * Legacy reviews written before this column existed have no line and are
+     * therefore *not* editable — there is no longer any proof they were earned.
+     */
+    orderItemId: int("order_item_id").references(() => orderItems.id, { onDelete: "set null" }),
     rentalId: int("rental_id").references(() => rentals.id, { onDelete: "set null" }),
+    /** PURCHASE | RENTAL — see `REVIEW_PURCHASE_TYPES` in `server/lib/review-queries.ts`. */
+    purchaseType: varchar("purchase_type", { length: 8 }).notNull().default("PURCHASE"),
     rating: int("rating").notNull(),
     title: varchar("title", { length: 120 }),
     comment: text().notNull(),
+    /**
+     * Whether the backend proved an order (purchase) or a returned rental backs
+     * this review. Written **only** by the server after it has resolved the order
+     * line itself; a client that sends the field is ignored by the strict schema.
+     */
+    isVerifiedPurchase: boolean("is_verified_purchase").notNull().default(false),
+    /**
+     * Moderation state. PUBLISHED | HIDDEN | PENDING — see `REVIEW_STATUSES` in
+     * `server/lib/review-queries.ts`. Defaults to PUBLISHED so a review that
+     * passed the eligibility check is visible without a second moderation step,
+     * and only `HIDDEN` keeps it out of public queries.
+     */
+    status: varchar("status", { length: 10 }).notNull().default("PUBLISHED"),
+    /** Set when the author edits; the UI shows "Edited" rather than hiding it. */
+    isEdited: boolean("is_edited").notNull().default(false),
+    /**
+     * Denormalised helpful tally.
+     *
+     * Kept as a counter *and* backed by `review_helpful_votes`: the counter is
+     * what the list sorts and renders on, and maintaining it on write means a
+     * thousand-row list never needs a correlated COUNT per row. The vote table is
+     * the authority — it is what stops one person inflating the number, and what
+     * lets "helpful" be undone.
+     */
+    helpfulCount: int("helpful_count").notNull().default(0),
+    /** Reviewer-supplied photos, as a JSON array of storage URLs. */
+    images: text("images"),
+    /** The seller's one public reply. Never edits the customer's words. */
+    sellerReply: text("seller_reply"),
+    sellerRepliedAt: timestamp("seller_replied_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
     index("reviews_product_id_idx").on(table.productId),
     index("reviews_seller_id_idx").on(table.sellerId),
+    // "My reviews", and the reviewability lookups behind the review button.
+    index("reviews_user_id_idx").on(table.userId),
+    // The product page's default sort: published reviews for a listing, newest
+    // first. A leading status column is what keeps a hidden review from needing
+    // a filter on every read of the page.
+    index("reviews_product_status_created_idx").on(table.productId, table.status, table.createdAt),
+    index("reviews_order_item_id_idx").on(table.orderItemId),
+    uniqueIndex("reviews_order_item_unique").on(table.orderItemId),
     uniqueIndex("reviews_user_order_product_unique").on(
       table.userId,
       table.orderId,
       table.productId,
     ),
+  ],
+);
+
+/**
+ * Who marked which review helpful.
+ *
+ * The unique (review, user) pair *is* the anti-inflation rule: marking the same
+ * review helpful twice is a constraint violation, not a second vote. Cascades
+ * with the review and the voter, so neither can leave an orphan behind.
+ */
+export const reviewHelpfulVotes = mysqlTable(
+  "review_helpful_votes",
+  {
+    reviewId: int("review_id")
+      .notNull()
+      .references(() => reviews.id, { onDelete: "cascade" }),
+    userId: int("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.reviewId, table.userId] }),
+    // "Has this viewer already voted on this page's reviews?" is the read the
+    // product page makes for every row it renders.
+    index("review_helpful_votes_user_id_idx").on(table.userId),
   ],
 );
 

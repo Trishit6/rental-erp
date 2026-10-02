@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { ReviewItem } from "@/lib/types";
 import {
   buildCartPayload,
   buildRentalOptions,
@@ -7,6 +6,7 @@ import {
   clampRentalDays,
   conditionLabel,
   findRentalOption,
+  headerRatingSummary,
   isRentalDurationValid,
   listingTypeLabel,
   maxQuantityFor,
@@ -16,7 +16,6 @@ import {
   rentalWindow,
   resolveListingMode,
   resolveRentalDays,
-  reviewSummary,
   stockState,
   supportedModes,
 } from "@/features/product-details/components/schema";
@@ -24,19 +23,6 @@ import { makeProduct } from "./support/product-fixtures";
 
 const FROM = new Date("2026-02-01T00:00:00.000Z");
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-function makeReview(overrides: Partial<ReviewItem> = {}): ReviewItem {
-  return {
-    id: 1,
-    rating: 5,
-    title: null,
-    comment: "Great",
-    createdAt: "2026-01-10T00:00:00.000Z",
-    userName: "Asha",
-    userAvatar: null,
-    ...overrides,
-  };
-}
 
 describe("supportedModes", () => {
   it("offers only rent for a rent-only listing", () => {
@@ -315,32 +301,30 @@ describe("productSpecifications", () => {
   });
 });
 
-describe("reviewSummary", () => {
-  it("computes a distribution from the reviews it was given", () => {
-    const summary = reviewSummary(makeProduct({ ratingCount: 0, ratingAverage: 0 }), [
-      makeReview({ id: 1, rating: 5 }),
-      makeReview({ id: 2, rating: 5 }),
-      makeReview({ id: 3, rating: 3 }),
-    ]);
-
-    expect(summary.count).toBe(3);
-    expect(summary.average).toBeCloseTo(13 / 3);
-    expect(summary.distribution[0]).toMatchObject({ stars: 5, count: 2 });
-    expect(summary.distribution[0].share).toBeCloseTo(2 / 3);
-    expect(summary.distribution[2]).toMatchObject({ stars: 3, count: 1 });
-  });
-
-  it("prefers the stored rating once the product has reviews", () => {
-    const summary = reviewSummary(makeProduct({ ratingAverage: 4.8, ratingCount: 128 }), []);
-    expect(summary.average).toBe(4.8);
-    expect(summary.count).toBe(128);
+describe("headerRatingSummary", () => {
+  it("reads the stored rating straight off the product row", () => {
+    // The full aggregate — average, count *and* the five-bucket distribution — is
+    // computed in SQL by the server and arrives with the review list. This helper
+    // only supplies the one-line figure beside the title, so it has no reviews
+    // argument at all: deriving it from loaded rows is the mistake being prevented.
+    const summary = headerRatingSummary(makeProduct({ ratingAverage: 4.8, ratingCount: 128 }));
+    expect(summary).toEqual({ average: 4.8, count: 128 });
   });
 
   it("reports nothing for a product with no reviews", () => {
-    const summary = reviewSummary(makeProduct({ ratingAverage: 0, ratingCount: 0 }));
-    expect(summary.count).toBe(0);
+    expect(headerRatingSummary(makeProduct({ ratingAverage: 0, ratingCount: 0 }))).toEqual({
+      average: 0,
+      count: 0,
+    });
+  });
+
+  it("does not show an average of 0 as if it were a real rating", () => {
+    // A listing nobody has reviewed can carry a stale non-zero `ratingAverage` if
+    // every review was moderated; zeroing it keeps "No reviews yet" honest rather
+    // than printing "0.0" beside the title.
+    const summary = headerRatingSummary(makeProduct({ ratingAverage: 3.2, ratingCount: 0 }));
     expect(summary.average).toBe(0);
-    expect(summary.distribution.every((bucket) => bucket.share === 0)).toBe(true);
+    expect(summary.count).toBe(0);
   });
 });
 

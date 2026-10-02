@@ -15,15 +15,28 @@ vi.mock("@tanstack/react-router", () => ({
   useParams: () => ({ slug: "sony-wh-1000xm5" }),
   useLocation: () => ({ href: "/product/sony-wh-1000xm5" }),
   useNavigate: () => navigateMock,
+  // The review section keeps its filters in the URL. This page test is about the
+  // page, not the section, so the search is simply empty.
+  useSearch: () => ({}),
 }));
 
 vi.mock("@/features/product-details/query", () => ({
   useProductDetail: vi.fn(),
-  useProductReviews: vi.fn(),
   useProductAvailability: vi.fn(),
   useRelatedProducts: vi.fn(),
   useCachedProductPreview: vi.fn(),
   useProductActions: vi.fn(),
+}));
+
+// The review section is its own feature with its own tests; the page only has to
+// mount it in the right place. `importOriginal` keeps the real `RatingStars`, which
+// the header renders from the product row — stubbing it would hide a regression in
+// the one rating the page shows above the fold.
+vi.mock("@/features/reviews", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/features/reviews")>()),
+  ReviewSection: ({ productIdOrSlug }: { productIdOrSlug: string }) => (
+    <section data-testid="review-section">{productIdOrSlug}</section>
+  ),
 }));
 
 // Favourites live in the shared layer now, so the page test mocks them there.
@@ -37,7 +50,6 @@ function setDetail(value: Record<string, unknown>) {
 beforeEach(() => {
   vi.clearAllMocks();
   setDetail({ data: undefined, isLoading: false, isError: false, isFetching: false, refetch: vi.fn() });
-  vi.mocked(query.useProductReviews).mockReturnValue({ data: [] } as never);
   vi.mocked(query.useProductAvailability).mockReturnValue({
     data: undefined,
     isFetching: false,

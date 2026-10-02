@@ -11,6 +11,7 @@ import { FavoriteButton } from "../../features/favorites/components/FavoriteButt
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
+import { ProductImage } from "./product-image";
 
 function ModeBadge({ listingType }: { listingType: string }) {
   return (
@@ -55,16 +56,21 @@ export function ProductCard({
     <Card
       onMouseEnter={onPrefetch}
       onFocus={onPrefetch}
-      className="group overflow-hidden p-3.5 transition-transform duration-300 hover:-translate-y-1 hover:shadow-[10px_14px_30px_var(--shadow-color-dark),-8px_-8px_22px_var(--shadow-color-light)]"
+      className="group overflow-hidden p-3.5 transition-transform duration-300 hover:-translate-y-1 card-surface-hover"
     >
       <div className="inset-surface rounded-[20px] p-2.5">
         <div className="relative overflow-hidden rounded-2xl">
-          <Link to="/product/$slug" params={{ slug: product.slug }}>
-            <img
-              src={product.primaryImage ?? ""}
+          {/* The image box is sized before a byte is fetched, so the card is the
+              same height whether the photo loads, is still loading, or is gone. */}
+          <Link
+            to="/product/$slug"
+            params={{ slug: product.slug }}
+            className="block aspect-[4/3] w-full overflow-hidden"
+          >
+            <ProductImage
+              src={product.primaryImage}
               alt={product.title}
-              loading="lazy"
-              className="aspect-[4/3] w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+              className="size-full transition-transform duration-500 group-hover:scale-[1.03]"
             />
           </Link>
           <ModeBadge listingType={product.listingType} />
@@ -80,17 +86,21 @@ export function ProductCard({
       <div className="px-1 pb-1 pt-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="mb-1 text-xs font-semibold text-muted-foreground">
+            <p className="mb-1 truncate text-xs font-semibold text-muted-foreground">
               {product.categoryName}
               {product.condition !== "NEW"
                 ? ` · ${CONDITION_LABELS[product.condition as keyof typeof CONDITION_LABELS] ?? product.condition}`
                 : ""}
             </p>
-            <h3 className="truncate font-heading text-[15px] font-extrabold">
+            <h3 className="font-heading text-[15px] font-extrabold">
+              {/* Two lines, then an ellipsis. `truncate` would hold the card to a
+                  single line and clip the category above it; an unbounded title
+                  let a long one push the price row out of alignment with its
+                  neighbours in the grid. */}
               <Link
                 to="/product/$slug"
                 params={{ slug: product.slug }}
-                className="hover:text-primary"
+                className="line-clamp-2 hover:text-primary"
               >
                 {product.title}
               </Link>

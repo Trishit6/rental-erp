@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { MapPin, Star } from "lucide-react";
+import { ProductImage } from "@/components/shared/product-image";
 import { formatInr } from "@/lib/pricing";
 import type { ChatProduct } from "../types";
 
@@ -26,11 +27,10 @@ export function ChatProductCard({
       onClick={onNavigate}
       className="inset-surface group flex items-center gap-3 rounded-2xl p-2 transition hover:border-primary/40"
     >
-      <img
-        src={product.primaryImage ?? ""}
+      <ProductImage
+        src={product.primaryImage}
         alt={product.title}
-        loading="lazy"
-        className="size-14 shrink-0 rounded-xl object-cover"
+        className="size-14 shrink-0 rounded-xl"
       />
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13px] font-extrabold leading-tight group-hover:text-primary">

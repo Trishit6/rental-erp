@@ -27,6 +27,10 @@ import {
   resolveRentalFilters,
 } from "../lib/rental-queries";
 import {
+  checkReviewEligibility,
+  purchaseTypeForLine,
+} from "../lib/review-queries";
+import {
   addRentalDays,
   buildRentalTimeline,
   depositStatus,
@@ -47,6 +51,7 @@ import {
   isCancellationReason,
 } from "../lib/order-cancellation";
 import { getOrCreateCart, mergeCartItem } from "../lib/cart";
+import { adjustProductInventory, restoreCancelledOrderStock } from "../lib/product-inventory";
 import { isPurchasable } from "../lib/product-status";
 
 /** The input shape `mergeCartItem` accepts for one repeated line. */
@@ -231,6 +236,10 @@ ordersRoute.get("/:id", async (c) => {
       titleSnapshot: orderItems.titleSnapshot,
       imageSnapshot: orderItems.imageSnapshot,
       startDate: orderItems.startDate,
+      /** Set when the line already carries a review — Edit instead of Write. */
+      existingReviewId: sql<number | null>`(
+        SELECT r.id FROM reviews r WHERE r.order_item_id = ${orderItems.id} LIMIT 1
+      )`,
       endDate: orderItems.endDate,
       rentalDays: orderItems.rentalDays,
       rentCreditApplied: orderItems.rentCreditApplied,
@@ -285,16 +294,47 @@ ordersRoute.get("/:id", async (c) => {
     loadSellers([...new Set(items.map((item) => item.sellerId))]),
   ]);
 
+  /**
+   * Per-line review state, resolved here rather than in the client.
+   *
+   * The order page is the natural place someone arrives to write a review, so the
+   * "Review Product" button is driven by this block instead of the browser
+   * re-deriving the rule. It is the *same* `checkReviewEligibility` the
+   * `POST /reviews` guard uses, so a button that is shown is a submission the
+   * server will accept — and one that is hidden hides for the reason stated in
+   * `reason`, which is a sentence rather than a missing control.
+   */
+  const rentalByItem = new Map(
+    rentalsForOrder.filter((row) => row.orderItemId).map((row) => [row.orderItemId!, row]),
+  );
+
   return c.json(
     ok({
       order: { ...order, deliveryAddressSnapshot: parseAddressSnapshot(order.deliveryAddressSnapshot) },
       // `imageUrl` prefers the purchase-time snapshot and only falls back to the
       // product's current image. The internal columns are dropped so the client
       // has one field to render and cannot accidentally show the wrong one.
-      items: items.map(({ imageSnapshot, liveImage, ...item }) => ({
-        ...item,
-        imageUrl: imageSnapshot ?? liveImage,
-      })),
+      items: items.map(({ imageSnapshot, liveImage, existingReviewId, ...item }) => {
+        const rental = rentalByItem.get(item.id);
+        const purchaseType = purchaseTypeForLine({ mode: item.mode, rentalId: rental?.id });
+        const check = checkReviewEligibility({
+          purchaseType,
+          orderStatus: order.status,
+          rentalStatus: rental?.status,
+          alreadyReviewed: existingReviewId !== null,
+        });
+
+        return {
+          ...item,
+          imageUrl: imageSnapshot ?? liveImage,
+          review: {
+            purchaseType,
+            eligible: check.eligible,
+            reason: check.eligible ? null : check.message,
+            reviewId: existingReviewId ? Number(existingReviewId) : null,
+          },
+        };
+      }),
       rentals: rentalsForOrder,
       payment: payments[0] ?? null,
       payments,
@@ -391,11 +431,28 @@ ordersRoute.post("/:id/cancel", async (c) => {
       .where(eq(orders.id, order.id));
 
     // Every untouched line records why it stopped; lines a seller already
-    // cancelled keep their own reason.
+    // cancelled keep their own reason. The ids of those already-cancelled lines
+    // are collected first, because their stock was returned when *they* were
+    // cancelled and must not be returned a second time here.
+    const alreadyCancelled = await tx
+      .select({ id: orderItems.id })
+      .from(orderItems)
+      .where(
+        and(eq(orderItems.orderId, order.id), eq(orderItems.fulfillmentStatus, "CANCELLED")),
+      );
+
     await tx
       .update(orderItems)
       .set({ fulfillmentStatus: "CANCELLED", cancellationReason: reasonText })
       .where(and(eq(orderItems.orderId, order.id), isNull(orderItems.fulfillmentStatus)));
+
+    // Purchased units go back on the shelf. A rental holds its unit for a date
+    // window rather than removing it from stock, so it has nothing to give back.
+    await restoreCancelledOrderStock(
+      tx,
+      order.id,
+      alreadyCancelled.map((row) => row.id),
+    );
 
     // Ledger row for the refund owed. No gateway call happens here — the
     // payment architecture owns settlement — but the money story is on record.
@@ -599,7 +656,23 @@ ordersRoute.post("/:id/again", async (c) => {
 
   // The cart write owns its transaction and its merge rule.
   const cartId = await getOrCreateCart(user.id);
-  const result = await mergeCartItem({ cartId, ...repeat.input });
+  const result = await mergeCartItem({
+    cartId,
+    productId: repeat.input.productId,
+    mode: repeat.input.mode,
+    quantity: repeat.input.quantity,
+    startDate: repeat.input.startDate ? new Date(repeat.input.startDate) : null,
+    endDate: repeat.input.endDate ? new Date(repeat.input.endDate) : null,
+    // A repeated line is an active cart line — never a saved-for-later one.
+    savedForLater: false,
+    // Snapshot the *current* price, never the historical line price (see
+    // `buildRepeatInput`). The snapshot only exists so a later price change is
+    // *shown* in the cart rather than silently charged at checkout.
+    unitPriceSnapshot:
+      repeat.input.mode === "RENT"
+        ? line.product.rentalPricePerDay
+        : line.product.purchasePrice ?? null,
+  });
 
   return c.json(
     ok({
@@ -1271,13 +1344,12 @@ rentalsRoute.post("/:id/buy", async (c) => {
 
     await tx.update(rentals).set({ rentCreditApplied: credit }).where(eq(rentals.id, id));
 
-    await tx
-      .update(products)
-      .set({
-        availableQuantity: sql`${products.availableQuantity} - 1`,
-        status: sql`CASE WHEN ${products.availableQuantity} - 1 <= 0 THEN 'SOLD' ELSE ${products.status} END`,
-      })
-      .where(eq(products.id, product.id));
+    // Goes through the shared stock helper rather than an inline decrement: this
+    // path used to write `'SOLD'`, which is not a member of `PRODUCT_STATUSES`.
+    // Since every public query opts rows *in* via `PUBLIC_PRODUCT_STATUSES`, a
+    // listing bought down to its last unit silently vanished from Browse, from
+    // the category pages and from search.
+    await adjustProductInventory(tx, product.id, -1);
 
     await tx.insert(transactions).values({
       userId: user.id,

@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { MyReviewsSection } from "@/features/reviews";
 import { AddressSection } from "./components/AddressSection";
 
 export function ProfilePage() {
@@ -56,6 +57,11 @@ export function ProfilePage() {
       </Card>
 
       <AddressSection />
+
+      {/* Reviews live here rather than on their own route because a customer's
+          own words are part of their account, not a destination — it is the
+          profile's history, alongside the addresses they saved. */}
+      <MyReviewsSection />
     </div>
   );
 }

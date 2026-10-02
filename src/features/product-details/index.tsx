@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "@tanstack/react-router";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ArrowLeft, ArrowUp, Share2 } from "lucide-react";
+import { motion, useReducedMotion } from "framer-motion";
+import { ArrowLeft, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import { MobileProductActions } from "./components/MobileProductActions";
 import { SellerCard } from "./components/SellerCard";
 import { ProductDescription } from "./components/ProductDescription";
 import { ProductSpecifications } from "./components/ProductSpecifications";
-import { ReviewSummary } from "./components/ReviewSummary";
+import { ReviewSection } from "@/features/reviews";
 import { RelatedProducts } from "./components/RelatedProducts";
 import { ProductDetailsSkeleton } from "./components/ProductDetailsSkeleton";
 import { ProductDetailsError } from "./components/ProductDetailsError";
@@ -30,7 +30,6 @@ import {
   productSpecifications,
   resolveListingMode,
   resolveRentalDays,
-  reviewSummary,
   stockState,
   supportedModes,
 } from "./components/schema";
@@ -40,7 +39,6 @@ import {
   useProductActions,
   useProductAvailability,
   useProductDetail,
-  useProductReviews,
 } from "./query";
 import type { ListingMode } from "./types";
 
@@ -62,7 +60,6 @@ export function ProductPage() {
   const detail = useProductDetail(slug, validReference);
   const product = detail.data;
   const preview = useCachedProductPreview(slug);
-  const { data: reviews } = useProductReviews(product?.id);
   // One controller, two controls (the header heart and the mobile bar) — they
   // can never run two mutations or disagree about the pending state.
   const favorite = useFavoriteToggle({ productId: product?.id, slug });
@@ -129,7 +126,6 @@ export function ProductPage() {
       : undefined;
 
   const specifications = productSpecifications(product);
-  const summary = reviewSummary(product, reviews);
 
   const handleShare = async () => {
     const url = window.location.href;
@@ -222,7 +218,9 @@ export function ProductPage() {
 
       <ProductDescription description={product.description} tags={product.tags} />
       <ProductSpecifications rows={specifications} />
-      <ReviewSummary summary={summary} />
+      {/* The review section fetches on its own: filters and pagination must not
+          re-run the product query, and a review write must not invalidate it. */}
+      <ReviewSection productIdOrSlug={slug} />
       <RelatedProducts productIdOrSlug={slug} categoryName={product.categoryName} />
 
       <MobileProductActions
@@ -235,28 +233,10 @@ export function ProductPage() {
         pendingActionId={cart.pendingActionId}
       />
 
-      <AnimatePresence>
-        {actionsVisible && (
-          <motion.div
-            initial={reduceMotion ? false : { opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={reduceMotion ? undefined : { opacity: 0, y: 8 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="fixed bottom-6 right-6 z-30 hidden lg:block"
-          >
-            <Button
-              variant="secondary"
-              size="icon"
-              aria-label="Back to top"
-              onClick={() =>
-                window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" })
-              }
-            >
-              <ArrowUp size={16} aria-hidden />
-            </Button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* No page-level back-to-top here. This used to be a fourth copy pinned at
+          `bottom-6 right-6`, which is the corner the global floating rail now
+          owns — and `GoToTop` already covers every page, appearing only once the
+          visitor has actually scrolled. */}
     </motion.div>
   );
 }

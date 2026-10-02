@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys, privateQueryKeys } from "@/lib/query/keys";
+import { clearPrivateCollections } from "@/lib/tanstack-db";
 import { getCurrentUser, login, logout, register } from "./api";
 import type { LoginPayload, RegisterPayload, User } from "./types";
 
@@ -51,6 +52,11 @@ export function useLogoutMutation() {
       for (const key of privateQueryKeys) {
         queryClient.removeQueries({ queryKey: key });
       }
+      // The TanStack DB collections are the *other* private store. Evicting the
+      // query cache alone would leave the previous customer's orders, lines and
+      // rentals readable in the reactive store for whoever signs in next, so the
+      // two are wiped together on the same path.
+      clearPrivateCollections();
       // Reset auth to an explicit unauthenticated state rather than leaving
       // cached user data behind.
       queryClient.setQueryData(queryKeys.auth, null);

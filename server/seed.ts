@@ -17,11 +17,15 @@ import {
   productTags,
   rentals,
   reviews,
+  reviewHelpfulVotes,
   sellerProfiles,
   transactions,
   users,
 } from "./schema";
 import { effectiveDailyRate, rentalDays } from "../src/lib/pricing";
+import { refreshProductRatings } from "./lib/rating-aggregate";
+import { TRUNCATED_TABLES } from "./lib/seed-truncate";
+import { createOrderNumber } from "./lib/payments/order-number";
 
 /* --------------------------------- helpers --------------------------------- */
 
@@ -33,8 +37,53 @@ function paise(rupees: number): number {
   return Math.round(rupees * 100);
 }
 
-const IMG = (seed: string) =>
-  `https://storage.googleapis.com/banani-generated-images/generated-images/${seed}.jpg`;
+/**
+ * Demo product photos.
+ *
+ * These used to point at a third-party GCS bucket
+ * (`storage.googleapis.com/banani-generated-images/…`) by UUID. Eighteen of the
+ * twenty-two demo products resolved to fabricated placeholder UUIDs
+ * (`22222222-2222-2222-…`), which now answer `403`, so a fresh `pnpm db:seed`
+ * produced a catalogue of broken images.
+ *
+ * They now come from `data/product-images.json` — the same Unsplash pool
+ * `db:harvest-images` fills and `seed-products.ts` already uses — so the demo
+ * world and the 20k bulk world share one image source, and that source is the
+ * one `allowedImageHosts()` actually permits.
+ *
+ * `IMG` is kept, and keyed by the product's own category, so each demo product
+ * keeps a stable picture across re-seeds. The category is passed at the call
+ * site rather than read from the product row, because the `IMG(...)` entries sit
+ * in the same object literal as `categoryId` and would otherwise need the row
+ * before it exists.
+ */
+function loadImagePools(): Record<string, { url: string }[]> {
+  try {
+    return JSON.parse(
+      readFileSync(new URL("./data/product-images.json", import.meta.url), "utf8"),
+    ) as Record<string, { url: string }[]>;
+  } catch {
+    return {};
+  }
+}
+
+const IMAGE_POOLS = loadImagePools();
+
+/** A stable index from any string — so a given product always gets a given photo. */
+function pick(pool: { url: string }[], seed: string) {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return pool[hash % pool.length]?.url ?? null;
+}
+
+/** Prefer the category's own pool; fall back to any pool so no listing is imageless. */
+function IMG(categorySlug: string, seed: string): string {
+  const pool = IMAGE_POOLS[categorySlug] ?? [];
+  const anyPool = Object.values(IMAGE_POOLS).flat();
+  return pick(pool, seed) ?? pick(anyPool, seed) ?? "";
+}
 
 /* ------------------------------- seed accounts ------------------------------ */
 
@@ -43,29 +92,7 @@ const PASSWORD = "revaro-dev-2026";
 async function seed() {
   console.log("Clearing existing data...");
   await db.execute(sql`SET FOREIGN_KEY_CHECKS = 0`);
-  for (const table of [
-    "transactions",
-    "notifications",
-    "messages",
-    "conversation_participants",
-    "conversations",
-    "reviews",
-    "rentals",
-    "order_items",
-    "orders",
-    "cart_items",
-    "carts",
-    "favorites",
-    "product_tags",
-    "product_images",
-    "products",
-    "reports",
-    "seller_profiles",
-    "addresses",
-    "sessions",
-    "categories",
-    "users",
-  ]) {
+  for (const table of TRUNCATED_TABLES) {
     await db.execute(sql.raw(`TRUNCATE TABLE ${table}`));
   }
   await db.execute(sql`SET FOREIGN_KEY_CHECKS = 1`);
@@ -277,20 +304,23 @@ async function seed() {
     },
   ];
 
-  // Real Unsplash URLs already harvested for the bulk seeder; a category whose pool
-  // is missing simply keeps a null image and falls back to its icon on the client.
-  const imagePools: Record<string, { url: string }[]> = (() => {
-    try {
-      return JSON.parse(
-        readFileSync(new URL("./data/product-images.json", import.meta.url), "utf8"),
-      ) as Record<string, { url: string }[]>;
-    } catch {
-      return {};
-    }
-  })();
-
   const parents = CATEGORY_SEED.filter((category) => !category.parentSlug);
   const children = CATEGORY_SEED.filter((category) => category.parentSlug);
+
+  /**
+   * A category's photo.
+   *
+   * The harvested pools are keyed by top-level category, so `cameras`,
+   * `appliances` and `outdoor` have their own while `laptops`, `phones` and
+   * `audio` do not — those three would otherwise have shipped as `null` and
+   * fallen back to their glyph on every category tile. A child borrows its
+   * parent's pool, picked by its *own* slug so the three electronics children
+   * get three different photos rather than one repeated across the row.
+   */
+  const categoryImage = (row: CategorySeed) => {
+    const pool = IMAGE_POOLS[row.slug] ?? (row.parentSlug ? IMAGE_POOLS[row.parentSlug] : null);
+    return pool?.length ? pick(pool, row.slug) : null;
+  };
 
   const insertCategoryRows = (rows: CategorySeed[]) =>
     db
@@ -301,7 +331,7 @@ async function seed() {
           slug: row.slug,
           description: row.description,
           icon: row.icon,
-          imageUrl: imagePools[row.slug]?.[0]?.url ?? null,
+          imageUrl: categoryImage(row),
           sortOrder: row.sortOrder,
           isFeatured: row.isFeatured ?? false,
           isActive: true,
@@ -322,7 +352,7 @@ async function seed() {
         slug: child.slug,
         description: child.description,
         icon: child.icon,
-        imageUrl: imagePools[child.slug]?.[0]?.url ?? null,
+        imageUrl: categoryImage(child),
         parentId: child.parentSlug ? (parentIdBySlug.get(child.parentSlug) ?? null) : null,
         sortOrder: child.sortOrder,
         isFeatured: child.isFeatured ?? false,
@@ -377,7 +407,7 @@ async function seed() {
       rentalPricePerMonth: 3200000,
       securityDeposit: 500000,
       tags: ["chair", "living room", "oak"],
-      images: [IMG("91925daa-c0cc-4433-acd1-386d9d547a41")],
+      images: [IMG("furniture", "Scandinavian lounge chair")],
       rentToOwnEnabled: true,
       rentCreditPercentage: 40,
       rentCreditCap: 800000,
@@ -397,7 +427,7 @@ async function seed() {
       rentalPricePerWeek: 1750000,
       securityDeposit: 2000000,
       tags: ["camera", "mirrorless", "travel"],
-      images: [IMG("da002d33-6b69-477b-a748-f651770721ce")],
+      images: [IMG("cameras", "Sony mirrorless camera kit")],
     },
     {
       sellerId: maya,
@@ -412,7 +442,7 @@ async function seed() {
       rentalPricePerDay: 120000,
       securityDeposit: 400000,
       tags: ["table", "living room", "oak"],
-      images: [IMG("25b9256c-9abe-420e-b116-629eaebfc17a")],
+      images: [IMG("furniture", "Solid oak coffee table")],
     },
     {
       sellerId: priya,
@@ -427,7 +457,7 @@ async function seed() {
       rentalPricePerDay: 140000,
       securityDeposit: 100000,
       tags: ["coat", "occasion", "linen"],
-      images: [IMG("0bf31d50-1e71-4a86-9c17-4a86-9c17")],
+      images: [IMG("fashion", "Classic linen trench coat")],
     },
     {
       sellerId: daniel,
@@ -444,7 +474,7 @@ async function seed() {
       rentalPricePerMonth: 6800000,
       securityDeposit: 5000000,
       tags: ["bike", "family", "electric"],
-      images: [IMG("cb443dc6-a949-4dc5-b9ed-fcf11ff4aee1")],
+      images: [IMG("vehicles", "Electric cargo bike")],
     },
     {
       sellerId: maya,
@@ -459,7 +489,7 @@ async function seed() {
       purchasePrice: 2400000,
       quantity: 2,
       tags: ["vacuum", "cleaning"],
-      images: [IMG("72ff8683-4ce4-be15-7eb706a6bcfe")],
+      images: [IMG("appliances", "Cordless stick vacuum")],
     },
     {
       sellerId: daniel,
@@ -475,7 +505,7 @@ async function seed() {
       rentalPricePerDay: 160000,
       securityDeposit: 800000,
       tags: ["guitar", "music", "acoustic"],
-      images: [IMG("582873f9-3976-4166-b024-eb7706a6bcfe")],
+      images: [IMG("music", "Acoustic guitar, natural wood")],
     },
     {
       sellerId: maya,
@@ -491,7 +521,7 @@ async function seed() {
       rentalPricePerWeek: 1200000,
       securityDeposit: 1500000,
       tags: ["projector", "movie", "party"],
-      images: [IMG("c0024048-b9e1-b61d-834dbeb61e1")],
+      images: [IMG("electronics", "Portable 4K projector")],
     },
     {
       sellerId: priya,
@@ -508,7 +538,7 @@ async function seed() {
       rentalPricePerWeek: 2600000,
       securityDeposit: 3000000,
       tags: ["laptop", "gaming", "rtx"],
-      images: [IMG("81111111-1111-1111-1111-111111111111")],
+      images: [IMG("gaming", "Gaming laptop RTX 4060")],
     },
     {
       sellerId: daniel,
@@ -523,7 +553,7 @@ async function seed() {
       rentalPricePerDay: 90000,
       securityDeposit: 500000,
       tags: ["lens", "portrait", "prime"],
-      images: [IMG("22222222-2222-2222-2222-222222222222")],
+      images: [IMG("cameras", "DSLR 50mm prime lens")],
     },
     {
       sellerId: priya,
@@ -539,7 +569,7 @@ async function seed() {
       rentalPricePerWeek: 1900000,
       securityDeposit: 2500000,
       tags: ["console", "gaming", "party"],
-      images: [IMG("33333333-3333-3333-3333-333333333333")],
+      images: [IMG("gaming", "Gaming console + two controllers")],
     },
     {
       sellerId: maya,
@@ -556,7 +586,7 @@ async function seed() {
       rentalPricePerMonth: 1900000,
       securityDeposit: 500000,
       tags: ["chair", "office", "ergonomic"],
-      images: [IMG("44444444-4444-4444-4444-444444444444")],
+      images: [IMG("furniture", "Ergonomic office chair")],
     },
     {
       sellerId: daniel,
@@ -570,7 +600,7 @@ async function seed() {
       purchasePrice: 3200000,
       quantity: 1,
       tags: ["sofa", "living room"],
-      images: [IMG("55555555-5555-5555-5555-555555555555")],
+      images: [IMG("furniture", "Three-seater fabric sofa")],
     },
     {
       sellerId: priya,
@@ -586,7 +616,7 @@ async function seed() {
       rentalPricePerDay: 80000,
       securityDeposit: 300000,
       tags: ["drill", "diy", "tools"],
-      images: [IMG("66666666-6666-6666-6666-666666666666")],
+      images: [IMG("tools", "Cordless drill + 40 accessories")],
     },
     {
       sellerId: maya,
@@ -601,7 +631,7 @@ async function seed() {
       rentalPricePerWeek: 380000,
       securityDeposit: 200000,
       tags: ["camping", "tent", "trek"],
-      images: [IMG("77777777-7777-7777-7777-777777777777")],
+      images: [IMG("outdoor", "Camping tent 4-person")],
     },
     {
       sellerId: daniel,
@@ -617,7 +647,7 @@ async function seed() {
       rentalPricePerDay: 110000,
       securityDeposit: 600000,
       tags: ["baking", "kitchen"],
-      images: [IMG("88888888-8888-8888-8888-888888888888")],
+      images: [IMG("appliances", "Stand mixer, 5L")],
     },
     {
       sellerId: priya,
@@ -632,7 +662,7 @@ async function seed() {
       rentalPricePerDay: 190000,
       securityDeposit: 150000,
       tags: ["suit", "wedding", "formal"],
-      images: [IMG("99999999-9999-9999-9999-999999999999")],
+      images: [IMG("fashion", "Formal suit, charcoal")],
     },
     {
       sellerId: maya,
@@ -647,7 +677,7 @@ async function seed() {
       purchasePrice: 750000,
       quantity: 3,
       tags: ["kitchen", "air fryer"],
-      images: [IMG("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")],
+      images: [IMG("appliances", "Air fryer 4L")],
     },
     {
       sellerId: daniel,
@@ -663,7 +693,7 @@ async function seed() {
       rentalPricePerDay: 150000,
       securityDeposit: 1000000,
       tags: ["bike", "mtb", "weekend"],
-      images: [IMG("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")],
+      images: [IMG("vehicles", "Mountain bike, 27.5 inch")],
     },
     {
       sellerId: priya,
@@ -677,7 +707,7 @@ async function seed() {
       rentalPricePerDay: 40000,
       securityDeposit: 100000,
       tags: ["yoga", "fitness"],
-      images: [IMG("cccccccc-cccc-cccc-cccc-cccccccccccc")],
+      images: [IMG("sports", "Yoga mat + blocks set")],
     },
     {
       sellerId: maya,
@@ -692,7 +722,7 @@ async function seed() {
       rentalPricePerDay: 130000,
       securityDeposit: 800000,
       tags: ["speaker", "party", "music"],
-      images: [IMG("dddddddd-dddd-dddd-dddd-dddddddddddd")],
+      images: [IMG("electronics", "Party speaker, 80W")],
     },
     {
       sellerId: daniel,
@@ -708,7 +738,7 @@ async function seed() {
       rentalPricePerDay: 120000,
       securityDeposit: 700000,
       tags: ["telescope", "stars", "kids"],
-      images: [IMG("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")],
+      images: [IMG("electronics", "Telescope, 114mm reflector")],
     },
   ];
 
@@ -749,14 +779,20 @@ async function seed() {
     .$returningId();
 
   console.log("Seeding product images + tags...");
+  // `IMG` can only return "" if a category has no pool *and* no pool exists at
+  // all. Skip those rather than writing the empty string: `product_images.url`
+  // is NOT NULL, and an empty URL is a card with a request for "" in it — the
+  // exact broken-image state this seed used to ship.
   await db.insert(productImages).values(
     seedProducts.flatMap((p, i) =>
-      p.images.map((url, idx) => ({
-        productId: Number(insertedProducts[i].id),
-        url,
-        sortOrder: idx,
-        altText: p.title,
-      })),
+      p.images
+        .filter((url) => url.length > 0)
+        .map((url, idx) => ({
+          productId: Number(insertedProducts[i].id),
+          url,
+          sortOrder: idx,
+          altText: p.title,
+        })),
     ),
   );
   await db
@@ -777,6 +813,7 @@ async function seed() {
     .insert(orders)
     .values({
       userId: arjun,
+      orderNumber: createOrderNumber(),
       orderType: "PURCHASE",
       status: "DELIVERED",
       subtotal: paise(2400),
@@ -789,17 +826,20 @@ async function seed() {
       createdAt: daysFromNow(-21),
     })
     .$returningId();
-  await db.insert(orderItems).values({
-    orderId: Number(order1.id),
-    productId: Number(insertedProducts[5].id),
-    sellerId: maya,
-    mode: "BUY",
-    quantity: 1,
-    unitPrice: paise(2400),
-    lineTotal: paise(2400),
-    titleSnapshot: seedProducts[5].title,
-    createdAt: daysFromNow(-21),
-  });
+  const [item1] = await db
+    .insert(orderItems)
+    .values({
+      orderId: Number(order1.id),
+      productId: Number(insertedProducts[5].id),
+      sellerId: maya,
+      mode: "BUY",
+      quantity: 1,
+      unitPrice: paise(2400),
+      lineTotal: paise(2400),
+      titleSnapshot: seedProducts[5].title,
+      createdAt: daysFromNow(-21),
+    })
+    .$returningId();
   await db.insert(transactions).values({
     userId: arjun,
     orderId: Number(order1.id),
@@ -829,6 +869,7 @@ async function seed() {
     .insert(orders)
     .values({
       userId: sara,
+      orderNumber: createOrderNumber(),
       orderType: "RENTAL",
       status: "COMPLETED",
       subtotal: camSubtotal,
@@ -858,25 +899,24 @@ async function seed() {
       createdAt: daysFromNow(-4),
     })
     .$returningId();
-  const [rental1] = await db
-    .insert(rentals)
-    .values({
-      orderId: Number(order2.id),
-      orderItemId: Number(item2.id),
-      productId: cameraId,
-      renterId: sara,
-      ownerId: daniel,
-      startDate: camStart,
-      endDate: camEnd,
-      dailyRate: camRate,
-      rentalSubtotal: camSubtotal,
-      securityDeposit: paise(20000),
-      deliveryFee: 0,
-      total: camSubtotal + paise(20000),
-      status: "ACTIVE",
-      createdAt: daysFromNow(-4),
-    })
-    .$returningId();
+  // No `$returningId()`: nothing downstream reads this rental's id, and asking
+  // for it would imply the review that used to point here still exists.
+  await db.insert(rentals).values({
+    orderId: Number(order2.id),
+    orderItemId: Number(item2.id),
+    productId: cameraId,
+    renterId: sara,
+    ownerId: daniel,
+    startDate: camStart,
+    endDate: camEnd,
+    dailyRate: camRate,
+    rentalSubtotal: camSubtotal,
+    securityDeposit: paise(20000),
+    deliveryFee: 0,
+    total: camSubtotal + paise(20000),
+    status: "ACTIVE",
+    createdAt: daysFromNow(-4),
+  });
 
   // Upcoming rental: Arjun rents the projector
   const projStart = daysFromNow(6);
@@ -888,6 +928,7 @@ async function seed() {
     .insert(orders)
     .values({
       userId: arjun,
+      orderNumber: createOrderNumber(),
       orderType: "RENTAL",
       status: "PAID",
       subtotal: projSubtotal,
@@ -934,28 +975,240 @@ async function seed() {
     createdAt: daysFromNow(-1),
   });
 
-  await db.insert(reviews).values([
-    {
-      userId: arjun,
-      productId: Number(insertedProducts[5].id),
-      sellerId: maya,
-      orderId: Number(order1.id),
-      rating: 5,
-      title: "Exactly as described",
-      comment: "The vacuum works beautifully and Maya was lovely to deal with. Pickup was smooth.",
-      createdAt: daysFromNow(-18),
-    },
-    {
+  /*
+   * Reviews.
+   *
+   * Every row points at a real order line — that is what `isVerifiedPurchase` means
+   * here, and the unique index on `order_item_id` means the seed cannot quietly
+   * write two reviews for the same thing. The demo also needs a *finished* rental
+   * to review, because an active one is not reviewable (`RETURNED`/`COMPLETED`
+   * are, per `server/lib/review-queries.ts`): hence orders 4 and 5 below, which
+   * are dated in the past rather than reusing the live rental.
+   */
+  const chairStart = daysFromNow(-32);
+  const chairEnd = daysFromNow(-30);
+  const chairDays = rentalDays({ startDate: chairStart, endDate: chairEnd });
+  const chairRate = paise(700);
+  const chairSubtotal = chairRate * chairDays;
+  const [order4] = await db
+    .insert(orders)
+    .values({
       userId: sara,
+      orderNumber: createOrderNumber(),
+      orderType: "RENTAL",
+      status: "COMPLETED",
+      subtotal: chairSubtotal,
+      deliveryFee: 0,
+      depositTotal: paise(5000),
+      total: chairSubtotal + paise(5000),
+      deliveryMethod: "PICKUP",
+      paymentProvider: "mock",
+      paymentReference: "mock_seed_004",
+      createdAt: chairStart,
+    })
+    .$returningId();
+  const [item4] = await db
+    .insert(orderItems)
+    .values({
+      orderId: Number(order4.id),
+      productId: chairId,
+      sellerId: maya,
+      mode: "RENT",
+      quantity: 1,
+      unitPrice: chairRate,
+      lineTotal: chairSubtotal,
+      titleSnapshot: seedProducts[0].title,
+      startDate: chairStart,
+      endDate: chairEnd,
+      rentalDays: chairDays,
+      createdAt: chairStart,
+    })
+    .$returningId();
+  await db.insert(rentals).values({
+    orderId: Number(order4.id),
+    orderItemId: Number(item4.id),
+    productId: chairId,
+    renterId: sara,
+    ownerId: maya,
+    startDate: chairStart,
+    endDate: chairEnd,
+    dailyRate: chairRate,
+    rentalSubtotal: chairSubtotal,
+    securityDeposit: paise(5000),
+    deliveryFee: 0,
+    total: chairSubtotal + paise(5000),
+    status: "RETURNED",
+    createdAt: chairStart,
+  });
+
+  // A finished rental of the camera, so the live ACTIVE rental above stays active
+  // and this one can carry a review. It is left HIDDEN on purpose: the admin queue
+  // needs something real to moderate, and a hidden row must still be invisible on
+  // the product page and out of the rating average.
+  const pastStart = daysFromNow(-26);
+  const pastEnd = daysFromNow(-24);
+  const pastDays = rentalDays({ startDate: pastStart, endDate: pastEnd });
+  const pastRate = effectiveDailyRate(
+    {
+      rentalPricePerDay: paise(3200),
+      rentalPricePerWeek: paise(17500),
+      rentalPricePerMonth: null,
+      securityDeposit: paise(20000),
+    },
+    pastDays,
+  );
+  const pastSubtotal = pastRate * pastDays;
+  const [order5] = await db
+    .insert(orders)
+    .values({
+      userId: arjun,
+      orderNumber: createOrderNumber(),
+      orderType: "RENTAL",
+      status: "COMPLETED",
+      subtotal: pastSubtotal,
+      deliveryFee: paise(49),
+      depositTotal: paise(20000),
+      total: pastSubtotal + paise(20000) + paise(49),
+      deliveryMethod: "DELIVERY",
+      paymentProvider: "mock",
+      paymentReference: "mock_seed_005",
+      createdAt: pastStart,
+    })
+    .$returningId();
+  const [item5] = await db
+    .insert(orderItems)
+    .values({
+      orderId: Number(order5.id),
       productId: cameraId,
       sellerId: daniel,
-      rentalId: Number(rental1.id),
-      rating: 5,
-      title: "Great kit for a trip",
-      comment: "Camera was clean, batteries healthy, and Daniel explained everything patiently.",
-      createdAt: daysFromNow(-1),
-    },
+      mode: "RENT",
+      quantity: 1,
+      unitPrice: pastRate,
+      lineTotal: pastSubtotal,
+      titleSnapshot: seedProducts[1].title,
+      startDate: pastStart,
+      endDate: pastEnd,
+      rentalDays: pastDays,
+      createdAt: pastStart,
+    })
+    .$returningId();
+  const [rental2] = await db
+    .insert(rentals)
+    .values({
+      orderId: Number(order5.id),
+      orderItemId: Number(item5.id),
+      productId: cameraId,
+      renterId: arjun,
+      ownerId: daniel,
+      startDate: pastStart,
+      endDate: pastEnd,
+      dailyRate: pastRate,
+      rentalSubtotal: pastSubtotal,
+      securityDeposit: paise(20000),
+      deliveryFee: paise(49),
+      total: pastSubtotal + paise(20000) + paise(49),
+      status: "COMPLETED",
+      createdAt: pastStart,
+    })
+    .$returningId();
+
+  // `$returningId()` because the helpful votes below have to point at real review
+  // ids — a vote row naming a review this seed did not write is a foreign-key
+  // failure, and a vote row without a review has no meaning.
+  const insertedReviews = await db
+    .insert(reviews)
+    .values([
+      {
+        userId: arjun,
+        productId: Number(insertedProducts[5].id),
+        sellerId: maya,
+        orderId: Number(order1.id),
+        orderItemId: Number(item1.id),
+        purchaseType: "PURCHASE",
+        rating: 5,
+        title: "Exactly as described",
+        comment:
+          "The vacuum works beautifully and Maya was lovely to deal with. Pickup was smooth and it was spotless when I handed it back.",
+        isVerifiedPurchase: true,
+        status: "PUBLISHED",
+        helpfulCount: 4,
+        sellerReply:
+          "Thank you Arjun — so glad it went well. It's back on the shelf and already spoken for!",
+        sellerRepliedAt: daysFromNow(-16),
+        createdAt: daysFromNow(-18),
+      },
+      {
+        userId: sara,
+        productId: chairId,
+        sellerId: maya,
+        orderId: Number(order4.id),
+        orderItemId: Number(item4.id),
+        purchaseType: "RENTAL",
+        rating: 4,
+        title: "Comfortable and easy to collect",
+        comment:
+          "Two days for a birthday party. The chair was comfortable and Maya let me pick it up a little early. Return took a minute.",
+        isVerifiedPurchase: true,
+        status: "PUBLISHED",
+        helpfulCount: 2,
+        isEdited: true,
+        createdAt: daysFromNow(-29),
+        updatedAt: daysFromNow(-28),
+      },
+      {
+        userId: arjun,
+        productId: cameraId,
+        sellerId: daniel,
+        orderId: Number(order5.id),
+        orderItemId: Number(item5.id),
+        rentalId: Number(rental2.id),
+        purchaseType: "RENTAL",
+        rating: 2,
+        title: "Focus ring was sticky",
+        comment: "The body was fine but the focus ring seized up in the cold.",
+        isVerifiedPurchase: true,
+        status: "HIDDEN",
+        helpfulCount: 1,
+        createdAt: daysFromNow(-23),
+      },
+    ])
+    .$returningId();
+
+  // "Helpful" votes behind those `helpfulCount` values.
+  //
+  // The counter above is a denormalised cache of `review_helpful_votes`, and the
+  // API keeps the two in one transaction. Hand-writing a count with no votes behind
+  // it leaves the number permanently disagreeing with the "did *this* viewer already
+  // vote?" check — so the button shows 4 on a review that no row accounts for. The
+  // counts are written first (to make the demo data look deliberate) and then
+  // *justified* by inserting exactly that many votes, named rather than random so
+  // the seeded world is the same on every run.
+  //
+  // Voters never include the review's own author: the endpoint refuses a self-vote
+  // with a 400, so a self-voting row would be one the API itself could not produce.
+  const [demoReviewVacuum, demoReviewChair, demoReviewCamera] = insertedReviews.map((row) =>
+    Number(row.id),
+  );
+  await db.insert(reviewHelpfulVotes).values([
+    // Arjun's 5-star vacuum review: 4 votes from the other demo accounts.
+    { reviewId: demoReviewVacuum, userId: daniel },
+    { reviewId: demoReviewVacuum, userId: priya },
+    { reviewId: demoReviewVacuum, userId: maya },
+    { reviewId: demoReviewVacuum, userId: sara },
+    // Sara's chair rental review: 2.
+    { reviewId: demoReviewChair, userId: arjun },
+    { reviewId: demoReviewChair, userId: daniel },
+    // Arjun's moderated camera review: 1. A hidden review keeps its votes — the
+    // moderation decision hides it from the public page, it does not rewrite the
+    // history of what readers thought of it.
+    { reviewId: demoReviewCamera, userId: sara },
   ]);
+
+  // Cached aggregates come from the same aggregation the API reads, so the badge
+  // on a card and the summary on the product page agree from the very first load
+  // instead of drifting until somebody writes a review. Only the listings this
+  // block touched — re-aggregating the whole catalogue would be wasted work.
+  await refreshProductRatings([Number(insertedProducts[5].id), chairId, cameraId]);
 
   console.log("Seeding favorites, messages, notifications...");
   await db.insert(favorites).values([

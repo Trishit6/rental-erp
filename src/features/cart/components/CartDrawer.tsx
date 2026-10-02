@@ -53,7 +53,7 @@ export function CartDrawer({
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.18 }}
-                  className="fixed inset-0 z-[60] bg-black/45 backdrop-blur-[2px]"
+                  className="fixed inset-0 z-[var(--layer-overlay)] bg-black/45 backdrop-blur-[2px]"
                 />
               </Dialog.Overlay>
 
@@ -66,9 +66,8 @@ export function CartDrawer({
                   exit={reduceMotion ? undefined : { x: "100%" }}
                   transition={{ type: "spring", damping: 32, stiffness: 320 }}
                   className={cn(
-                    "fixed z-[70] flex flex-col bg-[var(--color-background)] outline-none",
+                    "drawer-surface fixed z-[var(--layer-drawer)] flex flex-col outline-none",
                     "inset-y-0 right-0 w-full max-w-[420px] border-l border-[var(--raised-border)]",
-                    "shadow-[-12px_0_40px_var(--shadow-color-dark)]",
                   )}
                 >
                   <header className="flex items-start justify-between gap-3 border-b border-[var(--divider)] px-5 py-4">

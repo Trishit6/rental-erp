@@ -13,6 +13,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx server/seed.ts",
+    "db:seed:history": "tsx server/seed-history.ts",
     "db:harvest-images": "node scripts/harvest-unsplash.mjs",
     "db:seed:products": "tsx server/seed-products.ts",
     "db:studio": "drizzle-kit studio",

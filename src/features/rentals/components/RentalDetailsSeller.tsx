@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { BadgeCheck, Store } from "lucide-react";
+import { Avatar } from "@/components/shared/avatar";
 import type { RentalSeller } from "../types";
 
 /**
@@ -26,13 +27,12 @@ export function RentalDetailsSeller({ seller }: { seller: RentalSeller | null })
       </h2>
 
       <div className="mt-3 flex items-center gap-3">
-        <span className="raised-surface flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full">
-          {seller.avatarUrl ? (
-            <img src={seller.avatarUrl} alt="" className="size-full object-cover" />
-          ) : (
-            <Store size={17} className="text-muted-foreground" aria-hidden="true" />
-          )}
-        </span>
+        <Avatar
+          name={seller.name}
+          url={seller.avatarUrl}
+          className="size-11 text-sm"
+          fallback={<Store size={17} />}
+        />
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-foreground">
             {seller.name}

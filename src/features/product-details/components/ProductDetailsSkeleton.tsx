@@ -1,4 +1,5 @@
 import { Skeleton, ProductGridSkeleton } from "@/components/ui/skeleton";
+import { ProductImage } from "@/components/shared/product-image";
 import type { ProductCardData } from "../types";
 
 /**
@@ -16,10 +17,10 @@ export function ProductDetailsSkeleton({ preview }: { preview?: ProductCardData 
         <div className="space-y-4">
           <div className="inset-surface rounded-[28px] p-3">
             {preview?.primaryImage ? (
-              <img
+              <ProductImage
                 src={preview.primaryImage}
                 alt=""
-                className="aspect-[4/3] w-full rounded-[22px] object-cover"
+                className="aspect-[4/3] w-full rounded-[22px]"
               />
             ) : (
               <Skeleton className="aspect-[4/3] w-full rounded-[22px]" />

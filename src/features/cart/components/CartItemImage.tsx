@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ImageOff } from "lucide-react";
+import { ProductImage } from "@/components/shared/product-image";
 import { cn } from "@/lib/utils/cn";
 
 /**
@@ -8,6 +8,12 @@ import { cn } from "@/lib/utils/cn";
  * Links to the product through TanStack Router (never `window.location`), and
  * falls back to a neutral tile when a listing has no image or the image fails —
  * a cart should never render a broken image icon mid-purchase.
+ *
+ * This used to swap the fallback in by reaching through the DOM
+ * (`nextElementSibling.classList.remove("hidden")`) from the `onError` handler,
+ * which only worked because the fallback happened to be the next sibling. It now
+ * uses the same `ProductImage` as every other surface, so a failure is state
+ * rather than a DOM coincidence.
  *
  * A deleted product still renders: the line is kept so it can be removed, so the
  * link is simply omitted rather than pointing at nothing.
@@ -31,29 +37,7 @@ export function CartItemImage({
         className ?? "size-20 sm:size-24",
       )}
     >
-      {src ? (
-        <img
-          src={src}
-          alt={alt}
-          loading="lazy"
-          className="size-full rounded-xl object-cover"
-          onError={(event) => {
-            // Swap to the fallback tile in place rather than showing a broken icon.
-            const element = event.currentTarget;
-            element.style.display = "none";
-            element.nextElementSibling?.classList.remove("hidden");
-          }}
-        />
-      ) : null}
-      <div
-        className={cn(
-          "flex size-full items-center justify-center rounded-xl bg-[var(--inset-bg)] text-muted-foreground",
-          src ? "hidden" : "",
-        )}
-        aria-hidden={!!src}
-      >
-        <ImageOff size={18} />
-      </div>
+      <ProductImage src={src} alt={alt} className="rounded-xl" />
     </div>
   );
 

@@ -29,11 +29,6 @@ function toQueryString(filters: CategoryFilters): string {
   return params.toString();
 }
 
-/** All active categories with their real product and subcategory counts. */
-export async function getCategories(): Promise<Category[]> {
-  return (await api.get<Category[]>("/categories")).data;
-}
-
 /** The curated subset — the featured flag lives in the database, not here. */
 export async function getFeaturedCategories(): Promise<Category[]> {
   return (await api.get<Category[]>("/categories?featured=true")).data;

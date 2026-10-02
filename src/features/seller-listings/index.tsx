@@ -1,196 +1,201 @@
-import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-import {
-  createColumnHelper,
-  flexRender,
-  getCoreRowModel,
-  getPaginationRowModel,
-  useReactTable,
-} from "@tanstack/react-table";
-import { Package } from "lucide-react";
-import { formatInr } from "@/lib/pricing";
+import { PackagePlus } from "lucide-react";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { EmptyState } from "@/components/shared/empty-state";
-import { ProductActions } from "./components/ProductActions";
-import { useMyProducts, useProductStatusActions, type MyProduct } from "./query";
+import { Link } from "@tanstack/react-router";
+import { Pagination } from "@/components/shared/pagination";
+import type { SellerProductFilters, SellerProductRow, SettableStatus } from "./types";
+import { ProductFiltersBar } from "./components/ProductFiltersBar";
+import { ProductInventoryDialog } from "./components/ProductInventoryDialog";
+import { RemoveProductDialog } from "./components/RemoveProductDialog";
+import { SellerProductList } from "./components/SellerProductList";
+import {
+  useArchiveProductMutation,
+  useDeleteProductMutation,
+  useDuplicateProductMutation,
+  useProductInventoryMutation,
+  useProductReferences,
+  useProductStatusMutation,
+  useSellerProducts,
+  forgetProductFromStore,
+} from "./query";
 
-const columnHelper = createColumnHelper<MyProduct>();
+/**
+ * The seller's listings page — `/dashboard/products`.
+ *
+ * ## One page, not a client-side table over everything
+ *
+ * The previous version fetched every listing the seller owned and let TanStack
+ * Table sort and page it in the browser. The seeded sellers have ~6,700 listings
+ * each, so that meant a multi-megabyte response to render twenty rows and a
+ * re-sort of a 6,000-element array on every keystroke of the search box. Search,
+ * filters, sort and pagination are all SQL
+ * (`server/lib/seller-product-queries.ts`), and the filter state lives in the URL
+ * so a filtered list is a link a seller can paste to a colleague.
+ *
+ * ## The page takes its filters as props
+ *
+ * The route owns the search params (`route.tsx` → `validateSearch` →
+ * `parseSellerProductsSearch`) and hands the parsed object down. Keeping the
+ * state here would mean two sources of truth for the same thing: the URL and a
+ * `useState` copy that drifts the moment the seller uses the back button.
+ */
+export function SellerListingsPage({
+  filters,
+  onFiltersChange,
+}: {
+  filters: SellerProductFilters;
+  onFiltersChange: (next: SellerProductFilters) => void;
+}) {
+  const setFilters = onFiltersChange;
+  const [stockFor, setStockFor] = useState<SellerProductRow | null>(null);
+  const [removing, setRemoving] = useState<SellerProductRow | null>(null);
 
-export function DashboardProductsPage() {
-  const [confirmDelete, setConfirmDelete] = useState<MyProduct | null>(null);
-  const { data: products, isLoading } = useMyProducts();
-  const { setStatus, deleteProduct } = useProductStatusActions();
+  const { data, isLoading, isFetching } = useSellerProducts(filters);
+  const rows = data?.rows ?? [];
+  const pagination = data?.pagination;
 
-  async function handleDelete(id: number) {
-    await deleteProduct(id);
-    setConfirmDelete(null);
-  }
+  const statusMutation = useProductStatusMutation();
+  const inventoryMutation = useProductInventoryMutation();
+  const duplicateMutation = useDuplicateProductMutation();
+  const archiveMutation = useArchiveProductMutation();
+  const deleteMutation = useDeleteProductMutation();
 
-  const columns = [
-    columnHelper.accessor("title", {
-      header: "Product",
-      cell: (info) => (
-        <div className="flex items-center gap-3">
-          <img
-            src={info.row.original.primaryImage ?? ""}
-            alt=""
-            className="size-10 rounded-xl object-cover"
-          />
-          <Link
-            to="/product/$slug"
-            params={{ slug: info.row.original.slug }}
-            className="font-bold hover:text-primary"
-          >
-            {info.getValue()}
-          </Link>
-        </div>
-      ),
-    }),
-    columnHelper.accessor("listingType", {
-      header: "Type",
-      cell: (info) => info.getValue(),
-    }),
-    columnHelper.accessor("purchasePrice", {
-      header: "Buy",
-      cell: (info) => (info.getValue() ? formatInr(info.getValue()!) : "—"),
-    }),
-    columnHelper.accessor("rentalPricePerDay", {
-      header: "Rent/day",
-      cell: (info) => (info.getValue() ? formatInr(info.getValue()!) : "—"),
-    }),
-    columnHelper.accessor("status", {
-      header: "Status",
-      cell: (info) => (
-        <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary">
-          {info.getValue()}
-        </span>
-      ),
-    }),
-    columnHelper.accessor("viewCount", { header: "Views" }),
-    columnHelper.accessor("favoriteCount", { header: "Saves" }),
-    columnHelper.display({
-      id: "actions",
-      header: "Actions",
-      cell: (info) => (
-        <ProductActions
-          product={info.row.original}
-          onSetStatus={setStatus}
-          onDelete={setConfirmDelete}
-        />
-      ),
-    }),
-  ];
-
-  const table = useReactTable({
-    data: products ?? [],
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize: 10 } },
-  });
+  // A background refetch dims the current page instead of replacing it with a
+  // skeleton, so changing a filter does not throw away the rows the seller was
+  // reading to find the thing they clicked.
+  const stale = isFetching && !isLoading;
 
   return (
     <div className="page-wrap space-y-6 pb-10 pt-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="section-title text-3xl">My products</h1>
-        <Button asChild size="sm">
-          <Link to="/list">List a new item</Link>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="eyebrow">Your catalogue</p>
+          <h1 className="section-title mt-1 text-3xl sm:text-4xl">Listings</h1>
+          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+            Everything you have listed, what it is doing, and how much stock is left. Search and
+            filters run against the database, so this stays quick however many listings you own.
+          </p>
+        </div>
+        <Button asChild>
+          <Link to="/dashboard/products/new">
+            <PackagePlus size={15} aria-hidden />
+            New listing
+          </Link>
         </Button>
-      </div>
+      </header>
 
-      {isLoading ? (
-        <Card className="h-64 animate-pulse" />
-      ) : !products?.length ? (
-        <EmptyState
-          icon={Package}
-          title="No listings yet"
-          description="Share your first item and start earning from things you already own."
-          action={
-            <Button asChild>
-              <Link to="/list">List an item</Link>
+      <ProductFiltersBar filters={filters} onChange={setFilters} total={pagination?.total ?? 0} />
+
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25 }}
+        className={stale ? "opacity-60 transition-opacity" : undefined}
+        aria-busy={stale}
+      >
+        <SellerProductList
+          products={rows}
+          loading={isLoading}
+          onSetStatus={(id, status: SettableStatus) => statusMutation.mutate({ id, status })}
+          onDuplicate={(id) => duplicateMutation.mutate(id)}
+          onArchive={(id) => archiveMutation.mutate(id)}
+          onDelete={setRemoving}
+          onEditStock={setStockFor}
+          emptyAction={
+            <Button asChild variant="secondary" size="sm">
+              <Link to="/dashboard/products/new">List your first item</Link>
             </Button>
           }
         />
-      ) : (
-        <Card className="overflow-x-auto p-2">
-          <table className="w-full text-left text-sm">
-            <thead>
-              {table.getHeaderGroups().map((headerGroup) => (
-                <tr key={headerGroup.id} className="border-b border-border/60">
-                  {headerGroup.headers.map((header) => (
-                    <th
-                      key={header.id}
-                      className="px-3 py-3 text-xs font-bold uppercase tracking-wide text-muted-foreground"
-                    >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody>
-              {table.getRowModel().rows.map((row) => (
-                <tr key={row.id} className="border-b border-border/40 last:border-0">
-                  {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-3 py-3">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="flex items-center justify-between px-3 py-2 text-xs text-muted-foreground">
-            <span>
-              Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
-            </span>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={!table.getCanPreviousPage()}
-                onClick={() => table.previousPage()}
-              >
-                Previous
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={!table.getCanNextPage()}
-                onClick={() => table.nextPage()}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
-        </Card>
+      </motion.div>
+
+      {pagination && (
+        <Pagination
+          page={filters.page}
+          totalPages={pagination.totalPages}
+          onPageChange={(page) => setFilters({ ...filters, page })}
+        />
       )}
 
-      {/* Delete confirmation */}
-      {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 p-4 backdrop-blur-sm">
-          <Card className="max-w-sm space-y-4 p-6 text-center">
-            <h2 className="font-heading text-lg font-extrabold">Delete “{confirmDelete.title}”?</h2>
-            <p className="text-sm text-muted-foreground">
-              This removes the listing permanently. Order history is kept.
-            </p>
-            <div className="flex justify-center gap-3">
-              <Button variant="secondary" onClick={() => setConfirmDelete(null)}>
-                Cancel
-              </Button>
-              <Button
-                className="bg-destructive"
-                onClick={() => void handleDelete(confirmDelete.id)}
-              >
-                Delete
-              </Button>
-            </div>
-          </Card>
-        </div>
+      {stockFor && (
+        <ProductInventoryDialog
+          open
+          onOpenChange={(open) => !open && setStockFor(null)}
+          product={stockFor}
+          saving={inventoryMutation.isPending}
+          onSave={(edit) =>
+            inventoryMutation.mutate(
+              { id: stockFor.id, ...edit },
+              { onSuccess: () => setStockFor(null) },
+            )
+          }
+        />
+      )}
+
+      {removing && (
+        <RemoveProductFlow
+          product={removing}
+          onClose={() => setRemoving(null)}
+          archive={archiveMutation}
+          remove={deleteMutation}
+        />
       )}
     </div>
+  );
+}
+
+/**
+ * The remove dialog, plus the one request it needs.
+ *
+ * Split out as its own component so `useProductReferences` is a hook of a
+ * component that is always mounted while it runs — calling it inline from the
+ * parent's JSX would make the hook conditional, and the count would be fetched
+ * (or not) depending on whether a dialog happened to be open at render time.
+ *
+ * The counts are fetched **on open** rather than joined into every row of the
+ * list: three correlated aggregates per row, on every page, for a dialog that is
+ * usually never opened, is a bad trade. `staleTime` is long because the answer
+ * only changes when an order is placed, and the mutation handles the
+ * `PRODUCT_HAS_HISTORY` refusal as the real backstop.
+ */
+function RemoveProductFlow({
+  product,
+  onClose,
+  archive,
+  remove,
+}: {
+  product: SellerProductRow;
+  onClose: () => void;
+  archive: ReturnType<typeof useArchiveProductMutation>;
+  remove: ReturnType<typeof useDeleteProductMutation>;
+}) {
+  const references = useProductReferences(product.id);
+
+  return (
+    <RemoveProductDialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      product={product}
+      references={references}
+      deleting={remove.isPending}
+      archiving={archive.isPending}
+      onDelete={(id) =>
+        remove.mutate(id, {
+          onSuccess: () => {
+            forgetProductFromStore(id);
+            onClose();
+          },
+        })
+      }
+      onArchive={(id) =>
+        archive.mutate(id, {
+          onSuccess: () => {
+            forgetProductFromStore(id);
+            onClose();
+          },
+        })
+      }
+    />
   );
 }

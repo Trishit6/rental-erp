@@ -110,6 +110,26 @@ export type OrderItem = {
   productSlug: string | null;
   condition: string | null;
   listingType: string | null;
+  /**
+   * Whether this line can carry a review, and why not if it can't.
+   *
+   * Resolved by the same `checkReviewEligibility` that guards `POST /reviews`, so
+   * the "Review Product" button appears exactly when the server would accept the
+   * submission. It is duplicated here rather than imported from the reviews
+   * feature because a *field description* is not the reviews feature's business,
+   * and a wrong `eligible` here costs one absent button — never a bad write.
+   */
+  review: OrderItemReview | null;
+};
+
+/** The per-line review state the order detail endpoint attaches. */
+export type OrderItemReview = {
+  purchaseType: "PURCHASE" | "RENTAL";
+  eligible: boolean;
+  /** A sentence explaining the refusal. Null when `eligible`. */
+  reason: string | null;
+  /** The line's existing review, so the row offers Edit rather than Write. */
+  reviewId: number | null;
 };
 
 export type OrderRental = {

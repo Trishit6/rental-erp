@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
-import { motion, useReducedMotion } from "framer-motion";
-import { ArrowLeft, ArrowUp, LayoutGrid } from "lucide-react";
+import { ArrowLeft, LayoutGrid } from "lucide-react";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ActiveFilters } from "@/components/shared/product-filters/ActiveFilters";
 import { SearchBar } from "@/components/shared/product-filters/SearchBar";
@@ -117,7 +116,6 @@ export function CategoriesPage() {
         />
       </section>
 
-      <BackToTopButton />
     </div>
   );
 }
@@ -335,7 +333,6 @@ export function CategoryPage() {
         onChange={(patch) => applyFilters(patch)}
       />
 
-      <BackToTopButton />
     </div>
   );
 }
@@ -350,31 +347,3 @@ function CategoryPageShell({ children }: { children: ReactNode }) {
   );
 }
 
-/** Floating back-to-top, shown only once there's something to scroll back from. */
-function BackToTopButton() {
-  const [visible, setVisible] = useState(false);
-  const reduceMotion = useReducedMotion();
-
-  useEffect(() => {
-    const onScroll = () => setVisible(window.scrollY > 700);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  if (!visible) return null;
-
-  return (
-    <motion.button
-      type="button"
-      onClick={() => window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" })}
-      aria-label="Back to top"
-      initial={reduceMotion ? false : { opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      whileTap={reduceMotion ? undefined : { scale: 0.94 }}
-      className="floating-dock fixed bottom-20 right-5 z-30 flex size-10 items-center justify-center rounded-full text-primary lg:bottom-6"
-    >
-      <ArrowUp size={17} aria-hidden />
-    </motion.button>
-  );
-}

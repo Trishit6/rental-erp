@@ -3,6 +3,8 @@ import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import { ArrowLeft, SlidersHorizontal } from "lucide-react";
 import { Pagination } from "@/components/shared/pagination";
+import { FloatingSlotContent } from "@/lib/floating/rail";
+import { DESKTOP_QUERY, useMediaQuery } from "@/lib/utils/use-media-query";
 import { ActiveFilters } from "@/components/shared/product-filters/ActiveFilters";
 import { CategoryFilter } from "@/components/shared/product-filters/CategoryFilter";
 import { FilterPanel } from "@/components/shared/product-filters/FilterPanel";
@@ -51,6 +53,10 @@ export function BrowsePage() {
 
   const resultsRef = useRef<HTMLDivElement>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  // The pill is mobile-only, so it must not occupy a rail slot on desktop,
+  // where it would still push its neighbours down despite being `lg:hidden`.
+  const isMobileOnly = !useMediaQuery(DESKTOP_QUERY);
 
   const filters = toProductFilters(search, PRODUCT_PAGE_SIZE);
   const { data, isPending, isFetching, isError, refetch } = useBrowseProducts(filters);
@@ -197,26 +203,30 @@ export function BrowsePage() {
         }}
       />
 
-      {/* Mobile filter entry point — floating, with an active-filter count badge. */}
-      <motion.button
-        type="button"
-        onClick={() => setSheetOpen(true)}
-        aria-label={`Filters${filterCount > 0 ? `, ${filterCount} active` : ""}`}
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        whileHover={{ y: -2 }}
-        whileTap={{ scale: 0.96 }}
-        transition={{ duration: 0.2 }}
-        className="floating-dock fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full px-4 py-3 text-sm font-bold text-foreground lg:hidden"
-      >
-        <SlidersHorizontal size={16} aria-hidden className="text-primary" />
-        Filters
-        {filterCount > 0 && (
-          <span className="flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-            {filterCount}
-          </span>
-        )}
-      </motion.button>
+      {/* Mobile filter entry point — floating, with an active-filter count badge.
+          It claims the `filters` slot of the shared rail rather than pinning
+          itself to the corner, which is where the cart and the assistant live. */}
+      <FloatingSlotContent slot="filters" active={isMobileOnly}>
+        <motion.button
+          type="button"
+          onClick={() => setSheetOpen(true)}
+          aria-label={`Filters${filterCount > 0 ? `, ${filterCount} active` : ""}`}
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          whileHover={{ y: -2 }}
+          whileTap={{ scale: 0.96 }}
+          transition={{ duration: 0.2 }}
+          className="floating-dock flex items-center gap-2 rounded-full px-4 py-3 text-sm font-bold text-foreground lg:hidden"
+        >
+          <SlidersHorizontal size={16} aria-hidden className="text-primary" />
+          Filters
+          {filterCount > 0 && (
+            <span className="flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+              {filterCount}
+            </span>
+          )}
+        </motion.button>
+      </FloatingSlotContent>
     </div>
   );
 }

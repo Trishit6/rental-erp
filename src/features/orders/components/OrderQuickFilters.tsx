@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { cn } from "@/lib/utils/cn";
 import { Chip } from "./OrderStatusFilter";
 import { ORDER_QUICK_FILTERS } from "./schema";
 import type { OrdersSearch } from "./schema";
@@ -41,6 +40,9 @@ export function OrderQuickFilters({
           key={filter.id}
           selected={activeId === filter.id}
           onClick={() => onChange(filter.patch as Partial<OrdersSearch>)}
+          // The status filter below offers several of these same labels, so each
+          // pill is named for what it does, not just what it reads.
+          ariaLabel={quickFilterAriaLabel(filter.id)}
         >
           {filter.label}
         </Chip>
@@ -50,10 +52,13 @@ export function OrderQuickFilters({
 }
 
 /**
- * A compact static summary of what the quick filters map to — exported for the
- * tests that assert the URL contract between pills and sidebar.
+ * The accessible name of a quick-filter pill.
+ *
+ * The status filter renders several of the same words ("Delivered"), so a pill
+ * is named for the action it performs rather than for its visible text alone —
+ * otherwise the two rails are indistinguishable to a screen reader.
  */
 export function quickFilterAriaLabel(filterId: string): string {
   const filter = ORDER_QUICK_FILTERS.find((entry) => entry.id === filterId);
-  return cn(filter ? `Filter orders: ${filter.label}` : "Filter orders");
+  return filter ? `Filter orders: ${filter.label}` : "Filter orders";
 }

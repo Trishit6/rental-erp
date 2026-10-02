@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
+import { ProductImage } from "@/components/shared/product-image";
 import { cn } from "@/lib/utils/cn";
 import type { CategorySummary } from "../types";
 import { CategoryIcon } from "./CategoryIcon";
@@ -39,8 +40,7 @@ export function CategoryCard({
         onMouseEnter={() => onPrefetch?.(slug)}
         onFocus={() => onPrefetch?.(slug)}
         className={cn(
-          "raised-surface group flex h-full flex-col overflow-hidden rounded-2xl transition",
-          "hover:shadow-[10px_10px_26px_var(--shadow-color-dark),-10px_-10px_26px_var(--shadow-color-light)]",
+          "card-surface card-surface-hover group flex h-full flex-col overflow-hidden rounded-2xl",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60",
           variant === "tile" ? "gap-2 px-4 py-4" : "gap-3",
         )}
@@ -51,19 +51,18 @@ export function CategoryCard({
           </span>
         ) : (
           <span className="inset-surface relative block overflow-hidden rounded-[18px] p-2">
-            {imageUrl ? (
-              <img
-                src={imageUrl}
-                alt=""
-                loading="lazy"
-                decoding="async"
-                className="aspect-[16/10] w-full rounded-[14px] object-cover transition duration-500 group-hover:scale-[1.03]"
-              />
-            ) : (
-              <span className="flex aspect-[16/10] w-full items-center justify-center rounded-[14px] bg-[var(--inset-bg)] text-primary">
-                <CategoryIcon icon={category.icon} name={name} size={30} />
-              </span>
-            )}
+            <ProductImage
+              src={imageUrl}
+              alt=""
+              className="aspect-[16/10] w-full rounded-[14px] transition duration-500 group-hover:scale-[1.03]"
+              /* A category has a better answer to "no photo" than a broken-image
+                 tile: its own glyph. */
+              fallback={
+                <span className="flex aspect-[16/10] w-full items-center justify-center rounded-[14px] bg-[var(--inset-bg)] text-primary">
+                  <CategoryIcon icon={category.icon} name={name} size={30} />
+                </span>
+              }
+            />
           </span>
         )}
 

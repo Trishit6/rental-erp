@@ -155,6 +155,13 @@ export function OrderDetailsPage() {
 
   const { data, isPending, isError, error, refetch } = useOrder(ref);
 
+  // Mirror the detail payload into the TanStack DB collections so reactive
+  // readers see the order's lines and rentals without another request. Declared
+  // before every early return below — a hook after one would run conditionally.
+  useEffect(() => {
+    if (data) syncOrderDetailToCollections(data);
+  }, [data]);
+
   if (ref === null) {
     return <OrderNotFound reference={params.orderId} />;
   }
@@ -177,12 +184,6 @@ export function OrderDetailsPage() {
   if (!data) return <OrderNotFound reference={ref} />;
 
   const { order, items, rentals, payment, sellers } = data;
-
-  // Mirror the detail payload into the TanStack DB collections so reactive
-  // readers see the order's lines and rentals without another request.
-  useEffect(() => {
-    syncOrderDetailToCollections(data);
-  }, [data]);
 
   // Derived from real fields only — see `buildOrderTimeline`.
   const timeline = buildOrderTimeline({
@@ -223,7 +224,7 @@ export function OrderDetailsPage() {
           />
           <OrderRentalSummary rentals={rentals} />
           <OrderSellerInfo sellers={sellers} />
-          <OrderActionsPanel order={order} items={items} />
+          <OrderActionsPanel order={order} items={items} rentals={rentals} />
         </div>
       </div>
     </div>

@@ -14,7 +14,7 @@ import { ProductDetailsSkeleton } from "@/features/product-details/components/Pr
 import { ProductGallery } from "@/features/product-details/components/ProductGallery";
 import { ProductSpecifications } from "@/features/product-details/components/ProductSpecifications";
 import { RentalDurationSelector } from "@/features/product-details/components/RentalDurationSelector";
-import { ReviewSummary } from "@/features/product-details/components/ReviewSummary";
+
 import { buildRentalOptions } from "@/features/product-details/components/schema";
 import { makeProduct } from "./support/product-fixtures";
 
@@ -296,32 +296,6 @@ describe("FavoriteControl", () => {
     );
     const remove = screen.getByRole("button", { name: "Remove Canon EOS R6 from favorites" });
     expect(remove).toHaveAttribute("aria-pressed", "true");
-  });
-});
-
-describe("ReviewSummary", () => {
-  it("invites the first review when there are none", () => {
-    render(<ReviewSummary summary={{ average: 0, count: 0, distribution: [] }} />);
-    expect(screen.getByText(/No reviews yet/)).toBeInTheDocument();
-  });
-
-  it("shows the average and the distribution once reviews exist", () => {
-    render(
-      <ReviewSummary
-        summary={{
-          average: 4.8,
-          count: 128,
-          distribution: [
-            { stars: 5, count: 100, share: 0.78 },
-            { stars: 4, count: 28, share: 0.22 },
-          ],
-        }}
-      />,
-    );
-
-    expect(screen.getByText("4.8")).toBeInTheDocument();
-    expect(screen.getByText("128 reviews")).toBeInTheDocument();
-    expect(screen.getByText("5 ★")).toBeInTheDocument();
   });
 });
 

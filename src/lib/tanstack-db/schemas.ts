@@ -80,3 +80,61 @@ export const categoryCollectionSchema = z.object({
 });
 
 export type CategoryRow = z.infer<typeof categoryCollectionSchema>;
+
+/**
+ * Public review rows.
+ *
+ * Only the fields a review card renders — no `userId`, no `orderItemId`, nothing
+ * that would identify a customer beyond the public name and avatar the product
+ * page already showed. The collection is derived from product-page responses the
+ * visitor could read unauthenticated, so it holds nothing a signed-out browser
+ * could not fetch for itself.
+ */
+export const reviewCollectionSchema = z.object({
+  id: z.number(),
+  productId: z.number(),
+  rating: z.number(),
+  purchaseType: z.string(),
+  isVerifiedPurchase: z.boolean(),
+  isEdited: z.boolean(),
+  helpfulCount: z.number(),
+  createdAt: z.string(),
+});
+
+export type ReviewRow = z.infer<typeof reviewCollectionSchema>;
+
+/**
+ * The signed-in seller's own listings.
+ *
+ * A **private** collection, unlike every other one here: the rows are the
+ * seller's revenue, stock and ratings, readable by nobody but the session that
+ * fetched them, so `clearPrivateCollections` wipes it on logout. A seller's
+ * business figures sitting in the next customer's store is not a cache staleness
+ * problem.
+ *
+ * Only the fields the dashboard and the listings table render. Nothing about
+ * buyers: the order lines behind `soldUnits` are never fetched into the store,
+ * only the count the server already aggregated.
+ */
+export const sellerProductCollectionSchema = z.object({
+  id: z.number(),
+  title: z.string(),
+  slug: z.string(),
+  status: z.string(),
+  listingType: z.string(),
+  condition: z.string(),
+  purchasePrice: z.number().nullable(),
+  rentalPricePerDay: z.number().nullable(),
+  quantity: z.number(),
+  availableQuantity: z.number(),
+  reservedQuantity: z.number(),
+  ratingAverage: z.number(),
+  ratingCount: z.number(),
+  soldUnits: z.number(),
+  rentalCount: z.number(),
+  earnedPaise: z.number(),
+  primaryImage: z.string().nullable(),
+  createdAt: z.string(),
+});
+
+export type SellerProductRow = z.infer<typeof sellerProductCollectionSchema>;

@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { BadgeCheck, Store } from "lucide-react";
+import { Avatar } from "@/components/shared/avatar";
 import type { SellerSummary } from "../types";
 
 /**
@@ -29,13 +30,12 @@ export function OrderSellerInfo({ sellers }: { sellers: SellerSummary[] }) {
       <ul className="mt-3 space-y-3">
         {sellers.map((seller) => (
           <li key={seller.id} className="flex items-center gap-3">
-            <span className="raised-surface flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full">
-              {seller.avatarUrl ? (
-                <img src={seller.avatarUrl} alt="" className="size-full object-cover" />
-              ) : (
-                <Store size={15} className="text-muted-foreground" aria-hidden="true" />
-              )}
-            </span>
+            <Avatar
+              name={seller.name}
+              url={seller.avatarUrl}
+              className="size-10 text-sm"
+              fallback={<Store size={15} />}
+            />
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-foreground">
                 {seller.name}

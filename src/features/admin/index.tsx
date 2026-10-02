@@ -4,6 +4,7 @@ import { formatInr } from "@/lib/pricing";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ModerationSection } from "@/features/reviews";
 import {
   useAdminStats,
   useAdminUsers,
@@ -13,7 +14,7 @@ import {
 } from "./query";
 
 export function AdminPage() {
-  const [tab, setTab] = useState<"stats" | "users" | "products" | "reports">("stats");
+  const [tab, setTab] = useState<"stats" | "users" | "products" | "reviews" | "reports">("stats");
   const { data: stats } = useAdminStats();
   const { data: users } = useAdminUsers(tab === "users");
   const { data: products } = useAdminProducts(tab === "products");
@@ -35,6 +36,7 @@ export function AdminPage() {
             ["stats", "Overview"],
             ["users", "Users"],
             ["products", "Products"],
+            ["reviews", "Reviews"],
             ["reports", "Reports"],
           ] as const
         ).map(([key, label]) => (
@@ -169,6 +171,8 @@ export function AdminPage() {
           </table>
         </Card>
       )}
+
+      {tab === "reviews" && <ModerationSection />}
 
       {tab === "reports" && (
         <div className="space-y-3">

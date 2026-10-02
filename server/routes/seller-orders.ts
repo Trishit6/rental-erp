@@ -4,7 +4,8 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "../db";
 import { orderItems } from "../schema";
 import { buildPagination, HttpError, ok } from "../lib/api";
-import { requireUser } from "../lib/auth";
+import { requireSeller } from "../lib/seller-access";
+import { restoreCancelledOrderStock } from "../lib/product-inventory";
 import {
   assertCancellable,
   assertFulfillmentTransition,
@@ -27,14 +28,14 @@ import {
 export const sellerOrdersRoute = new Hono();
 
 sellerOrdersRoute.use("*", async (c, next) => {
-  requireUser(c);
+  requireSeller(c);
   await next();
 });
 
 /* ---------------------------------- list ----------------------------------- */
 
 sellerOrdersRoute.get("/", async (c) => {
-  const user = requireUser(c);
+  const user = requireSeller(c);
   const filters = resolveSellerOrderFilters(c.req.query());
   const { rows, total } = await listSellerOrders(user.id, filters);
 
@@ -44,7 +45,7 @@ sellerOrdersRoute.get("/", async (c) => {
 /* --------------------------------- detail ---------------------------------- */
 
 sellerOrdersRoute.get("/:id", async (c) => {
-  const user = requireUser(c);
+  const user = requireSeller(c);
   const detail = await getSellerOrder(user.id, c.req.param("id"));
   return c.json(ok(detail));
 });
@@ -62,7 +63,7 @@ const fulfillmentSchema = z.object({ status: z.string().trim().min(1).max(20) })
  * partial update that would leave the order in a state nobody chose.
  */
 sellerOrdersRoute.patch("/:id/fulfillment", async (c) => {
-  const user = requireUser(c);
+  const user = requireSeller(c);
   const input = fulfillmentSchema.parse(await c.req.json());
   const reference = c.req.param("id");
 
@@ -117,7 +118,7 @@ const cancelSchema = z
  * money, and a seller action must never be able to move it.
  */
 sellerOrdersRoute.post("/:id/cancel", async (c) => {
-  const user = requireUser(c);
+  const user = requireSeller(c);
   const input = cancelSchema.parse(await c.req.json());
 
   const detail = await getSellerOrder(user.id, c.req.param("id"));
@@ -141,6 +142,18 @@ sellerOrdersRoute.post("/:id/cancel", async (c) => {
       .update(orderItems)
       .set({ fulfillmentStatus: "CANCELLED", cancellationReason: input.reason })
       .where(and(eq(orderItems.orderId, orderId), eq(orderItems.sellerId, user.id)));
+
+    // The units come back. Without this a cancelled purchase left the seller's
+    // stock permanently short — the listing stayed "sold out" for an item that
+    // was never delivered, and `OUT_OF_STOCK` was the database's honest answer to
+    // a counter that had been decremented and never restored.
+    await restoreCancelledOrderStock(
+      tx,
+      orderId,
+      lineStatuses
+        .filter((line) => line.fulfillmentStatus === "CANCELLED")
+        .map((line) => line.id),
+    );
   });
 
   return c.json(ok(await getSellerOrder(user.id, orderId)));

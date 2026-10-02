@@ -63,17 +63,26 @@ export function Chip({
   onClick,
   children,
   className,
+  ariaLabel,
 }: {
   selected: boolean;
   onClick: () => void;
   children: React.ReactNode;
   className?: string;
+  /**
+   * Overrides the accessible name. Needed wherever the same label appears in two
+   * rails on one page (the quick filters and the status filter both offer
+   * "Delivered"): without it both chips answer to the same accessible name, which
+   * is ambiguous for a screen reader and for any test querying by role + name.
+   */
+  ariaLabel?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={selected}
+      aria-label={ariaLabel}
       className={cn(
         "shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
