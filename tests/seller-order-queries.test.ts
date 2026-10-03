@@ -121,7 +121,10 @@ describe("the isolation predicate itself", () => {
   it("compiles to a seller_id equality in the WHERE clause", () => {
     // The single most important line in the module: ownership must be part of
     // the query, not a filter applied to its results.
-    const where = and(eq(orderItems.sellerId, 99), ...buildSellerOrderConditions(99, resolveSellerOrderFilters({})));
+    const where = and(
+      eq(orderItems.sellerId, 99),
+      ...buildSellerOrderConditions(99, resolveSellerOrderFilters({})),
+    );
     const { text, params } = toSql(where!);
     expect(text).toContain("`order_items`.`seller_id`");
     expect(params).toContain(99);

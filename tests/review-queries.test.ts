@@ -345,7 +345,10 @@ describe("parseReviewImages", () => {
   });
 
   it("caps the list even if the stored value was written elsewhere", () => {
-    const many = Array.from({ length: MAX_REVIEW_IMAGES + 5 }, (_, i) => `https://cdn.example/${i}.jpg`);
+    const many = Array.from(
+      { length: MAX_REVIEW_IMAGES + 5 },
+      (_, i) => `https://cdn.example/${i}.jpg`,
+    );
     expect(parseReviewImages(JSON.stringify(many))).toHaveLength(MAX_REVIEW_IMAGES);
   });
 });

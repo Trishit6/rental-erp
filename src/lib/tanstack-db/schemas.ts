@@ -116,6 +116,44 @@ export type ReviewRow = z.infer<typeof reviewCollectionSchema>;
  * buyers: the order lines behind `soldUnits` are never fetched into the store,
  * only the count the server already aggregated.
  */
+/**
+ * The signed-in seller's wallet rows.
+ *
+ * **Private**, like `sellerProductCollectionSchema`: this is one seller's money, and
+ * `clearPrivateCollections` wipes it on logout. A balance sitting in the next
+ * customer's store is not a cache-staleness problem.
+ *
+ * The projection is deliberately minimal — the fields a ledger row renders. It holds
+ * no `sellerId` (the store only ever contains the session seller's rows, so the
+ * column would be a constant) and no `idempotencyKey`, which is a server-side
+ * recording guard and has no meaning outside the transaction that used it.
+ */
+export const walletTransactionCollectionSchema = z.object({
+  id: z.number(),
+  type: z.string(),
+  /** Signed integer paise — the sign is meaningful and is preserved. */
+  amount: z.number(),
+  status: z.string(),
+  description: z.string(),
+  reference: z.string().nullable(),
+  createdAt: z.string(),
+});
+
+export type WalletTransactionRow = z.infer<typeof walletTransactionCollectionSchema>;
+
+/** The seller's own payout requests. Private, for the same reason. */
+export const walletPayoutCollectionSchema = z.object({
+  id: z.number(),
+  payoutNumber: z.string(),
+  amount: z.number(),
+  status: z.string(),
+  methodLabel: z.string(),
+  requestedAt: z.string(),
+  completedAt: z.string().nullable(),
+});
+
+export type WalletPayoutRow = z.infer<typeof walletPayoutCollectionSchema>;
+
 export const sellerProductCollectionSchema = z.object({
   id: z.number(),
   title: z.string(),

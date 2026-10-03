@@ -44,11 +44,7 @@ export function RentalDetailsDelivery({ delivery }: { delivery: RentalDelivery }
                 .filter(Boolean)
                 .join(", ")}
               <br />
-              {[
-                delivery.address.city,
-                delivery.address.state,
-                delivery.address.postalCode,
-              ]
+              {[delivery.address.city, delivery.address.state, delivery.address.postalCode]
                 .filter(Boolean)
                 .join(", ")}
               {delivery.address.country ? `, ${delivery.address.country}` : null}

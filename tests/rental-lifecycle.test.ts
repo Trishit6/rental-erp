@@ -186,7 +186,13 @@ describe("the rental timeline is built from recorded events", () => {
       ],
       "ACTIVE",
     );
-    expect(events.map((e) => e.key)).toEqual(["CONFIRMED", "STARTED", "RETURN_REQUESTED", "RETURNED", "COMPLETED"]);
+    expect(events.map((e) => e.key)).toEqual([
+      "CONFIRMED",
+      "STARTED",
+      "RETURN_REQUESTED",
+      "RETURNED",
+      "COMPLETED",
+    ]);
   });
 
   it("falls back to the real creation time for a row predating the events table", () => {
@@ -228,12 +234,18 @@ describe("the event vocabulary", () => {
 describe("day arithmetic", () => {
   it("counts whole days, never a fraction", () => {
     // The columns are day-precision, so a rental ending today has zero days left.
-    expect(rentalDaysUntil(day("2026-09-29T23:59:00.000Z"), day("2026-09-29T00:00:00.000Z"))).toBe(0);
-    expect(rentalDaysUntil(day("2026-09-29T00:00:00.000Z"), day("2026-10-06T00:00:00.000Z"))).toBe(7);
+    expect(rentalDaysUntil(day("2026-09-29T23:59:00.000Z"), day("2026-09-29T00:00:00.000Z"))).toBe(
+      0,
+    );
+    expect(rentalDaysUntil(day("2026-09-29T00:00:00.000Z"), day("2026-10-06T00:00:00.000Z"))).toBe(
+      7,
+    );
   });
 
   it("never returns a negative count", () => {
-    expect(rentalDaysUntil(day("2026-10-06T00:00:00.000Z"), day("2026-09-29T00:00:00.000Z"))).toBe(0);
+    expect(rentalDaysUntil(day("2026-10-06T00:00:00.000Z"), day("2026-09-29T00:00:00.000Z"))).toBe(
+      0,
+    );
   });
 
   it("is stable across a timezone boundary", () => {

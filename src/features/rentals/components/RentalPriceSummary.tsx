@@ -41,9 +41,7 @@ export function RentalPriceSummary({
 
       <div className="flex items-baseline justify-between gap-3">
         <dt className="text-muted-foreground">Daily rate</dt>
-        <dd className="text-muted-foreground tabular-nums">
-          {formatInr(rental.dailyRate)}/day
-        </dd>
+        <dd className="text-muted-foreground tabular-nums">{formatInr(rental.dailyRate)}/day</dd>
       </div>
 
       {rental.deliveryFee > 0 && (

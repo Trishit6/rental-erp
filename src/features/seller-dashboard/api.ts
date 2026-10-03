@@ -49,9 +49,8 @@ export async function fetchSellerStatus(): Promise<SellerStatus> {
 }
 
 export async function becomeSeller(payload: OnboardingPayload) {
-  return (
-    await api.post<{ isSeller: boolean; profileId: number }>("/seller/onboarding", payload)
-  ).data;
+  return (await api.post<{ isSeller: boolean; profileId: number }>("/seller/onboarding", payload))
+    .data;
 }
 
 /* -------------------------------- summary --------------------------------- */
@@ -62,9 +61,7 @@ export async function fetchSellerSummary(): Promise<SellerSummary> {
 
 /* ------------------------------- analytics -------------------------------- */
 
-export async function fetchSellerAnalytics(
-  params: AnalyticsParams,
-): Promise<SellerAnalytics> {
+export async function fetchSellerAnalytics(params: AnalyticsParams): Promise<SellerAnalytics> {
   return (
     await api.get<SellerAnalytics>(
       `/seller/analytics${toQueryString({

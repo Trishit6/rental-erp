@@ -8,12 +8,7 @@ import {
   pageNumber,
   text,
 } from "@/lib/product-search/schema";
-import type {
-  ActiveFavoriteFilter,
-  FavoriteFilters,
-  FavoriteSearch,
-  FavoriteSort,
-} from "../types";
+import type { ActiveFavoriteFilter, FavoriteFilters, FavoriteSearch, FavoriteSort } from "../types";
 
 /* --------------------------------- options ---------------------------------- */
 
@@ -209,7 +204,5 @@ export function favoritesSubtitle(count: number | undefined, isLoading: boolean)
 
 /** Accessible label for a heart — different for each state, never shared. */
 export function favoriteButtonLabel(title: string, favorited: boolean): string {
-  return favorited
-    ? `Remove ${title} from favorites`
-    : `Add ${title} to favorites`;
+  return favorited ? `Remove ${title} from favorites` : `Add ${title} to favorites`;
 }

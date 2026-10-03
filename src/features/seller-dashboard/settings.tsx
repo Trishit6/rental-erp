@@ -45,7 +45,9 @@ export function SellerSettingsPage() {
     setSeededFor(profile.userId);
     setBio(profile.bio ?? "");
     setLocation(profile.location ?? "");
-    setResponseRateHours(profile.responseRateHours === null ? "" : String(profile.responseRateHours));
+    setResponseRateHours(
+      profile.responseRateHours === null ? "" : String(profile.responseRateHours),
+    );
   }
 
   const hours = (responseRateHours ?? "").trim() === "" ? null : Number(responseRateHours);
@@ -113,8 +115,8 @@ export function SellerSettingsPage() {
             placeholder="Furniture and vintage lighting. I pack everything myself and can deliver across the neighbourhood."
           />
           <span className="block text-xs text-muted-foreground">
-            {bioValue.trim().length}/500 characters. A sentence about what you sell and how you
-            work is more useful than a paragraph.
+            {bioValue.trim().length}/500 characters. A sentence about what you sell and how you work
+            is more useful than a paragraph.
           </span>
         </label>
 
@@ -168,8 +170,8 @@ export function SellerSettingsPage() {
         <Card className="p-5">
           <p className="text-sm font-bold">Your account is verified</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Verification is done by the Revaro team and shown as a badge on your shopfront. It
-            isn't something you can set yourself.
+            Verification is done by the Revaro team and shown as a badge on your shopfront. It isn't
+            something you can set yourself.
           </p>
         </Card>
       )}

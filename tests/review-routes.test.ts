@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { Hono } from "hono";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { Router } from "../server/lib/http";
 import { reviewsRoute } from "../server/routes/reviews";
+import { startRouter, type Harness } from "./support/http-harness";
 
 /**
  * Route-table shape for the reviews API.
@@ -26,32 +27,39 @@ import { reviewsRoute } from "../server/routes/reviews";
  *
  * The bug is in the *routing table*, not in any handler, so it can be reproduced
  * without a database: the real (method, path) pairs are re-registered on a throwaway
- * Hono app whose handlers just echo the pattern that matched. That keeps the test in
- * the no-DB suite while still exercising Hono's actual matcher — the part whose
- * ordering semantics caused the bug — rather than asserting on a list of strings.
+ * router whose handlers just echo the pattern that matched. That keeps the test in
+ * the no-DB suite while still exercising the real matcher — the part whose ordering
+ * semantics caused the bug — rather than asserting on a list of strings.
  */
 
-type RouteEntry = { basePath: string; path: string; method: string };
-
-const routes = (reviewsRoute as unknown as { routes: RouteEntry[] }).routes;
+const routes = reviewsRoute.routes();
 
 /** A router with the real reviews paths but handlers that cannot touch a database. */
 function replayRouter() {
-  const app = new Hono();
+  const replay = new Router();
   for (const route of routes) {
-    const handler = (c: { text: (body: string, status?: number) => Response }) =>
+    const handler = (c: { text: (body: string, status?: number) => void }) => {
       c.text(route.path, 200);
+    };
     const method = route.method.toLowerCase() as "get" | "post" | "patch" | "delete";
-    app.on(method, route.path, handler as never);
+    replay[method](route.path, handler);
   }
-  return app;
+  return replay;
 }
 
-const app = replayRouter();
+let harness: Harness;
+
+beforeAll(async () => {
+  harness = await startRouter(replayRouter());
+});
+
+afterAll(async () => {
+  await harness.close();
+});
 
 /** The path pattern that handled this request, or null if nothing matched. */
 async function match(path: string, method = "GET"): Promise<string | null> {
-  const res = await app.request(path, { method });
+  const res = await harness.request(path, { method });
   return res.status === 200 ? res.text() : null;
 }
 

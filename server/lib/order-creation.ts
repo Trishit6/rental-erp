@@ -71,7 +71,11 @@ export const ORDER_EVENTS = {
 } as const;
 
 /** Reserved context the intent stored so a webhook can finish the job. */
-export { readCheckoutContext, serializeCheckoutMetadata, type CheckoutContext } from "./payments/checkout-context";
+export {
+  readCheckoutContext,
+  serializeCheckoutMetadata,
+  type CheckoutContext,
+} from "./payments/checkout-context";
 
 export async function createOrderFromPayment(input: CreateOrderInput): Promise<OrderConfirmation> {
   return db.transaction(async (tx) => {
@@ -111,15 +115,15 @@ export async function createOrderFromPayment(input: CreateOrderInput): Promise<O
     }
 
     if (transaction.status !== "PROCESSING") {
-      throw new HttpError(
-        409,
-        "PAYMENT_NOT_VERIFIED",
-        "This payment has not been verified yet.",
-      );
+      throw new HttpError(409, "PAYMENT_NOT_VERIFIED", "This payment has not been verified yet.");
     }
 
     /* --- 3. Lock the products, in a stable order, before reading them ------ */
-    const [cart] = await tx.select({ id: carts.id }).from(carts).where(eq(carts.userId, input.userId)).limit(1);
+    const [cart] = await tx
+      .select({ id: carts.id })
+      .from(carts)
+      .where(eq(carts.userId, input.userId))
+      .limit(1);
     if (!cart) throw new HttpError(400, "EMPTY_CART", "Your cart is empty.");
 
     const lineRows = await tx
@@ -256,7 +260,9 @@ export async function createOrderFromPayment(input: CreateOrderInput): Promise<O
         .values(
           lines
             .map((line, index) => ({ line, orderItemId: insertedIds[index] }))
-            .filter((entry) => entry.line.mode === "RENT" && entry.line.startDate && entry.line.endDate)
+            .filter(
+              (entry) => entry.line.mode === "RENT" && entry.line.startDate && entry.line.endDate,
+            )
             .map(({ line, orderItemId }) => ({
               orderId,
               orderItemId,
@@ -318,9 +324,12 @@ export async function createOrderFromPayment(input: CreateOrderInput): Promise<O
 
     // Only the lines that were paid for. Anything saved for later, and anything
     // added after the quote was taken, stays in the cart.
-    await tx
-      .delete(cartItems)
-      .where(inArray(cartItems.id, lines.map((l) => l.cartItemId)));
+    await tx.delete(cartItems).where(
+      inArray(
+        cartItems.id,
+        lines.map((l) => l.cartItemId),
+      ),
+    );
 
     /* --- 10. Seller notifications ------------------------------------------ */
     const sellerIds = [...new Set(lines.map((l) => l.sellerId))];

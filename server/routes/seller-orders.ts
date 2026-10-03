@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Router } from "../lib/http";
 import { z } from "zod";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "../db";
@@ -6,6 +6,7 @@ import { orderItems } from "../schema";
 import { buildPagination, HttpError, ok } from "../lib/api";
 import { requireSeller } from "../lib/seller-access";
 import { restoreCancelledOrderStock } from "../lib/product-inventory";
+import { recordEarningReversal, recordSaleEarning } from "../lib/wallet";
 import {
   assertCancellable,
   assertFulfillmentTransition,
@@ -25,7 +26,7 @@ import {
  * request body or query string, because a value the client can choose is not an
  * authorization check.
  */
-export const sellerOrdersRoute = new Hono();
+export const sellerOrdersRoute = new Router();
 
 sellerOrdersRoute.use("*", async (c, next) => {
   requireSeller(c);
@@ -83,7 +84,8 @@ sellerOrdersRoute.patch("/:id/fulfillment", async (c) => {
   const lineStatuses = await db
     .select({ id: orderItems.id, fulfillmentStatus: orderItems.fulfillmentStatus })
     .from(orderItems)
-    .where(and(eq(orderItems.orderId, orderId), eq(orderItems.sellerId, user.id)));
+    .where(and(eq(orderItems.orderId, orderId), eq(orderItems.sellerId, user.id)))
+    .orderBy(asc(orderItems.id));
 
   // `assertFulfillmentTransition` resolves the effective state itself, so a line
   // the seller has not touched is judged from the order's status.
@@ -96,6 +98,23 @@ sellerOrdersRoute.patch("/:id/fulfillment", async (c) => {
       .update(orderItems)
       .set({ fulfillmentStatus: input.status })
       .where(and(eq(orderItems.orderId, orderId), eq(orderItems.sellerId, user.id)));
+
+    // Delivery is the moment a sale has been earned, so it is where the ledger row
+    // is written — inside the same transaction as the status change. Two reasons for
+    // one transaction rather than a follow-up write: a crash between them would leave
+    // a delivered sale that is permanently missing from the seller's balance, with
+    // nothing in either table to point at the cause; and writing it *after* would let
+    // a seller who immediately cancelled see a credit that is later unwound for a
+    // line they never earned on.
+    //
+    // The earning is recorded `PENDING`, not `AVAILABLE`. A buyer can still return
+    // something, and money that has not cleared the settlement delay is not money a
+    // seller can withdraw.
+    if (input.status === "DELIVERED") {
+      for (const line of lineStatuses) {
+        await recordSaleEarning(tx, line.id);
+      }
+    }
   });
 
   // Re-read rather than echoing the request, so the client renders the state the
@@ -105,9 +124,7 @@ sellerOrdersRoute.patch("/:id/fulfillment", async (c) => {
 
 /* -------------------------------- cancellation ------------------------------ */
 
-const cancelSchema = z
-  .object({ reason: z.string().trim().min(3).max(300) })
-  .strict();
+const cancelSchema = z.object({ reason: z.string().trim().min(3).max(300) }).strict();
 
 /**
  * Cancel the seller's part of an order.
@@ -150,10 +167,18 @@ sellerOrdersRoute.post("/:id/cancel", async (c) => {
     await restoreCancelledOrderStock(
       tx,
       orderId,
-      lineStatuses
-        .filter((line) => line.fulfillmentStatus === "CANCELLED")
-        .map((line) => line.id),
+      lineStatuses.filter((line) => line.fulfillmentStatus === "CANCELLED").map((line) => line.id),
     );
+
+    // Unwind any earning recorded for these lines. Cancellation is only permitted
+    // before the goods leave, so in the normal case there is nothing here yet and
+    // this is a no-op — which is exactly why it is safe to call unconditionally. It
+    // is called because a line that *was* delivered and is then cancelled (a
+    // data-migration artefact, or a future path that permits it) must not leave a
+    // live credit behind for goods that are coming back.
+    for (const line of lineStatuses) {
+      await recordEarningReversal(tx, { orderItemId: line.id }, "Order cancelled by the seller");
+    }
   });
 
   return c.json(ok(await getSellerOrder(user.id, orderId)));

@@ -70,10 +70,7 @@ export const reviewKeys = {
  * invalidate identically — three call sites, one rule, and no risk of one of them
  * quietly missing the summary.
  */
-export function invalidateReviewsForProduct(
-  queryClient: QueryClient,
-  productIds: number[],
-): void {
+export function invalidateReviewsForProduct(queryClient: QueryClient, productIds: number[]): void {
   for (const productId of new Set(productIds)) {
     void queryClient.invalidateQueries({ queryKey: reviewKeys.product(productId) });
     void queryClient.invalidateQueries({ queryKey: reviewKeys.eligibility(productId) });
@@ -215,8 +212,7 @@ export function useReviewMutation() {
     }: {
       reviewId?: number;
       input: ReviewInput;
-    }): Promise<Review> =>
-      reviewId ? updateReview(reviewId, input) : createReview(input),
+    }): Promise<Review> => (reviewId ? updateReview(reviewId, input) : createReview(input)),
 
     onSuccess: (review, variables) => {
       invalidateReviewsForProduct(queryClient, [review.product.id]);
@@ -226,7 +222,9 @@ export function useReviewMutation() {
     },
     onError: (error, variables) => {
       toast(reviewErrorMessage(error), {
-        description: variables.reviewId ? "Your review was not changed." : "Your review was not published.",
+        description: variables.reviewId
+          ? "Your review was not changed."
+          : "Your review was not published.",
       });
     },
   });
@@ -313,7 +311,10 @@ function patchReviewInPayload(old: unknown, reviewId: number): unknown {
           ? {
               ...review,
               viewerMarkedHelpful: !review.viewerMarkedHelpful,
-              helpfulCount: Math.max(0, review.helpfulCount + (review.viewerMarkedHelpful ? -1 : 1)),
+              helpfulCount: Math.max(
+                0,
+                review.helpfulCount + (review.viewerMarkedHelpful ? -1 : 1),
+              ),
             }
           : review,
       ),
@@ -349,7 +350,8 @@ export function useReplyToReview() {
 /** Hide / restore / delete, for the admin queue. */
 export function useReviewModeration() {
   const queryClient = useQueryClient();
-  const reconcile = (review: Review) => invalidateReviewsForProduct(queryClient, [review.product.id]);
+  const reconcile = (review: Review) =>
+    invalidateReviewsForProduct(queryClient, [review.product.id]);
 
   return {
     setStatus: useMutation({

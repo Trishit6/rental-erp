@@ -60,6 +60,16 @@ describe("the demo seed truncates every table", () => {
       ["rental_events", "rentals"],
       ["rentals", "orders"],
       ["order_items", "orders"],
+      // The wallet. `wallet_transactions` points at `payouts`, `orders`, `rentals`
+      // and `order_items` as well as `users`, so it has to lead them all; the
+      // payout methods point at a payout, so they come after nothing that matters
+      // but before `users`.
+      ["wallet_transactions", "payouts"],
+      ["wallet_transactions", "orders"],
+      ["wallet_transactions", "rentals"],
+      ["wallet_transactions", "users"],
+      ["seller_payout_methods", "users"],
+      ["payouts", "users"],
       ["cart_items", "carts"],
       ["messages", "conversations"],
       ["conversation_participants", "conversations"],

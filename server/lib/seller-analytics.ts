@@ -233,7 +233,9 @@ export async function getSellerAnalytics(
     })
     .from(orderItems)
     .innerJoin(orders, eq(orders.id, orderItems.orderId))
-    .where(and(eq(orderItems.sellerId, sellerId), eq(orderItems.mode, "BUY"), window, COUNTABLE_ORDER));
+    .where(
+      and(eq(orderItems.sellerId, sellerId), eq(orderItems.mode, "BUY"), window, COUNTABLE_ORDER),
+    );
 
   const [rental] = await db
     .select({
@@ -241,7 +243,14 @@ export async function getSellerAnalytics(
       units: sql<number>`COUNT(*)`,
     })
     .from(rentals)
-    .where(and(eq(rentals.ownerId, sellerId), COUNTABLE_RENTAL, gte(rentals.createdAt, from), lte(rentals.createdAt, to)));
+    .where(
+      and(
+        eq(rentals.ownerId, sellerId),
+        COUNTABLE_RENTAL,
+        gte(rentals.createdAt, from),
+        lte(rentals.createdAt, to),
+      ),
+    );
 
   // Distinct orders, not lines: a three-line order from one seller is one order.
   const [orderCount] = await db
@@ -255,12 +264,7 @@ export async function getSellerAnalytics(
     .from(orderItems)
     .innerJoin(orders, eq(orders.id, orderItems.orderId))
     .where(
-      and(
-        eq(orderItems.sellerId, sellerId),
-        eq(orderItems.mode, "BUY"),
-        window,
-        COUNTABLE_ORDER,
-      ),
+      and(eq(orderItems.sellerId, sellerId), eq(orderItems.mode, "BUY"), window, COUNTABLE_ORDER),
     );
 
   const [ratings] = await db
@@ -604,9 +608,7 @@ export async function getSellerSummary(
       awaitingReply: sql<number>`COALESCE(SUM(${reviews.sellerReply} IS NULL), 0)`,
     })
     .from(reviews)
-    .where(
-      and(eq(reviews.sellerId, sellerId), inArray(reviews.status, ["PUBLISHED"])),
-    );
+    .where(and(eq(reviews.sellerId, sellerId), inArray(reviews.status, ["PUBLISHED"])));
 
   const salePaise = Number(sale?.value ?? 0);
   const rentalPaise = Number(rental?.value ?? 0);
@@ -669,7 +671,6 @@ export function isSellerRentalStatus(
   value: unknown,
 ): value is (typeof SELLER_RENTAL_STATUS_FILTERS)[number] {
   return (
-    typeof value === "string" &&
-    (SELLER_RENTAL_STATUS_FILTERS as readonly string[]).includes(value)
+    typeof value === "string" && (SELLER_RENTAL_STATUS_FILTERS as readonly string[]).includes(value)
   );
 }

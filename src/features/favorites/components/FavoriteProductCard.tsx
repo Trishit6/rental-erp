@@ -20,7 +20,10 @@ import {
 } from "./schema";
 import type { FavoriteProduct } from "../types";
 
-const AVAILABILITY_TONE: Record<FavoriteAvailability, { icon: typeof CheckCircle2; className: string }> = {
+const AVAILABILITY_TONE: Record<
+  FavoriteAvailability,
+  { icon: typeof CheckCircle2; className: string }
+> = {
   AVAILABLE: { icon: CheckCircle2, className: "text-accent" },
   LIMITED: { icon: Clock3, className: "text-primary" },
   OUT_OF_STOCK: { icon: PackageX, className: "text-muted-foreground" },
@@ -62,7 +65,8 @@ export function FavoriteProductCard({
 
   const rentable = !!product.rentalPricePerDay && product.rentalPricePerDay > 0;
   const buyable = !!product.purchasePrice && product.purchasePrice > 0;
-  const conditionLabel = CONDITION_LABELS[product.condition as ProductCondition] ?? product.condition;
+  const conditionLabel =
+    CONDITION_LABELS[product.condition as ProductCondition] ?? product.condition;
 
   /** Buy-only: renting needs a date window, which the product page collects. */
   function addToCart() {
@@ -71,7 +75,8 @@ export function FavoriteProductCard({
         description: "You need an account to add items to your cart.",
         action: {
           label: "Sign in",
-          onClick: () => void navigate({ to: "/login", search: { redirect: `/product/${product.slug}` } }),
+          onClick: () =>
+            void navigate({ to: "/login", search: { redirect: `/product/${product.slug}` } }),
         },
       });
       return;
@@ -83,7 +88,9 @@ export function FavoriteProductCard({
       {
         onSuccess: () => toast("Added to cart"),
         onError: (error) =>
-          toast(error instanceof ApiError ? error.message : "Couldn't update your cart. Try again."),
+          toast(
+            error instanceof ApiError ? error.message : "Couldn't update your cart. Try again.",
+          ),
         onSettled: () => setAdding(false),
       },
     );
@@ -190,7 +197,9 @@ export function FavoriteProductCard({
 
               <Button
                 size="sm"
-                onClick={() => void navigate({ to: "/product/$slug", params: { slug: product.slug } })}
+                onClick={() =>
+                  void navigate({ to: "/product/$slug", params: { slug: product.slug } })
+                }
               >
                 View
               </Button>

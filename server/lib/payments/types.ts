@@ -163,8 +163,4 @@ export function isPaymentMethod(value: unknown): value is PaymentMethod {
 export const SETTLED_STATUSES: readonly PaymentStatus[] = ["SUCCEEDED"];
 
 /** Statuses a user-visible attempt can end in. Polling stops on any of these. */
-export const TERMINAL_STATUSES: readonly PaymentStatus[] = [
-  "SUCCEEDED",
-  "FAILED",
-  "CANCELLED",
-];
+export const TERMINAL_STATUSES: readonly PaymentStatus[] = ["SUCCEEDED", "FAILED", "CANCELLED"];

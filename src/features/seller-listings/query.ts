@@ -206,14 +206,8 @@ export function useProductStatusMutation() {
 export function useProductInventoryMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      id,
-      ...edit
-    }: {
-      id: number;
-      quantity?: number;
-      availableQuantity?: number;
-    }) => setSellerProductInventory(id, edit),
+    mutationFn: ({ id, ...edit }: { id: number; quantity?: number; availableQuantity?: number }) =>
+      setSellerProductInventory(id, edit),
     onSuccess: async () => {
       await invalidateProductWrites(queryClient);
       toast.success("Stock updated.");

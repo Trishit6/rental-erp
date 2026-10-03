@@ -32,12 +32,16 @@ export function RentalDetailsProduct({
       <RentalProductPreview rental={rental} size="lg" />
 
       <dl className="mt-4 space-y-2 text-sm">
-        {rental.condition && (
-          <Row label="Condition" value={pretty(rental.condition)} />
-        )}
+        {rental.condition && <Row label="Condition" value={pretty(rental.condition)} />}
         <Row
           label="Listing mode"
-          value={rental.listingType === "BOTH" ? "Rent & Buy" : rental.listingType === "RENT" ? "Rent" : "Sale"}
+          value={
+            rental.listingType === "BOTH"
+              ? "Rent & Buy"
+              : rental.listingType === "RENT"
+                ? "Rent"
+                : "Sale"
+          }
         />
         {seller && <Row label="Seller" value={seller.name} />}
       </dl>

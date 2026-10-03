@@ -10,9 +10,7 @@ export function SiteFooter() {
             <Repeat2 size={18} />
           </span>
           <span className="font-heading font-extrabold">Revaro</span>
-          <span className="text-xs text-muted-foreground">
-            © 2026 · Rent. Buy. Sell. Reuse.
-          </span>
+          <span className="text-xs text-muted-foreground">© 2026 · Rent. Buy. Sell. Reuse.</span>
         </div>
         <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-muted-foreground">
           <Link to="/how-it-works" className="nav-link">

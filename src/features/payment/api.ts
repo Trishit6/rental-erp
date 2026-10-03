@@ -70,7 +70,9 @@ export async function verifyPayment(
 export async function cancelPayment(
   transactionId: number,
 ): Promise<{ transactionId: number; status: PaymentStatus }> {
-  return (await api.post<{ transactionId: number; status: PaymentStatus }>(
-    `/payments/${transactionId}/cancel`,
-  )).data;
+  return (
+    await api.post<{ transactionId: number; status: PaymentStatus }>(
+      `/payments/${transactionId}/cancel`,
+    )
+  ).data;
 }

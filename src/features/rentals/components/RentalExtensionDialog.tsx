@@ -151,8 +151,8 @@ export function RentalExtensionDialog({
             <p className="mt-1">
               We&apos;ve asked for {quote.additionalDays} more day
               {quote.additionalDays === 1 ? "" : "s"} and will confirm the end date and price before
-              anything changes. Your current end date{" "}
-              {formatDateLong(quote.currentEndDate)} still stands until then.
+              anything changes. Your current end date {formatDateLong(quote.currentEndDate)} still
+              stands until then.
             </p>
           </div>
         )}

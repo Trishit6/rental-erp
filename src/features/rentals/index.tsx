@@ -4,7 +4,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { motion, useReducedMotion } from "framer-motion";
 import { ApiError } from "@/lib/api/client";
 import { toast } from "sonner";
-import { rentalsListQueryOptions, useRental, useRentals, useRequestRentalExtension, useRequestRentalReturn } from "./query";
+import {
+  rentalsListQueryOptions,
+  useRental,
+  useRentals,
+  useRequestRentalExtension,
+  useRequestRentalReturn,
+} from "./query";
 import {
   hasActiveRentalFilters,
   parseRentalRouteParam,
@@ -95,10 +101,7 @@ export function RentalsPage() {
         </div>
 
         <div className="space-y-4">
-          <RentalsTabs
-            value={search.bucket}
-            onChange={(bucket) => patchSearch({ bucket })}
-          />
+          <RentalsTabs value={search.bucket} onChange={(bucket) => patchSearch({ bucket })} />
 
           <div className="flex flex-wrap items-center gap-3">
             <RentalsSearchField
@@ -191,10 +194,7 @@ export function RentalDetailsPage() {
         <div className="space-y-5">
           <RentalDetailsProduct rental={rental} seller={seller} />
           <section className="raised-surface p-5" aria-labelledby="rental-progress-heading">
-            <h2
-              id="rental-progress-heading"
-              className="mb-4 font-heading text-lg font-extrabold"
-            >
+            <h2 id="rental-progress-heading" className="mb-4 font-heading text-lg font-extrabold">
               Progress
             </h2>
             <RentalTimeline events={timeline} />

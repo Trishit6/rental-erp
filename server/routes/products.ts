@@ -1,16 +1,24 @@
-import { Hono } from "hono";
+import { Router } from "../lib/http";
 import { z } from "zod";
 import { and, asc, desc, eq, gte, inArray, like, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
-import { categories, favorites, productImages, products, productTags, sellerProfiles, users } from "../schema";
+import {
+  categories,
+  favorites,
+  productImages,
+  products,
+  productTags,
+  sellerProfiles,
+  users,
+} from "../schema";
 import { ok, buildPagination, HttpError } from "../lib/api";
 import { requireUser } from "../lib/auth";
 import { checkRentalAvailability } from "../lib/rental-availability";
 import { isPubliclyVisible, PUBLIC_PRODUCT_STATUSES } from "../lib/product-status";
 import { slugify } from "../../src/lib/pricing";
 
-export const productsRoute = new Hono();
-export const categoriesRoute = new Hono();
+export const productsRoute = new Router();
+export const categoriesRoute = new Router();
 
 /* ------------------------------ categories -------------------------------- */
 
@@ -554,7 +562,10 @@ async function loadSellerView(sellerId: number): Promise<ProductSellerView | nul
       })
       .from(products)
       .where(
-        and(eq(products.sellerId, sellerId), inArray(products.status, [...PUBLIC_PRODUCT_STATUSES])),
+        and(
+          eq(products.sellerId, sellerId),
+          inArray(products.status, [...PUBLIC_PRODUCT_STATUSES]),
+        ),
       ),
   ]);
 

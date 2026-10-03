@@ -10,7 +10,11 @@ import { Skeleton } from "@/components/ui/skeleton";
  */
 export function CartSkeleton({ count = 2 }: { count?: number }) {
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]" role="status" aria-label="Loading your cart">
+    <div
+      className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]"
+      role="status"
+      aria-label="Loading your cart"
+    >
       <div className="space-y-3">
         {Array.from({ length: count }).map((_, index) => (
           <div key={index} className="raised-surface rounded-3xl p-4">

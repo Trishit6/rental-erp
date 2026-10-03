@@ -65,12 +65,8 @@ describe("the transition table", () => {
   it("allows every forward step to be applied to a fresh CONFIRMED line", () => {
     expect(() => assertFulfillmentTransition("CONFIRMED", null, "PROCESSING")).not.toThrow();
     expect(() => assertFulfillmentTransition("CONFIRMED", "PROCESSING", "SHIPPED")).not.toThrow();
-    expect(() =>
-      assertFulfillmentTransition("CONFIRMED", "SHIPPED", "DELIVERED"),
-    ).not.toThrow();
-    expect(() =>
-      assertFulfillmentTransition("CONFIRMED", "DELIVERED", "COMPLETED"),
-    ).not.toThrow();
+    expect(() => assertFulfillmentTransition("CONFIRMED", "SHIPPED", "DELIVERED")).not.toThrow();
+    expect(() => assertFulfillmentTransition("CONFIRMED", "DELIVERED", "COMPLETED")).not.toThrow();
   });
 
   it("names the state in the refusal instead of saying 'invalid'", () => {
@@ -110,7 +106,8 @@ describe("cancellation is only offered before the goods leave", () => {
 
 describe("vocabulary guards", () => {
   it("accepts exactly the seller-settable states", () => {
-    for (const state of SELLER_FULFILLMENT_STATES) expect(isSellerFulfillmentState(state)).toBe(true);
+    for (const state of SELLER_FULFILLMENT_STATES)
+      expect(isSellerFulfillmentState(state)).toBe(true);
     // Not settable by a seller: these belong to the order's own lifecycle.
     for (const state of ["PENDING_PAYMENT", "CONFIRMED", "CANCELLED", "PAID", ""]) {
       expect(isSellerFulfillmentState(state)).toBe(false);

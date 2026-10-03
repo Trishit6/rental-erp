@@ -123,9 +123,7 @@ export function CartDrawer({
 
                       {cart.totals.securityDeposits > 0 && (
                         <div className="flex items-baseline justify-between gap-3 text-xs">
-                          <span className="font-semibold text-accent">
-                            Refundable deposits
-                          </span>
+                          <span className="font-semibold text-accent">Refundable deposits</span>
                           <span className="font-bold tabular-nums text-accent">
                             {formatInr(cart.totals.securityDeposits)}
                           </span>

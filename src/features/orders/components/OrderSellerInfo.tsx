@@ -40,7 +40,11 @@ export function OrderSellerInfo({ sellers }: { sellers: SellerSummary[] }) {
               <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-foreground">
                 {seller.name}
                 {seller.verified && (
-                  <BadgeCheck size={13} className="shrink-0 text-accent" aria-label="Verified seller" />
+                  <BadgeCheck
+                    size={13}
+                    className="shrink-0 text-accent"
+                    aria-label="Verified seller"
+                  />
                 )}
               </p>
               <Link

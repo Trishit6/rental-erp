@@ -20,11 +20,7 @@ export function PaymentCancelled({ onResume }: { onResume?: () => void }) {
         description="You cancelled this payment. Your cart is exactly as you left it — nothing was charged."
         action={
           <div className="flex flex-wrap justify-center gap-3">
-            {onResume && (
-              <Button onClick={onResume}>
-                Resume payment
-              </Button>
-            )}
+            {onResume && <Button onClick={onResume}>Resume payment</Button>}
             <Button asChild variant="secondary">
               <Link to="/cart">Back to cart</Link>
             </Button>

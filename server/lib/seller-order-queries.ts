@@ -134,7 +134,9 @@ export function resolveSellerOrderFilters(raw: unknown): ResolvedSellerOrderFilt
     status: (SELLER_ORDER_STATUS_FILTERS as readonly string[]).includes(parsed.status ?? "")
       ? (parsed.status as SellerOrderStatusFilter)
       : null,
-    paymentStatus: (SELLER_PAYMENT_STATUSES as readonly string[]).includes(parsed.paymentStatus ?? "")
+    paymentStatus: (SELLER_PAYMENT_STATUSES as readonly string[]).includes(
+      parsed.paymentStatus ?? "",
+    )
       ? (parsed.paymentStatus as string)
       : null,
     sort: (SELLER_ORDER_SORTS as readonly string[]).includes(parsed.sort ?? "")
@@ -280,19 +282,17 @@ export async function listSellerOrders(
     .limit(filters.pageSize)
     .offset((filters.page - 1) * filters.pageSize);
 
-  const countQuery = db
-    .select({ total: sql<number>`COUNT(*)` })
-    .from(
-      db
-        .select({ id: orders.id })
-        .from(orders)
-        .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
-        .innerJoin(users, eq(users.id, orders.userId))
-        .where(where)
-        .groupBy(orders.id)
-        .having(having ?? sql`1 = 1`)
-        .as("seller_orders"),
-    );
+  const countQuery = db.select({ total: sql<number>`COUNT(*)` }).from(
+    db
+      .select({ id: orders.id })
+      .from(orders)
+      .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
+      .innerJoin(users, eq(users.id, orders.userId))
+      .where(where)
+      .groupBy(orders.id)
+      .having(having ?? sql`1 = 1`)
+      .as("seller_orders"),
+  );
 
   const [[counted]] = await Promise.all([countQuery]);
 
@@ -536,7 +536,14 @@ function buildSellerOrderTimeline(
   orderStatus: string,
   lines: { fulfillmentStatus: string | null }[],
 ): { key: string; label: string; at: string | null; state: string }[] {
-  const steps = ["CONFIRMED", "PROCESSING", "READY_FOR_PICKUP", "SHIPPED", "DELIVERED", "COMPLETED"];
+  const steps = [
+    "CONFIRMED",
+    "PROCESSING",
+    "READY_FOR_PICKUP",
+    "SHIPPED",
+    "DELIVERED",
+    "COMPLETED",
+  ];
   const labels: Record<string, string> = {
     CONFIRMED: "Order received",
     PROCESSING: "Processing started",

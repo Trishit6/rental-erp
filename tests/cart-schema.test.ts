@@ -97,18 +97,29 @@ describe("cart input schemas", () => {
 
 describe("rental durations", () => {
   it("offers only the presets inside the product's own window", () => {
-    expect(rentalDurationsFor({ rentalPricePerDay: 10_000, minimumRentalDays: 3, maximumRentalDays: 14 }))
-      .toEqual([3, 7, 14]);
+    expect(
+      rentalDurationsFor({
+        rentalPricePerDay: 10_000,
+        minimumRentalDays: 3,
+        maximumRentalDays: 14,
+      }),
+    ).toEqual([3, 7, 14]);
   });
 
   it("always includes the minimum, even when no preset fits", () => {
-    expect(rentalDurationsFor({ rentalPricePerDay: 10_000, minimumRentalDays: 45, maximumRentalDays: 60 }))
-      .toEqual([45, 60]);
+    expect(
+      rentalDurationsFor({
+        rentalPricePerDay: 10_000,
+        minimumRentalDays: 45,
+        maximumRentalDays: 60,
+      }),
+    ).toEqual([45, 60]);
   });
 
   it("offers nothing for something that cannot be rented", () => {
-    expect(rentalDurationsFor({ rentalPricePerDay: null, minimumRentalDays: 1, maximumRentalDays: 30 }))
-      .toEqual([]);
+    expect(
+      rentalDurationsFor({ rentalPricePerDay: null, minimumRentalDays: 1, maximumRentalDays: 30 }),
+    ).toEqual([]);
   });
 });
 
@@ -164,11 +175,13 @@ describe("line issues", () => {
 
   it("treats a retired or deleted product as unavailable", () => {
     expect(
-      isUnavailable(makePurchaseItem({ issues: [{ code: "PRODUCT_UNAVAILABLE", message: "gone" }] })),
+      isUnavailable(
+        makePurchaseItem({ issues: [{ code: "PRODUCT_UNAVAILABLE", message: "gone" }] }),
+      ),
     ).toBe(true);
-    expect(isUnavailable(makePurchaseItem({ issues: [{ code: "PRICE_CHANGED", message: "x" }] }))).toBe(
-      false,
-    );
+    expect(
+      isUnavailable(makePurchaseItem({ issues: [{ code: "PRICE_CHANGED", message: "x" }] })),
+    ).toBe(false);
     expect(isUnavailable(makePurchaseItem({ product: null }))).toBe(true);
   });
 });

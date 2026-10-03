@@ -44,10 +44,7 @@ export function CartUnavailableItem({
 
         <p className="mt-1 text-xs font-bold text-destructive">Currently unavailable</p>
 
-        <CartValidationMessage
-          issues={item.issues}
-          className="mt-2"
-        />
+        <CartValidationMessage issues={item.issues} className="mt-2" />
 
         {item.product && (
           <Link

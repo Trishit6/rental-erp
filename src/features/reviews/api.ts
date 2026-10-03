@@ -104,7 +104,10 @@ export async function getReview(reviewId: number): Promise<Review> {
 export async function getMyReviews(filters: ReviewListFilters = {}): Promise<ReviewListResponse> {
   const suffix = listQueryString(filters);
   const result = await api.get<Review[]>(`/reviews/mine${suffix}`);
-  return { items: result.data, pagination: fallbackPagination(result.pagination, result.data.length) };
+  return {
+    items: result.data,
+    pagination: fallbackPagination(result.pagination, result.data.length),
+  };
 }
 
 /**
@@ -113,7 +116,9 @@ export async function getMyReviews(filters: ReviewListFilters = {}): Promise<Rev
  * The server scopes this with an EXISTS over `products.seller_id`, so there is
  * no filter parameter that could widen it to another seller's reviews.
  */
-export async function getSellerReviews(filters: ReviewListFilters = {}): Promise<ReviewListResponse> {
+export async function getSellerReviews(
+  filters: ReviewListFilters = {},
+): Promise<ReviewListResponse> {
   const suffix = listQueryString(filters);
   const result = await api.get<Omit<ReviewListResponse, "pagination">>(`/reviews/seller${suffix}`);
   return {
@@ -179,10 +184,15 @@ export async function replyToReview(reviewId: number, body: string): Promise<Rev
 /* ------------------------------- moderation -------------------------------- */
 
 /** The admin queue, filterable by status and star rating. */
-export async function getModerationQueue(filters: ReviewListFilters = {}): Promise<ReviewListResponse> {
+export async function getModerationQueue(
+  filters: ReviewListFilters = {},
+): Promise<ReviewListResponse> {
   const suffix = listQueryString(filters);
   const result = await api.get<Review[]>(`/reviews/moderation${suffix}`);
-  return { items: result.data, pagination: fallbackPagination(result.pagination, result.data.length) };
+  return {
+    items: result.data,
+    pagination: fallbackPagination(result.pagination, result.data.length),
+  };
 }
 
 /**

@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Router } from "../lib/http";
 import { z } from "zod";
 import { and, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
@@ -61,7 +61,7 @@ import { requireAdmin, requireUser } from "../lib/auth";
  * review of their own listing, which is a real permission and is checked against
  * the listing's `sellerId` rather than the review's author.
  */
-export const reviewsRoute = new Hono();
+export const reviewsRoute = new Router();
 
 /* --------------------------------- helpers -------------------------------- */
 
@@ -126,7 +126,11 @@ const reviewListSchema = z.object({
 
 function assertReviewImages(urls: string[]): void {
   if (urls.length > MAX_REVIEW_IMAGES) {
-    throw new HttpError(400, "TOO_MANY_IMAGES", `A review can carry up to ${MAX_REVIEW_IMAGES} photos.`);
+    throw new HttpError(
+      400,
+      "TOO_MANY_IMAGES",
+      `A review can carry up to ${MAX_REVIEW_IMAGES} photos.`,
+    );
   }
   const hosts = allowedImageHosts();
   for (const url of urls) {
@@ -248,10 +252,7 @@ reviewsRoute.get("/product/:idOrSlug", async (c) => {
       .orderBy(...buildReviewSort(filters.sort))
       .limit(filters.pageSize)
       .offset((filters.page - 1) * filters.pageSize),
-    db
-      .select({ total: count() })
-      .from(reviews)
-      .where(where),
+    db.select({ total: count() }).from(reviews).where(where),
     getProductRatingSummary(productId),
   ]);
 
@@ -575,11 +576,17 @@ reviewsRoute.post("/:id{[0-9]+}/helpful", async (c) => {
   const reviewId = parseReviewId(c.req.param("id"));
 
   const [row] = await db
-    .select({ id: reviews.id, userId: reviews.userId, productId: reviews.productId, status: reviews.status })
+    .select({
+      id: reviews.id,
+      userId: reviews.userId,
+      productId: reviews.productId,
+      status: reviews.status,
+    })
     .from(reviews)
     .where(eq(reviews.id, reviewId))
     .limit(1);
-  if (!row || row.status !== "PUBLISHED") throw new HttpError(404, "NOT_FOUND", "Review not found.");
+  if (!row || row.status !== "PUBLISHED")
+    throw new HttpError(404, "NOT_FOUND", "Review not found.");
   if (row.userId === user.id) {
     throw new HttpError(409, "SELF_REVIEW_VOTE", "You can't mark your own review as helpful.");
   }
@@ -594,7 +601,9 @@ reviewsRoute.post("/:id{[0-9]+}/helpful", async (c) => {
     if (existing) {
       await tx
         .delete(reviewHelpfulVotes)
-        .where(and(eq(reviewHelpfulVotes.reviewId, reviewId), eq(reviewHelpfulVotes.userId, user.id)));
+        .where(
+          and(eq(reviewHelpfulVotes.reviewId, reviewId), eq(reviewHelpfulVotes.userId, user.id)),
+        );
       await tx
         .update(reviews)
         .set({ helpfulCount: sql`GREATEST(${reviews.helpfulCount} - 1, 0)` })
@@ -607,7 +616,11 @@ reviewsRoute.post("/:id{[0-9]+}/helpful", async (c) => {
     } catch (error) {
       // Two taps in the same millisecond: the unique key caught it.
       if (error instanceof Error && error.message.includes("Duplicate entry")) {
-        throw new HttpError(409, "ALREADY_MARKED_HELPFUL", "You've already marked this as helpful.");
+        throw new HttpError(
+          409,
+          "ALREADY_MARKED_HELPFUL",
+          "You've already marked this as helpful.",
+        );
       }
       throw error;
     }
@@ -757,7 +770,12 @@ reviewsRoute.get("/seller", async (c) => {
         count: count(),
       })
       .from(reviews)
-      .where(and(inArray(reviews.productId, productIds), inArray(reviews.status, [...PUBLIC_REVIEW_STATUSES])))
+      .where(
+        and(
+          inArray(reviews.productId, productIds),
+          inArray(reviews.status, [...PUBLIC_REVIEW_STATUSES]),
+        ),
+      )
       .groupBy(reviews.productId),
   ]);
 

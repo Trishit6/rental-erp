@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Router } from "../lib/http";
 import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db";
@@ -26,10 +26,7 @@ import {
   rentalRoleCondition,
   resolveRentalFilters,
 } from "../lib/rental-queries";
-import {
-  checkReviewEligibility,
-  purchaseTypeForLine,
-} from "../lib/review-queries";
+import { checkReviewEligibility, purchaseTypeForLine } from "../lib/review-queries";
 import {
   addRentalDays,
   buildRentalTimeline,
@@ -40,10 +37,7 @@ import {
   rentalDaysUntil,
   type RentalStatus,
 } from "../lib/rental-lifecycle";
-import {
-  assertRentalAvailability,
-  overlappingRentalCount,
-} from "../lib/rental-availability";
+import { assertRentalAvailability, overlappingRentalCount } from "../lib/rental-availability";
 import { effectiveDailyRate, rentalDays } from "../../src/lib/pricing";
 import {
   checkCustomerCancellation,
@@ -53,6 +47,7 @@ import {
 import { getOrCreateCart, mergeCartItem } from "../lib/cart";
 import { adjustProductInventory, restoreCancelledOrderStock } from "../lib/product-inventory";
 import { isPurchasable } from "../lib/product-status";
+import { recordEarningReversal, recordRentalEarning } from "../lib/wallet";
 
 /** The input shape `mergeCartItem` accepts for one repeated line. */
 type RepeatCartInput = {
@@ -63,8 +58,8 @@ type RepeatCartInput = {
   endDate?: string;
 };
 
-export const ordersRoute = new Hono();
-export const rentalsRoute = new Hono();
+export const ordersRoute = new Router();
+export const rentalsRoute = new Router();
 
 /* ------------------------------ availability ------------------------------- */
 // The engine itself lives in `server/lib/rental-availability.ts` so orders, the
@@ -310,7 +305,10 @@ ordersRoute.get("/:id", async (c) => {
 
   return c.json(
     ok({
-      order: { ...order, deliveryAddressSnapshot: parseAddressSnapshot(order.deliveryAddressSnapshot) },
+      order: {
+        ...order,
+        deliveryAddressSnapshot: parseAddressSnapshot(order.deliveryAddressSnapshot),
+      },
       // `imageUrl` prefers the purchase-time snapshot and only falls back to the
       // product's current image. The internal columns are dropped so the client
       // has one field to render and cannot accidentally show the wrong one.
@@ -352,11 +350,7 @@ ordersRoute.get("/:id", async (c) => {
  */
 const cancelOrderSchema = z
   .object({
-    reason: z
-      .string()
-      .trim()
-      .max(300)
-      .optional(),
+    reason: z.string().trim().max(300).optional(),
     /** One of `CANCELLATION_REASONS` when the client sends the structured choice. */
     reasonCode: z.string().trim().max(40).optional(),
   })
@@ -437,9 +431,7 @@ ordersRoute.post("/:id/cancel", async (c) => {
     const alreadyCancelled = await tx
       .select({ id: orderItems.id })
       .from(orderItems)
-      .where(
-        and(eq(orderItems.orderId, order.id), eq(orderItems.fulfillmentStatus, "CANCELLED")),
-      );
+      .where(and(eq(orderItems.orderId, order.id), eq(orderItems.fulfillmentStatus, "CANCELLED")));
 
     await tx
       .update(orderItems)
@@ -466,6 +458,29 @@ ordersRoute.post("/:id/cancel", async (c) => {
         provider: order.paymentProvider,
         providerTransactionId: `cancel_${order.orderNumber ?? order.id}`,
       });
+    }
+
+    // The seller's ledger is unwound too. Cancellation is only allowed before the goods
+    // leave, so a *sale* earning — recorded at delivery — normally does not exist yet
+    // and this is a no-op; a *rental* earning, recorded only at return, would exist
+    // for a booking already returned, and that one must not survive the order being
+    // cancelled. Both calls find nothing when there is nothing to unwind, which is
+    // what makes it safe to run them for every affected line rather than trying to
+    // work out up front which lines have money behind them.
+    const affectedLines = await tx
+      .select({ id: orderItems.id })
+      .from(orderItems)
+      .where(eq(orderItems.orderId, order.id));
+    for (const line of affectedLines) {
+      await recordEarningReversal(tx, { orderItemId: line.id }, "Order cancelled by the customer");
+    }
+
+    const affectedRentals = await tx
+      .select({ id: rentals.id })
+      .from(rentals)
+      .where(eq(rentals.orderId, order.id));
+    for (const rental of affectedRentals) {
+      await recordEarningReversal(tx, { rentalId: rental.id }, "Order cancelled by the customer");
     }
 
     const sellerIds = await tx
@@ -522,12 +537,22 @@ type RepeatableProduct = {
  * a price change is honoured. Availability uses the same engine checkout uses.
  */
 async function buildRepeatInput(
-  line: { id: number; mode: string; quantity: number; startDate: Date | null; endDate: Date | null },
+  line: {
+    id: number;
+    mode: string;
+    quantity: number;
+    startDate: Date | null;
+    endDate: Date | null;
+  },
   product: RepeatableProduct,
   buyerId: number,
 ): Promise<{ ok: true; input: RepeatCartInput } | { ok: false; code: string; message: string }> {
   if (!isPurchasable(product.status)) {
-    return { ok: false, code: "PRODUCT_UNAVAILABLE", message: "This product is no longer available." };
+    return {
+      ok: false,
+      code: "PRODUCT_UNAVAILABLE",
+      message: "This product is no longer available.",
+    };
   }
   if (product.sellerId === buyerId) {
     return { ok: false, code: "OWN_LISTING", message: "This is your own listing." };
@@ -556,16 +581,28 @@ async function buildRepeatInput(
   }
   const days = rentalDays({ startDate: line.startDate, endDate: line.endDate });
   if (product.minimumRentalDays && days < product.minimumRentalDays) {
-    return { ok: false, code: "MIN_DAYS", message: `The minimum rental for this item is ${product.minimumRentalDays} days.` };
+    return {
+      ok: false,
+      code: "MIN_DAYS",
+      message: `The minimum rental for this item is ${product.minimumRentalDays} days.`,
+    };
   }
   if (product.maximumRentalDays && days > product.maximumRentalDays) {
-    return { ok: false, code: "MAX_DAYS", message: `The maximum rental for this item is ${product.maximumRentalDays} days.` };
+    return {
+      ok: false,
+      code: "MAX_DAYS",
+      message: `The maximum rental for this item is ${product.maximumRentalDays} days.`,
+    };
   }
   try {
     await assertRentalAvailability(product.id, 1, line.startDate, line.endDate);
   } catch (error) {
     if (error instanceof HttpError) {
-      return { ok: false, code: "RENTAL_UNAVAILABLE", message: "Those dates are no longer available." };
+      return {
+        ok: false,
+        code: "RENTAL_UNAVAILABLE",
+        message: "Those dates are no longer available.",
+      };
     }
     throw error;
   }
@@ -671,7 +708,7 @@ ordersRoute.post("/:id/again", async (c) => {
     unitPriceSnapshot:
       repeat.input.mode === "RENT"
         ? line.product.rentalPricePerDay
-        : line.product.purchasePrice ?? null,
+        : (line.product.purchasePrice ?? null),
   });
 
   return c.json(
@@ -744,9 +781,7 @@ async function loadOrderPreviews(orderIds: number[]) {
   for (const orderId of orderIds) {
     const orderItemsForOrder = items.filter((item) => item.orderId === orderId);
     const first = orderItemsForOrder[0];
-    const orderSellers = [
-      ...new Set(orderItemsForOrder.map((item) => item.sellerId)),
-    ]
+    const orderSellers = [...new Set(orderItemsForOrder.map((item) => item.sellerId))]
       .map((sellerId) => sellerMap.find((s) => s.id === sellerId))
       .filter((s): s is NonNullable<typeof s> => Boolean(s));
 
@@ -788,7 +823,6 @@ async function loadSellers(sellerIds: number[]) {
     .where(inArray(users.id, sellerIds));
 }
 
-
 /**
  * Add the derived fields a rental UI needs, so the client never has to infer
  * state from dates.
@@ -797,9 +831,9 @@ async function loadSellers(sellerIds: number[]) {
  * countdown that decided for itself whether a rental was active would let two
  * clients disagree with the server about what is happening.
  */
-function decorateRental<T extends { status: string; startDate: Date; endDate: Date; securityDeposit: number }>(
-  row: T,
-) {
+function decorateRental<
+  T extends { status: string; startDate: Date; endDate: Date; securityDeposit: number },
+>(row: T) {
   // A status this build does not know is reported as-is rather than coerced to a
   // default, so an unfamiliar state is visible instead of silently mislabelled.
   const status = row.status as RentalStatus;
@@ -980,12 +1014,7 @@ rentalsRoute.get("/:id", async (c) => {
     .innerJoin(products, eq(rentals.productId, products.id))
     .innerJoin(orders, eq(rentals.orderId, orders.id))
     .leftJoin(orderItems, eq(rentals.orderItemId, orderItems.id))
-    .where(
-      and(
-        eq(rentals.id, id),
-        or(eq(rentals.renterId, user.id), eq(rentals.ownerId, user.id)),
-      ),
-    )
+    .where(and(eq(rentals.id, id), or(eq(rentals.renterId, user.id), eq(rentals.ownerId, user.id))))
     .limit(1);
 
   if (!row) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
@@ -1125,11 +1154,7 @@ rentalsRoute.post("/:id/extension-request", async (c) => {
     .limit(1);
   if (!rental) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
   if (rental.status !== "ACTIVE" && rental.status !== "CONFIRMED") {
-    throw new HttpError(
-      409,
-      "EXTENSION_NOT_ALLOWED",
-      "This rental can no longer be extended.",
-    );
+    throw new HttpError(409, "EXTENSION_NOT_ALLOWED", "This rental can no longer be extended.");
   }
 
   const [product] = await db
@@ -1157,13 +1182,7 @@ rentalsRoute.post("/:id/extension-request", async (c) => {
   // The window being claimed must be free. `excludeRentalId` keeps the rental
   // being extended from blocking itself.
   try {
-    await assertRentalAvailability(
-      rental.productId,
-      1,
-      rental.startDate,
-      newEndDate,
-      rental.id,
-    );
+    await assertRentalAvailability(rental.productId, 1, rental.startDate, newEndDate, rental.id);
   } catch (error) {
     if (error instanceof HttpError) {
       throw new HttpError(
@@ -1210,7 +1229,6 @@ rentalsRoute.post("/:id/extension-request", async (c) => {
   );
 });
 
-
 rentalsRoute.post("/:id/return", async (c) => {
   const user = c.get("user")!;
   const id = Number(c.req.param("id"));
@@ -1237,6 +1255,13 @@ rentalsRoute.post("/:id/return", async (c) => {
       .set({ status: "RETURNED", actualReturnDate: now, updatedAt: now })
       .where(eq(rentals.id, id));
     await recordRentalEvent(tx, id, "RETURNED", { returnedAt: now.toISOString() });
+
+    // The item is back, so the rental has been earned. This is the *only* point at
+    // which a rental earning is recorded — never at booking, because a booking is a
+    // promise and crediting it means paying a seller for an item that never left the
+    // shelf. Recorded `PENDING`: the deposit release and the settlement delay both
+    // stand between this and the money being withdrawable.
+    await recordRentalEarning(tx, id);
   });
   return c.json(ok({ returned: true }));
 });
@@ -1259,6 +1284,14 @@ rentalsRoute.post("/:id/cancel", async (c) => {
   await db.transaction(async (tx) => {
     await tx.update(rentals).set({ status: "CANCELLED", updatedAt: now }).where(eq(rentals.id, id));
     await recordRentalEvent(tx, id, "CANCELLED", { cancelledAt: now.toISOString() });
+
+    // Unwind the owner's earning for this booking. Only a `CONFIRMED` rental can be
+    // cancelled, and a rental is only ever earned at return, so there is normally
+    // nothing to unwind — the call finds nothing and returns. It is made anyway so
+    // that the invariant "a cancelled rental leaves no credit behind" holds without
+    // depending on the current cancellation rules continuing to be as strict.
+    await recordEarningReversal(tx, { rentalId: id }, "Rental cancelled by the renter");
+
     await tx.insert(transactions).values({
       userId: rental.renterId,
       orderId: rental.orderId,

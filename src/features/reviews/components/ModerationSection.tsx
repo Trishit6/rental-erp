@@ -7,12 +7,7 @@ import { ReviewList } from "./ReviewList";
 import { DeleteReviewDialog } from "./ReviewActions";
 import { ReviewsErrorState, ReviewsSkeleton } from "./ReviewStates";
 import { useModerationQueue, useReviewModeration } from "../query";
-import {
-  REVIEW_STATUSES,
-  REVIEW_STATUS_LABELS,
-  type Review,
-  type ReviewStatus,
-} from "../types";
+import { REVIEW_STATUSES, REVIEW_STATUS_LABELS, type Review, type ReviewStatus } from "../types";
 
 /**
  * The admin review queue.
@@ -108,7 +103,9 @@ export function ModerationSection() {
               <ModerationActions
                 review={review}
                 busy={moderation.setStatus.isPending || moderation.remove.isPending}
-                onSetStatus={(next) => moderation.setStatus.mutate({ reviewId: review.id, status: next })}
+                onSetStatus={(next) =>
+                  moderation.setStatus.mutate({ reviewId: review.id, status: next })
+                }
                 onDelete={() => setPendingDelete(review)}
               />
             </div>
@@ -156,7 +153,9 @@ function ModerationActions({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Badge className={hidden ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"}>
+      <Badge
+        className={hidden ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"}
+      >
         {REVIEW_STATUS_LABELS[review.status]}
       </Badge>
 

@@ -179,11 +179,7 @@ function ProductCard({
   return (
     <article className="inset-surface space-y-3 rounded-3xl p-4">
       <div className="flex gap-3">
-        <ProductImage
-          src={product.primaryImage}
-          alt=""
-          className="size-16 shrink-0 rounded-2xl"
-        />
+        <ProductImage src={product.primaryImage} alt="" className="size-16 shrink-0 rounded-2xl" />
         <div className="min-w-0 flex-1">
           <Link
             to="/product/$slug"
@@ -263,10 +259,7 @@ export function ProductListSkeleton() {
     <div className="space-y-2" aria-busy="true" aria-live="polite">
       <span className="sr-only">Loading your listings…</span>
       {Array.from({ length: 6 }, (_, index) => (
-        <div
-          key={index}
-          className="inset-surface flex items-center gap-3 rounded-2xl p-3"
-        >
+        <div key={index} className="inset-surface flex items-center gap-3 rounded-2xl p-3">
           <Skeleton className="size-11 rounded-xl" />
           <div className="flex-1 space-y-2">
             <Skeleton className="h-3 w-2/5" />

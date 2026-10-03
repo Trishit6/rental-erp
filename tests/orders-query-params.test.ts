@@ -152,13 +152,7 @@ describe("type vocabulary", () => {
   it("offers exactly the sort options the server implements", () => {
     // Every entry must have a real ORDER BY in `buildOrderListSort` — a sort
     // nothing can produce is a filter that can only ever return nothing.
-    expect(ORDER_SORTS).toEqual([
-      "newest",
-      "oldest",
-      "total_desc",
-      "total_asc",
-      "updated_desc",
-    ]);
+    expect(ORDER_SORTS).toEqual(["newest", "oldest", "total_desc", "total_asc", "updated_desc"]);
     for (const sort of ORDER_SORTS) {
       expect(buildOrderListSort(sort).length).toBeGreaterThan(0);
     }

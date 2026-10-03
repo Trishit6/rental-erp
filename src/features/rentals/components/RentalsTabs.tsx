@@ -72,9 +72,7 @@ export function RentalsTabs({
             )}
           >
             {tab.label}
-            {count !== undefined && (
-              <span className="ml-1.5 opacity-70">{count}</span>
-            )}
+            {count !== undefined && <span className="ml-1.5 opacity-70">{count}</span>}
           </button>
         );
       })}

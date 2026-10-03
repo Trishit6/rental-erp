@@ -219,7 +219,13 @@ export function ReviewForm({
 
       <div className="flex items-center justify-end gap-2">
         {onCancel && (
-          <Button type="button" variant="secondary" size="sm" onClick={onCancel} disabled={mutation.isPending}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={onCancel}
+            disabled={mutation.isPending}
+          >
             Cancel
           </Button>
         )}
@@ -232,11 +238,7 @@ export function ReviewForm({
           aria-busy={mutation.isPending}
         >
           {mutation.isPending && <Loader2 size={14} aria-hidden className="animate-spin" />}
-          {mutation.isPending
-            ? "Saving…"
-            : editing
-              ? "Save changes"
-              : "Publish review"}
+          {mutation.isPending ? "Saving…" : editing ? "Save changes" : "Publish review"}
         </Button>
       </div>
     </motion.form>

@@ -1,4 +1,4 @@
-import { createRootRouteWithContext, Link, Outlet } from "@tanstack/react-router";
+import { createRootRouteWithContext, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { SiteHeader } from "@/components/layout/site-header";
 import { GoToTop } from "@/components/shared/GoToTop";
@@ -12,6 +12,26 @@ import type { QueryClient } from "@tanstack/react-query";
 type RouterContext = { user: AuthUser | null; queryClient: QueryClient };
 
 export function RootLayout() {
+  // The admin workspace renders its own shell (sidebar, section header) and must be
+  // "completely separate from the normal customer-facing navigation".
+  //
+  // So `/admin` and everything under it gets *no* site header, footer, floating rail,
+  // go-to-top or chatbot. A cart button has no business in a moderation queue, and a
+  // storefront header would offer a way out of a surface that should be deliberate to
+  // leave. The providers above stay regardless: they own app-wide state, and the
+  // admin pages use neither but removing them would mean two provider trees for no
+  // benefit.
+  //
+  // This is presentation only. Authorization is enforced by `beforeLoad:
+  // requireAdmin` on the admin routes and by `requireAdmin` on every `/api/admin/*`
+  // endpoint — hiding chrome is not access control.
+  const isAdmin = useRouterState({
+    select: (state) => {
+      const path = state.location.pathname;
+      return path === "/admin" || path.startsWith("/admin/");
+    },
+  });
+
   return (
     // Two providers wrap the whole app, in this order:
     //  - the cart drawer's open state is shared by the navbar, the floating dock
@@ -23,17 +43,23 @@ export function RootLayout() {
       <FloatingRailProvider>
         <TooltipProvider>
           <div className="min-h-screen">
-            <SiteHeader />
-            <main>
+            {isAdmin ? (
               <Outlet />
-            </main>
-            <SiteFooter />
-            {/* One fixed column owns the bottom-right corner. Controls render
-                into it from wherever they are declared. */}
-            <FloatingRail />
-            <GoToTop />
-            <Chatbot />
-            <CartDrawerHost />
+            ) : (
+              <>
+                <SiteHeader />
+                <main>
+                  <Outlet />
+                </main>
+                <SiteFooter />
+                {/* One fixed column owns the bottom-right corner. Controls render
+                    into it from wherever they are declared. */}
+                <FloatingRail />
+                <GoToTop />
+                <Chatbot />
+                <CartDrawerHost />
+              </>
+            )}
           </div>
         </TooltipProvider>
       </FloatingRailProvider>

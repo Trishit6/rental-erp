@@ -62,10 +62,7 @@ function TimelineRow({
         {!isLast && (
           <span
             aria-hidden="true"
-            className={cn(
-              "w-px flex-1",
-              state === "done" ? "bg-accent/50" : "bg-[var(--divider)]",
-            )}
+            className={cn("w-px flex-1", state === "done" ? "bg-accent/50" : "bg-[var(--divider)]")}
           />
         )}
       </div>
@@ -140,10 +137,7 @@ function TimelineMarker({ state }: { state: OrderTimelineEvent["state"] }) {
     );
   }
   return (
-    <span
-      className={cn(base, "inset-surface text-muted-foreground")}
-      aria-hidden="true"
-    >
+    <span className={cn(base, "inset-surface text-muted-foreground")} aria-hidden="true">
       <Circle size={8} />
     </span>
   );

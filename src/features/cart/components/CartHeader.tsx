@@ -9,13 +9,7 @@ import type { CartTotals } from "../types";
  * Page heading. The count and the figure are the server's numbers, so the header
  * can never disagree with the summary underneath it.
  */
-export function CartHeader({
-  totals,
-  isLoading,
-}: {
-  totals: CartTotals;
-  isLoading?: boolean;
-}) {
+export function CartHeader({ totals, isLoading }: { totals: CartTotals; isLoading?: boolean }) {
   return (
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div>

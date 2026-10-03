@@ -37,7 +37,14 @@ export function createDevStorageProvider(): StorageProvider {
     isProductionReady: false,
     bucket: "local",
 
-    async createUploadTarget({ key, contentType }: { key: string; contentType: AllowedImageMimeType; byteSize: number }): Promise<UploadTarget> {
+    async createUploadTarget({
+      key,
+      contentType,
+    }: {
+      key: string;
+      contentType: AllowedImageMimeType;
+      byteSize: number;
+    }): Promise<UploadTarget> {
       // The target points back at this API, because there is no third party to
       // point at. Root-relative on purpose: the SPA already sends every
       // `/api/*` call through the dev proxy, so no origin has to be configured.

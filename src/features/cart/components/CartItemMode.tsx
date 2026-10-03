@@ -52,7 +52,13 @@ export function CartItemMode({
     // configuration the cart endpoint would reject.
     const candidate =
       alternative === "RENT"
-        ? { productId: product.id, mode: "RENT" as const, quantity: item.quantity, startDate: item.startDate ?? undefined, endDate: item.endDate ?? undefined }
+        ? {
+            productId: product.id,
+            mode: "RENT" as const,
+            quantity: item.quantity,
+            startDate: item.startDate ?? undefined,
+            endDate: item.endDate ?? undefined,
+          }
         : { productId: product.id, mode: "BUY" as const, quantity: item.quantity };
 
     if (!addCartItemSchema.safeParse(candidate).success) {
@@ -82,9 +88,7 @@ export function CartItemMode({
       {pending ? (
         <RefreshCw size={11} aria-hidden className="animate-spin" />
       ) : (
-        <span>
-          Switch to {alternative === "RENT" ? "rent" : "buy"}
-        </span>
+        <span>Switch to {alternative === "RENT" ? "rent" : "buy"}</span>
       )}
     </button>
   );

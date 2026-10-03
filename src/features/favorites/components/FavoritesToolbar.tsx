@@ -65,7 +65,10 @@ export function FavoritesToolbar({
         role="group"
         aria-label="Filter by listing type"
       >
-        <ChoiceChip selected={!search.listingType} onClick={() => onChange({ listingType: undefined })}>
+        <ChoiceChip
+          selected={!search.listingType}
+          onClick={() => onChange({ listingType: undefined })}
+        >
           All
         </ChoiceChip>
         {MODE_OPTIONS.map((option) => (

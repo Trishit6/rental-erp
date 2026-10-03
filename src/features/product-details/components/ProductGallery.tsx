@@ -2,6 +2,10 @@ import { useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronLeft, ChevronRight, ImageOff, Maximize2, X } from "lucide-react";
+// Aliased: this file already has a *type* called `ProductImage` (the database
+// row), and the shared renderer shares that name. `ProductPhoto` reads as the
+// thing it is — the picture — and leaves the row type unambiguous.
+import { ProductImage as ProductPhoto } from "@/components/shared/product-image";
 import { cn } from "@/lib/utils/cn";
 import type { ProductImage } from "../types";
 
@@ -13,15 +17,6 @@ const slideVariants = {
   center: { opacity: 1, x: 0 },
   exit: (direction: number) => ({ opacity: 0, x: direction >= 0 ? -26 : 26 }),
 };
-
-function ImageFallback({ label }: { label: string }) {
-  return (
-    <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 bg-black/[0.03] text-muted-foreground dark:bg-white/[0.03]">
-      <ImageOff size={26} aria-hidden />
-      <span className="text-xs font-semibold">{label}</span>
-    </div>
-  );
-}
 
 /**
  * Product images.
@@ -36,13 +31,18 @@ export function ProductGallery({ images, title }: { images: ProductImage[]; titl
   const list = usable.length > 0 ? usable : [FALLBACK];
 
   const [[index, direction], setIndex] = useState<[number, number]>([0, 0]);
-  const [broken, setBroken] = useState<number[]>([]);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  /**
+   * URLs the main slide has failed on, by URL rather than by id — `ProductImage`
+   * reports the URL, and a re-seeded listing can reuse an id for a different
+   * photo. Only the *main* slide needs this: it is what decides whether there is
+   * a full-size image worth opening. The thumbnails fall back on their own.
+   */
+  const [failed, setFailed] = useState<ReadonlySet<string>>(() => new Set());
   const draggedRef = useRef(0);
 
   const active = Math.min(index, list.length - 1);
   const current = list[active];
-  const isBroken = broken.includes(current.id);
   const altFor = (image: ProductImage, i: number) =>
     image.altText ?? `${title} — image ${i + 1} of ${list.length}`;
 
@@ -87,19 +87,20 @@ export function ProductGallery({ images, title }: { images: ProductImage[]; titl
                   i === active ? "ring-2 ring-primary" : "opacity-70 hover:opacity-100",
                 )}
               >
-                {broken.includes(image.id) ? (
-                  <span className="flex size-16 items-center justify-center text-muted-foreground">
-                    <ImageOff size={16} aria-hidden />
-                  </span>
-                ) : (
-                  <img
-                    src={image.url}
-                    alt=""
-                    loading="lazy"
-                    onError={() => setBroken((ids) => [...ids, image.id])}
-                    className="size-16 rounded-lg object-cover"
-                  />
-                )}
+                {/* A thumbnail has no room for the shared placeholder's label, so it supplies
+                    its own fallback glyph — the loading/error handling itself is
+                    still the shared component's, not a second copy of it. */}
+                <ProductPhoto
+                  src={image.url}
+                  alt=""
+                  className="size-16 rounded-lg"
+                  imgClassName="object-cover"
+                  fallback={
+                    <span className="flex size-16 items-center justify-center text-muted-foreground">
+                      <ImageOff size={16} aria-hidden />
+                    </span>
+                  }
+                />
               </button>
             ))}
           </div>
@@ -134,23 +135,28 @@ export function ProductGallery({ images, title }: { images: ProductImage[]; titl
                   if (info.offset.x < -60) next();
                   else if (info.offset.x > 60) prev();
                 }}
-                className="bg-black/[0.03] dark:bg-white/[0.03]"
+                className="bg-[var(--inset-bg)]"
               >
-                {isBroken || !current.url ? (
-                  <ImageFallback label="Image unavailable" />
-                ) : (
-                  <img
-                    src={current.url}
-                    alt={altFor(current, active)}
-                    onError={() => setBroken((ids) => [...ids, current.id])}
-                    draggable={false}
-                    className="aspect-[4/3] w-full object-cover"
-                  />
-                )}
+                {/* The shared renderer, so the main photo gets the same skeleton,
+                    fade-in and placeholder as every other image on the site — and
+                    so a dead URL is logged once from one place. The `aspect-*`
+                    class is the fixed box: it holds the slide's height whether the
+                    photo loads, is loading, or is gone, so arrows and thumbnails
+                    below never move. */}
+                <ProductPhoto
+                  key={current.id}
+                  src={current.url}
+                  alt={altFor(current, active)}
+                  className="aspect-[4/3] w-full"
+                  priority={active === 0}
+                  onFailure={(url) =>
+                    setFailed((ids) => (ids.has(url) ? ids : new Set(ids).add(url)))
+                  }
+                />
               </motion.div>
             </AnimatePresence>
 
-            {current.url && !isBroken && (
+            {current.url && !failed.has(current.url) && (
               <button
                 type="button"
                 aria-label="Open full-size image"
@@ -210,19 +216,17 @@ export function ProductGallery({ images, title }: { images: ProductImage[]; titl
                 i === active ? "ring-2 ring-primary" : "opacity-70",
               )}
             >
-              {broken.includes(image.id) ? (
-                <span className="flex size-14 items-center justify-center text-muted-foreground">
-                  <ImageOff size={15} aria-hidden />
-                </span>
-              ) : (
-                <img
-                  src={image.url}
-                  alt=""
-                  loading="lazy"
-                  onError={() => setBroken((ids) => [...ids, image.id])}
-                  className="size-14 rounded-lg object-cover"
-                />
-              )}
+              <ProductPhoto
+                src={image.url}
+                alt=""
+                className="size-14 rounded-lg"
+                imgClassName="object-cover"
+                fallback={
+                  <span className="flex size-14 items-center justify-center text-muted-foreground">
+                    <ImageOff size={15} aria-hidden />
+                  </span>
+                }
+              />
             </button>
           ))}
         </div>
@@ -295,10 +299,18 @@ function ImageViewer({
                 >
                   <Dialog.Title className="sr-only">Product image viewer</Dialog.Title>
 
-                  <img
+                  {/* `object-contain` here rather than `cover`: a lightbox exists to
+                      show the photo, and cropping it to a fixed box would defeat the
+                      point. The shared component still owns loading and failure, so a
+                      URL that dies between opening the viewer and the request lands
+                      shows a placeholder instead of a torn-image icon on a black
+                      scrim. */}
+                  <ProductPhoto
                     src={current.url}
                     alt={altFor(current, active)}
-                    className="max-h-[86vh] max-w-full rounded-2xl object-contain"
+                    className="max-h-[86vh] max-w-full rounded-2xl"
+                    imgClassName="object-contain"
+                    priority
                   />
 
                   <Dialog.Close asChild>

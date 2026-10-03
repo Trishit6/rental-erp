@@ -21,7 +21,10 @@ export function OrderDetailsItems({
   return (
     <section className="raised-surface overflow-hidden" aria-labelledby="order-items-heading">
       <div className="flex items-center justify-between gap-3 px-5 py-4">
-        <h2 id="order-items-heading" className="flex items-center gap-2 font-heading text-lg font-extrabold">
+        <h2
+          id="order-items-heading"
+          className="flex items-center gap-2 font-heading text-lg font-extrabold"
+        >
           <Package size={16} aria-hidden="true" />
           Items
         </h2>
@@ -31,9 +34,7 @@ export function OrderDetailsItems({
       </div>
 
       {items.length === 0 ? (
-        <p className="px-5 pb-5 text-sm text-muted-foreground">
-          This order has no items recorded.
-        </p>
+        <p className="px-5 pb-5 text-sm text-muted-foreground">This order has no items recorded.</p>
       ) : (
         <ul className="divide-y divide-[var(--divider)] px-5" data-testid="order-detail-items">
           {items.map((item) => (

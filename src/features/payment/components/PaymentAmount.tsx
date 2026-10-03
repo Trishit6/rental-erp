@@ -21,10 +21,7 @@ export function PaymentAmount({
   return (
     <div className={cn("flex items-baseline justify-between gap-4", className)}>
       <span className="text-sm font-medium text-muted-foreground">Amount to pay</span>
-      <span
-        className="font-heading text-3xl font-black tabular-nums"
-        data-testid="payment-amount"
-      >
+      <span className="font-heading text-3xl font-black tabular-nums" data-testid="payment-amount">
         {formatInr(breakdown.grandTotal)}
       </span>
     </div>

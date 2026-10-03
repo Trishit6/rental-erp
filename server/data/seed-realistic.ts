@@ -67,24 +67,93 @@ export function dayWithinLastMonths(rand: Random, months: number, minDaysAgo = 1
 /* ------------------------------- name pools -------------------------------- */
 
 export const FIRST_NAMES = [
-  "Aarav", "Diya", "Vihaan", "Ananya", "Ishaan", "Meera", "Kabir", "Riya", "Arjun", "Sara",
-  "Rohan", "Nisha", "Aditya", "Tara", "Nikhil", "Pooja", "Varun", "Ira", "Siddharth", "Kavya",
-  "Rahul", "Anjali", "Karthik", "Divya", "Manav", "Sneha", "Yash", "Preeti", "Naveen", "Shreya",
-  "Aryan", "Nandini", "Dev", "Aisha", "Gaurav", "Lakshmi", "Harsh", "Neha", "Imran", "Farah",
+  "Aarav",
+  "Diya",
+  "Vihaan",
+  "Ananya",
+  "Ishaan",
+  "Meera",
+  "Kabir",
+  "Riya",
+  "Arjun",
+  "Sara",
+  "Rohan",
+  "Nisha",
+  "Aditya",
+  "Tara",
+  "Nikhil",
+  "Pooja",
+  "Varun",
+  "Ira",
+  "Siddharth",
+  "Kavya",
+  "Rahul",
+  "Anjali",
+  "Karthik",
+  "Divya",
+  "Manav",
+  "Sneha",
+  "Yash",
+  "Preeti",
+  "Naveen",
+  "Shreya",
+  "Aryan",
+  "Nandini",
+  "Dev",
+  "Aisha",
+  "Gaurav",
+  "Lakshmi",
+  "Harsh",
+  "Neha",
+  "Imran",
+  "Farah",
 ];
 
 export const LAST_NAMES = [
-  "Sharma", "Verma", "Kapoor", "Mehta", "Iyer", "Reddy", "Nair", "Patel", "Gupta", "Singh",
-  "Chopra", "Malhotra", "Rao", "Joshi", "Desai", "Kulkarni", "Menon", "Pillai", "Bose", "Das",
-  "Shetty", "Rai", "Bhat", "Khan", "Ahmed", "Thomas", "Varghese", "Saxena", "Tiwari", "Mishra",
+  "Sharma",
+  "Verma",
+  "Kapoor",
+  "Mehta",
+  "Iyer",
+  "Reddy",
+  "Nair",
+  "Patel",
+  "Gupta",
+  "Singh",
+  "Chopra",
+  "Malhotra",
+  "Rao",
+  "Joshi",
+  "Desai",
+  "Kulkarni",
+  "Menon",
+  "Pillai",
+  "Bose",
+  "Das",
+  "Shetty",
+  "Rai",
+  "Bhat",
+  "Khan",
+  "Ahmed",
+  "Thomas",
+  "Varghese",
+  "Saxena",
+  "Tiwari",
+  "Mishra",
 ];
 
 export const CITIES = [
-  { name: "Bengaluru", areas: ["Indiranagar", "Koramangala", "HSR Layout", "Whitefield", "Jayanagar"] },
+  {
+    name: "Bengaluru",
+    areas: ["Indiranagar", "Koramangala", "HSR Layout", "Whitefield", "Jayanagar"],
+  },
   { name: "Mumbai", areas: ["Bandra West", "Powai", "Andheri West", "Dadar", "Colaba"] },
   { name: "Delhi", areas: ["Saket", "Hauz Khas", "Dwarka", "Rohini", "Karol Bagh"] },
   { name: "Pune", areas: ["Kothrud", "Baner", "Viman Nagar", "Hinjewadi", "Kharadi"] },
-  { name: "Hyderabad", areas: ["Gachibowli", "Jubilee Hills", "Madhapur", "Kukatpally", "Banjara Hills"] },
+  {
+    name: "Hyderabad",
+    areas: ["Gachibowli", "Jubilee Hills", "Madhapur", "Kukatpally", "Banjara Hills"],
+  },
   { name: "Chennai", areas: ["Adyar", "T. Nagar", "Velachery", "Anna Nagar", "Mylapore"] },
 ];
 
@@ -99,7 +168,16 @@ export const BIO_TEMPLATES = [
 
 /** Fill a bio template with a subject word. */
 export function makeBio(rand: Random): string {
-  const subjects = ["electronics", "furniture", "camera gear", "tools", "books", "party gear", "fitness kit", "kitchen appliances"];
+  const subjects = [
+    "electronics",
+    "furniture",
+    "camera gear",
+    "tools",
+    "books",
+    "party gear",
+    "fitness kit",
+    "kitchen appliances",
+  ];
   const template = pick(rand, BIO_TEMPLATES);
   return template.replace("{thing}", pick(rand, subjects));
 }

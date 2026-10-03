@@ -88,9 +88,7 @@ export function makeRentalListResponse(rentals: Rental[]): RentalListResponse {
   };
 }
 
-export function makeTimeline(
-  events: Partial<RentalTimelineEvent>[] = [],
-): RentalTimelineEvent[] {
+export function makeTimeline(events: Partial<RentalTimelineEvent>[] = []): RentalTimelineEvent[] {
   return events.map((event, index) => ({
     key: `event-${index}`,
     label: "Step",
@@ -109,7 +107,12 @@ export function makeRentalDetails(
     seller: { id: 2, name: "Priya", avatarUrl: null, verified: true },
     delivery: { method: "PICKUP", address: null },
     timeline: makeTimeline([
-      { key: "confirmed", label: "Rental confirmed", at: "2026-09-20T10:00:00.000Z", state: "done" },
+      {
+        key: "confirmed",
+        label: "Rental confirmed",
+        at: "2026-09-20T10:00:00.000Z",
+        state: "done",
+      },
       { key: "started", label: "Rental started", state: "done" },
       { key: "return-requested", label: "Return requested", state: "pending" },
       { key: "returned", label: "Returned", state: "pending" },

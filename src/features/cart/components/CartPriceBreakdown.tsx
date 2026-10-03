@@ -26,7 +26,10 @@ export function CartPriceBreakdown({
         const deposit = item.pricing.depositTotal;
 
         return (
-          <div key={item.id} className="space-y-1 border-b border-[var(--divider)] pb-2.5 last:border-0 last:pb-0">
+          <div
+            key={item.id}
+            className="space-y-1 border-b border-[var(--divider)] pb-2.5 last:border-0 last:pb-0"
+          >
             <div className="flex items-baseline justify-between gap-3 text-sm">
               <dt className="min-w-0 flex-1 truncate text-foreground">
                 {title}
@@ -36,7 +39,9 @@ export function CartPriceBreakdown({
                   {item.quantity > 1 && ` · ×${item.quantity}`}
                 </span>
               </dt>
-              <dd className="shrink-0 font-bold tabular-nums">{formatInr(item.pricing.lineTotal)}</dd>
+              <dd className="shrink-0 font-bold tabular-nums">
+                {formatInr(item.pricing.lineTotal)}
+              </dd>
             </div>
 
             <p className="text-[11px] font-medium text-muted-foreground">

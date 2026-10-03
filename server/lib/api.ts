@@ -1,6 +1,5 @@
-import type { Context, Next } from "hono";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
+import type { Ctx, Next } from "./http";
 
 export type ApiError = {
   code: string;
@@ -52,12 +51,12 @@ export function buildPagination(page: number, pageSize: number, total: number): 
   };
 }
 
-export async function errorMiddleware(_c: Context, next: Next) {
+export async function errorMiddleware(_c: Ctx, next: Next) {
   await next();
 }
 
 /** Central error handler — wired via app.onError so async route throws are always caught. */
-export async function onErrorHandler(error: unknown, c: Context) {
+export async function onErrorHandler(error: unknown, c: Ctx) {
   if (error instanceof z.ZodError) {
     return c.json(
       fail(
@@ -68,7 +67,7 @@ export async function onErrorHandler(error: unknown, c: Context) {
     );
   }
   if (error instanceof HttpError) {
-    return c.json(fail(error.code, error.message), error.status as ContentfulStatusCode);
+    return c.json(fail(error.code, error.message), error.status);
   }
   console.error("[api] unhandled error:", error);
   return c.json(fail("INTERNAL_ERROR", "Something went wrong. Please try again."), 500);
@@ -77,14 +76,14 @@ export async function onErrorHandler(error: unknown, c: Context) {
 /** Naive in-memory rate limiter (per-IP, per-bucket). */
 const buckets = new Map<string, { count: number; resetAt: number }>();
 
-function clientKey(c: Context): string {
+function clientKey(c: Ctx): string {
   const forwarded = c.req.header("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0]!.trim();
   return "unknown";
 }
 
 export function rateLimit(limit: number, windowMs: number) {
-  return async (c: Context, next: Next) => {
+  return async (c: Ctx, next: Next) => {
     const key = clientKey(c);
     const now = Date.now();
     const bucket = buckets.get(key);

@@ -52,7 +52,10 @@ export const reviewTitleSchema = z
 export const reviewCommentSchema = z
   .string()
   .trim()
-  .min(REVIEW_COMMENT_MIN, `Tell other people a little more — at least ${REVIEW_COMMENT_MIN} characters.`)
+  .min(
+    REVIEW_COMMENT_MIN,
+    `Tell other people a little more — at least ${REVIEW_COMMENT_MIN} characters.`,
+  )
   .max(REVIEW_COMMENT_MAX, `Keep it under ${REVIEW_COMMENT_MAX} characters.`);
 
 export const reviewImagesSchema = z
@@ -77,7 +80,11 @@ export const reviewFormSchema = z
   .superRefine((value, ctx) => {
     if (value.orderItemId === undefined) return;
     if (value.orderItemId <= 0) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["orderItemId"], message: "Invalid order line." });
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["orderItemId"],
+        message: "Invalid order line.",
+      });
     }
   });
 
@@ -198,7 +205,11 @@ export function authorDisplayName(name: string): string {
 }
 
 /** "Edited" badge text, or null when the review has never been changed. */
-export function editedBadge(isEdited: boolean, updatedAt: string, createdAt: string): string | null {
+export function editedBadge(
+  isEdited: boolean,
+  updatedAt: string,
+  createdAt: string,
+): string | null {
   if (!isEdited) return null;
   // An edit flag with an identical timestamp means only the rating changed, so
   // "Edited" would overstate it; "Rating updated" is the honest label.

@@ -81,7 +81,9 @@ describe("the context a payment remembers", () => {
   });
 
   it("rejects an unknown delivery method", () => {
-    expect(readCheckoutContext(JSON.stringify({ checkout: { deliveryMethod: "TELEPORT" } }))).toBeNull();
+    expect(
+      readCheckoutContext(JSON.stringify({ checkout: { deliveryMethod: "TELEPORT" } })),
+    ).toBeNull();
   });
 
   it("never stores an amount in the context", () => {

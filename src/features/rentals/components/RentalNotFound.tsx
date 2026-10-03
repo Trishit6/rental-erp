@@ -27,7 +27,9 @@ export function RentalNotFound({ reference }: { reference?: string | number }) {
               <Link to="/rentals">Back to My Rentals</Link>
             </Button>
             <Button asChild variant="secondary">
-              <Link to="/browse" search={{ mode: "rent" }}>Browse rentals</Link>
+              <Link to="/browse" search={{ mode: "rent" }}>
+                Browse rentals
+              </Link>
             </Button>
           </div>
         }

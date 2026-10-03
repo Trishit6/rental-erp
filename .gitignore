@@ -8,3 +8,8 @@ dist
 # Development storage adapter (server/lib/storage/dev.ts) writes real uploads here.
 server/uploads
 .aider*
+
+# TanStack Router's route generator scratch space. `pnpm generate:routes` and the
+# dev server both write here before renaming `routeTree.gen.ts` into place, so the
+# intermediate files are build output rather than sources.
+.tanstack

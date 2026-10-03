@@ -99,7 +99,9 @@ describe("never throws on junk", () => {
   });
 
   it("bounds the search length", () => {
-    expect(resolveRentalFilters({ search: "x".repeat(500) }).search.length).toBeLessThanOrEqual(120);
+    expect(resolveRentalFilters({ search: "x".repeat(500) }).search.length).toBeLessThanOrEqual(
+      120,
+    );
   });
 });
 

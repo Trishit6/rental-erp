@@ -1,14 +1,14 @@
-import { Hono } from "hono";
+import { Router } from "../lib/http";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { deleteCookie, getCookie } from "hono/cookie";
+import { deleteCookie, getCookie } from "../lib/http";
 import { db } from "../db";
 import { users } from "../schema";
 import { fail, ok, rateLimit, HttpError } from "../lib/api";
 import { createSession, deleteSession, requireUser, SESSION_COOKIE } from "../lib/auth";
 
-export const auth = new Hono();
+export const auth = new Router();
 
 const registerSchema = z.object({
   name: z.string().trim().min(2).max(80),

@@ -12,7 +12,12 @@ import {
   ReviewsFilteredEmptyState,
   ReviewsSkeleton,
 } from "./ReviewStates";
-import { applyReviewFilter, hasActiveReviewFilters, parseReviewFilters, reviewSearchParams } from "./schema";
+import {
+  applyReviewFilter,
+  hasActiveReviewFilters,
+  parseReviewFilters,
+  reviewSearchParams,
+} from "./schema";
 import { useProductReviews } from "../query";
 import type { Review } from "../types";
 

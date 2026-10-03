@@ -47,7 +47,9 @@ export function RentalsErrorState({ error, onRetry }: { error: unknown; onRetry?
               </Button>
             )}
             <Button asChild variant="secondary">
-              <Link to="/browse" search={{ mode: "rent" }}>Browse rentals</Link>
+              <Link to="/browse" search={{ mode: "rent" }}>
+                Browse rentals
+              </Link>
             </Button>
           </div>
         }

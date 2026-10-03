@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Router } from "../lib/http";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db";
@@ -26,7 +26,7 @@ import { isPaymentMethod, type PaymentMethod, type PaymentStatus } from "../lib/
  * of by session — it is called by the provider, not the browser.
  */
 
-export const paymentsRoute = new Hono();
+export const paymentsRoute = new Router();
 
 const summaryQuerySchema = z.object({
   deliveryMethod: z.enum(["DELIVERY", "PICKUP"]).default("DELIVERY"),
@@ -149,10 +149,7 @@ paymentsRoute.post("/intents", async (c) => {
     .select()
     .from(transactions)
     .where(
-      and(
-        eq(transactions.userId, user.id),
-        eq(transactions.idempotencyKey, input.idempotencyKey),
-      ),
+      and(eq(transactions.userId, user.id), eq(transactions.idempotencyKey, input.idempotencyKey)),
     )
     .limit(1);
 
@@ -287,7 +284,11 @@ paymentsRoute.post("/:id/verify", async (c) => {
     throw new HttpError(409, "PAYMENT_CANCELLED", "This payment was cancelled.");
   }
   if (row.status === "FAILED") {
-    throw new HttpError(409, "PAYMENT_FAILED", row.failureReason ?? "Payment could not be completed.");
+    throw new HttpError(
+      409,
+      "PAYMENT_FAILED",
+      row.failureReason ?? "Payment could not be completed.",
+    );
   }
 
   const provider = getPaymentProvider();
@@ -346,7 +347,11 @@ paymentsRoute.post("/:id/verify", async (c) => {
 
   const context = readCheckoutContext(row.metadata);
   if (!context) {
-    throw new HttpError(409, "CHECKOUT_CONTEXT_MISSING", "This payment is missing its checkout details.");
+    throw new HttpError(
+      409,
+      "CHECKOUT_CONTEXT_MISSING",
+      "This payment is missing its checkout details.",
+    );
   }
 
   const confirmation = await createOrderFromPayment({
@@ -472,7 +477,8 @@ paymentsRoute.post("/webhook", async (c) => {
     .set({
       // Never downgrade a settled payment: the outcome of a replayed event
       // must not undo the state the first one produced.
-      status: event.status === "SUCCEEDED" && row.status === "SUCCEEDED" ? "SUCCEEDED" : event.status,
+      status:
+        event.status === "SUCCEEDED" && row.status === "SUCCEEDED" ? "SUCCEEDED" : event.status,
       failureReason: review ?? (event.failureReason ? event.failureReason.slice(0, 255) : null),
       processedEventIds: JSON.stringify([...alreadyApplied, event.eventId].slice(-50)),
       updatedAt: new Date(),
@@ -497,7 +503,9 @@ function readProcessedEventIds(raw: string | null): Set<string> {
   if (!raw) return new Set();
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? new Set(parsed.filter((v): v is string => typeof v === "string")) : new Set();
+    return Array.isArray(parsed)
+      ? new Set(parsed.filter((v): v is string => typeof v === "string"))
+      : new Set();
   } catch {
     return new Set();
   }

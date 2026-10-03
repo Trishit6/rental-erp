@@ -50,15 +50,7 @@ export function RatingStars({
   );
 }
 
-function StarGlyph({
-  star,
-  rounded,
-  size,
-}: {
-  star: number;
-  rounded: number;
-  size: number;
-}) {
+function StarGlyph({ star, rounded, size }: { star: number; rounded: number; size: number }) {
   const filled = rounded >= star;
   const half = !filled && rounded >= star - 0.5;
 
@@ -66,7 +58,10 @@ function StarGlyph({
     <span className="relative inline-flex" style={{ width: size, height: size }}>
       <Star size={size} aria-hidden className="text-muted-foreground/40" />
       {(filled || half) && (
-        <span className="absolute inset-0 overflow-hidden" style={{ width: half ? size / 2 : size }}>
+        <span
+          className="absolute inset-0 overflow-hidden"
+          style={{ width: half ? size / 2 : size }}
+        >
           <Star size={size} aria-hidden className="fill-primary text-primary" />
         </span>
       )}

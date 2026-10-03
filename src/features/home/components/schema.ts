@@ -23,11 +23,7 @@ import { z } from "zod";
 export const HERO_SEARCH_MAX = 120;
 
 export const heroSearchSchema = z.object({
-  q: z
-    .string()
-    .trim()
-    .min(1)
-    .max(HERO_SEARCH_MAX, "That search is too long."),
+  q: z.string().trim().min(1).max(HERO_SEARCH_MAX, "That search is too long."),
 });
 
 export type HeroSlide = {
@@ -138,7 +134,10 @@ export function useHeroSlides(
 }
 
 /** Swipe handling for touch screens. Returns handlers for the slide container. */
-export function useHeroSwipe(onNext: () => void, onPrevious: () => void): {
+export function useHeroSwipe(
+  onNext: () => void,
+  onPrevious: () => void,
+): {
   onTouchStart: (event: React.TouchEvent) => void;
   onTouchEnd: (event: React.TouchEvent) => void;
 } {

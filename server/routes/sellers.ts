@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Router } from "../lib/http";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import { products, reviews, sellerProfiles, users } from "../schema";
@@ -22,7 +22,7 @@ import { PUBLIC_PRODUCT_STATUSES } from "../lib/product-status";
  * rather than an accident. The seller *management* API stays guarded; the
  * shopfront stays open.
  */
-export const sellersRoute = new Hono();
+export const sellersRoute = new Router();
 
 sellersRoute.get("/:id{[0-9]+}", async (c) => {
   const id = Number(c.req.param("id"));
@@ -51,9 +51,7 @@ sellersRoute.get("/:id{[0-9]+}", async (c) => {
   const [listingCount] = await db
     .select({ value: sql<number>`COUNT(*)` })
     .from(products)
-    .where(
-      and(eq(products.sellerId, id), inArray(products.status, [...PUBLIC_PRODUCT_STATUSES])),
-    );
+    .where(and(eq(products.sellerId, id), inArray(products.status, [...PUBLIC_PRODUCT_STATUSES])));
 
   // Published reviews only. A hidden review is not part of a seller's public
   // reputation, so it must not move the number shown next to their name — the
@@ -64,9 +62,7 @@ sellersRoute.get("/:id{[0-9]+}", async (c) => {
       count: sql<number>`COUNT(*)`,
     })
     .from(reviews)
-    .where(
-      and(eq(reviews.sellerId, id), inArray(reviews.status, [...PUBLIC_REVIEW_STATUSES])),
-    );
+    .where(and(eq(reviews.sellerId, id), inArray(reviews.status, [...PUBLIC_REVIEW_STATUSES])));
 
   return c.json(
     ok({

@@ -53,7 +53,10 @@ export function PaymentSummary({ summary }: { summary: PaymentSummaryType }) {
       <dl className="space-y-2.5 text-sm">
         {hasPurchases && hasRentals ? (
           <>
-            <Row label="Purchase items" value={formatInr(breakdown.subtotal - breakdown.rentalAmount)} />
+            <Row
+              label="Purchase items"
+              value={formatInr(breakdown.subtotal - breakdown.rentalAmount)}
+            />
             <Row label="Rental charges" value={formatInr(breakdown.rentalAmount)} />
           </>
         ) : hasRentals ? (
@@ -88,7 +91,8 @@ export function PaymentSummary({ summary }: { summary: PaymentSummaryType }) {
       <PaymentAmount breakdown={breakdown} />
 
       <p className="text-[11px] text-muted-foreground">
-        All amounts in {breakdown.currency}. Charged in whole {breakdown.currency === "INR" ? "rupees" : breakdown.currency}.
+        All amounts in {breakdown.currency}. Charged in whole{" "}
+        {breakdown.currency === "INR" ? "rupees" : breakdown.currency}.
       </p>
 
       {deliveryMethod === "PICKUP" ? (
@@ -110,15 +114,7 @@ export function PaymentSummary({ summary }: { summary: PaymentSummaryType }) {
   );
 }
 
-function Row({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-}) {
+function Row({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div>
       <div className="flex items-baseline justify-between gap-3">

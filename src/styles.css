@@ -171,9 +171,15 @@
   simply stack. See `src/lib/floating/rail.tsx`.
 */
 .floating-rail {
+  /* One knob for "how far the column stands off the bottom edge". Every rule
+     below re-declares this rather than `bottom`, because the final offset is
+     `--mobile-action-bar-height` (set only while a sticky mobile bar is mounted,
+     see `src/lib/floating/mobile-action-bar.tsx`) plus this gap. Writing `bottom`
+     directly in three places is how the clearance got lost once already. */
+  --rail-gap: 1rem;
   position: fixed;
   right: 1rem;
-  bottom: 1rem;
+  bottom: calc(var(--mobile-action-bar-height, 0px) + var(--rail-gap));
   z-index: var(--layer-floating);
   display: flex;
   flex-direction: column;
@@ -193,20 +199,20 @@
 @media (min-width: 640px) {
   .floating-rail {
     right: 1.75rem;
-    bottom: 1.75rem;
+    --rail-gap: 1.75rem;
     gap: 0.75rem;
   }
 }
 
 @supports (padding: max(0px)) {
   .floating-rail {
-    bottom: max(1rem, env(safe-area-inset-bottom));
+    --rail-gap: max(1rem, env(safe-area-inset-bottom));
     right: max(1rem, env(safe-area-inset-right));
   }
 
   @media (min-width: 640px) {
     .floating-rail {
-      bottom: max(1.75rem, env(safe-area-inset-bottom));
+      --rail-gap: max(1.75rem, env(safe-area-inset-bottom));
       right: max(1.75rem, env(safe-area-inset-right));
     }
   }
@@ -487,6 +493,46 @@ select {
   backdrop-filter: blur(12px);
   border: 1px solid var(--raised-border);
   box-shadow: var(--elev-floating-shadow);
+}
+
+/*
+  The bottom-*left* counterpart to `.floating-rail`. The favourites page's mobile
+  filter trigger lives on the opposite side from the assistant, so it cannot join
+  the rail — but it still must not invent its own corner. It takes the same
+  offsets, the same responsive step and the same safe-area clamping as the rail,
+  so the two read as one system and neither is tucked under a phone's home
+  indicator.
+*/
+.floating-corner-left {
+  --corner-gap: max(1rem, env(safe-area-inset-bottom));
+  position: fixed;
+  left: max(1rem, env(safe-area-inset-left));
+  bottom: calc(var(--mobile-action-bar-height, 0px) + var(--corner-gap));
+  z-index: var(--layer-floating);
+}
+
+@media (min-width: 640px) {
+  .floating-corner-left {
+    left: max(1.75rem, env(safe-area-inset-left));
+    --corner-gap: max(1.75rem, env(safe-area-inset-bottom));
+  }
+}
+
+/*
+  The sticky mobile action bar (cart summary, product actions, payment). It is one
+  class so the three callers cannot drift apart again, and it sits on the
+  `--layer-mobile-bar` rung — deliberately *below* `--layer-floating`, so the rail
+  wins any stacking tie rather than the two being separated by mount order.
+
+  The rail does not merely out-rank it, it steps aside: while a bar is mounted,
+  `MobileActionBar` publishes `--mobile-action-bar-height` and both floating
+  corners add it to their bottom offset.
+*/
+.mobile-action-bar {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: var(--layer-mobile-bar);
 }
 
 /* ------------------------------------------------------------------ */

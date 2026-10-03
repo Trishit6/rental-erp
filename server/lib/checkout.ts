@@ -240,9 +240,10 @@ export async function buildCheckoutQuote(input: BuildQuoteInput): Promise<Checko
       quantity: row.quantity,
       startDate: toDateString(row.startDate),
       endDate: toDateString(row.endDate),
-      rentalDays: mode === "RENT" && row.startDate && row.endDate
-        ? rentalDays({ startDate: row.startDate, endDate: row.endDate })
-        : null,
+      rentalDays:
+        mode === "RENT" && row.startDate && row.endDate
+          ? rentalDays({ startDate: row.startDate, endDate: row.endDate })
+          : null,
       listingType: product.listingType,
       pricing,
     });

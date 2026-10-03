@@ -76,8 +76,8 @@ export function CartSummary({
 
         <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
           <Info size={12} aria-hidden className="mt-0.5 shrink-0" />
-          Delivery, taxes and any discounts are worked out at checkout. Deposits are
-          returned to you after a rental is handed back.
+          Delivery, taxes and any discounts are worked out at checkout. Deposits are returned to you
+          after a rental is handed back.
         </p>
       </div>
     </Card>
@@ -109,11 +109,7 @@ function Row({
 }
 
 /** A compact "N items · ₹X" strip for the drawer header. */
-export function CartSummaryBadge({
-  totals,
-}: {
-  totals: CartTotals;
-}) {
+export function CartSummaryBadge({ totals }: { totals: CartTotals }) {
   return (
     <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
       <ShieldCheck size={13} aria-hidden className="text-accent" />

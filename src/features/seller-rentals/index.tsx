@@ -40,7 +40,9 @@ export function DashboardRentalsPage() {
           description="Rent a camera, drill or projector for the weekend — right from your neighbours."
           action={
             <Button asChild>
-              <Link to="/browse" search={{ mode: "rent" }}>Browse rentals</Link>
+              <Link to="/browse" search={{ mode: "rent" }}>
+                Browse rentals
+              </Link>
             </Button>
           }
         />
@@ -51,11 +53,7 @@ export function DashboardRentalsPage() {
               <h2 className="font-heading text-lg font-extrabold">{section.label}</h2>
               {grouped[section.key].map((rental) => (
                 <Card key={rental.id} className="flex flex-wrap items-center gap-4 p-4">
-                  <ProductImage
-                    src={rental.primaryImage}
-                    alt=""
-                    className="size-16 rounded-2xl"
-                  />
+                  <ProductImage src={rental.primaryImage} alt="" className="size-16 rounded-2xl" />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <Link

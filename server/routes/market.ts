@@ -1,16 +1,8 @@
-import { Hono } from "hono";
+import { Router } from "../lib/http";
 import { z } from "zod";
 import { and, asc, desc, eq, inArray, like, or, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
-import {
-  addresses,
-  cartItems,
-  carts,
-  categories,
-  favorites,
-  products,
-  users,
-} from "../schema";
+import { addresses, cartItems, carts, categories, favorites, products, users } from "../schema";
 import { ok, buildPagination, HttpError } from "../lib/api";
 import { isPurchasable, PUBLIC_PRODUCT_STATUSES } from "../lib/product-status";
 import { requireUser } from "../lib/auth";
@@ -26,16 +18,12 @@ import {
   cartProductColumns,
   type CartProduct,
 } from "../lib/cart";
-import {
-  normalizeConditions,
-  PRODUCT_AVAILABILITY,
-  PRODUCT_MODES,
-} from "../lib/product-filters";
+import { normalizeConditions, PRODUCT_AVAILABILITY, PRODUCT_MODES } from "../lib/product-filters";
 import { normalizeProductCard, productCardColumns } from "./products";
 
-export const favoritesRoute = new Hono();
-export const cartRoute = new Hono();
-export const addressesRoute = new Hono();
+export const favoritesRoute = new Router();
+export const cartRoute = new Router();
+export const addressesRoute = new Router();
 
 /* -------------------------------- favorites -------------------------------- */
 
@@ -77,7 +65,9 @@ function favoriteOrderBy(sort: FavoriteSort) {
     case "oldest":
       return asc(favorites.createdAt);
     case "price_asc":
-      return asc(sql`COALESCE(${products.purchasePrice}, ${products.rentalPricePerDay}, 999999999)`);
+      return asc(
+        sql`COALESCE(${products.purchasePrice}, ${products.rentalPricePerDay}, 999999999)`,
+      );
     case "price_desc":
       return desc(sql`COALESCE(${products.purchasePrice}, ${products.rentalPricePerDay}, 0)`);
     default:
@@ -357,7 +347,10 @@ async function buildCart(userId: number) {
 
   // Deposits are tracked apart from the charges and are never seller revenue.
   const totals = {
-    subtotal: active.reduce((sum, item) => sum + item.pricing.lineTotal - item.pricing.depositTotal, 0),
+    subtotal: active.reduce(
+      (sum, item) => sum + item.pricing.lineTotal - item.pricing.depositTotal,
+      0,
+    ),
     rentalCharges: active.reduce((sum, item) => sum + item.pricing.rentalCharge, 0),
     securityDeposits: active.reduce((sum, item) => sum + item.pricing.depositTotal, 0),
     estimatedTotal: active.reduce((sum, item) => sum + item.pricing.lineTotal, 0),
@@ -429,7 +422,11 @@ cartRoute.post("/items", async (c) => {
   const user = c.get("user")!;
   const input = addCartItemSchema.parse(await c.req.json());
 
-  const [product] = await db.select().from(products).where(eq(products.id, input.productId)).limit(1);
+  const [product] = await db
+    .select()
+    .from(products)
+    .where(eq(products.id, input.productId))
+    .limit(1);
   // Adding to the cart is a purchase intent, so `OUT_OF_STOCK` is refused here
   // even though the listing itself is still publicly visible.
   if (!product || !isPurchasable(product.status)) {
@@ -469,7 +466,7 @@ cartRoute.post("/items", async (c) => {
     endDate: input.mode === "RENT" ? endDate : null,
     savedForLater: input.savedForLater,
     unitPriceSnapshot:
-      input.mode === "RENT" ? product.rentalPricePerDay : product.purchasePrice ?? null,
+      input.mode === "RENT" ? product.rentalPricePerDay : (product.purchasePrice ?? null),
   });
 
   return c.json(ok({ ...result, added: true }), result.merged ? 200 : 201);
@@ -531,7 +528,11 @@ cartRoute.patch("/items/:id", async (c) => {
 
   if (mode === "RENT") {
     const start =
-      input.startDate === undefined ? line.startDate : input.startDate ? new Date(input.startDate) : null;
+      input.startDate === undefined
+        ? line.startDate
+        : input.startDate
+          ? new Date(input.startDate)
+          : null;
     const end =
       input.endDate === undefined ? line.endDate : input.endDate ? new Date(input.endDate) : null;
 
@@ -563,8 +564,13 @@ cartRoute.patch("/items/:id", async (c) => {
     quantity: input.quantity,
     mode: input.mode,
     startDate:
-      input.startDate === undefined ? undefined : input.startDate ? new Date(input.startDate) : undefined,
-    endDate: input.endDate === undefined ? undefined : input.endDate ? new Date(input.endDate) : undefined,
+      input.startDate === undefined
+        ? undefined
+        : input.startDate
+          ? new Date(input.startDate)
+          : undefined,
+    endDate:
+      input.endDate === undefined ? undefined : input.endDate ? new Date(input.endDate) : undefined,
   });
 
   if (input.savedForLater !== undefined) {

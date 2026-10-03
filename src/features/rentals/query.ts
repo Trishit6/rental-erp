@@ -6,12 +6,7 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query/keys";
-import {
-  getRentalById,
-  getRentals,
-  requestRentalExtension,
-  requestRentalReturn,
-} from "./api";
+import { getRentalById, getRentals, requestRentalExtension, requestRentalReturn } from "./api";
 import type { RentalsSearch } from "./components/schema";
 import type { RentalExtensionRequest, RentalReturnRequest } from "./types";
 

@@ -1,13 +1,4 @@
-import {
-  Ban,
-  CheckCircle2,
-  Circle,
-  Clock,
-  Package,
-  RotateCcw,
-  Truck,
-  XCircle,
-} from "lucide-react";
+import { Ban, CheckCircle2, Circle, Clock, Package, RotateCcw, Truck, XCircle } from "lucide-react";
 import type { ComponentType } from "react";
 import type { LucideProps } from "lucide-react";
 import { cn } from "@/lib/utils/cn";

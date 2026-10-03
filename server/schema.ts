@@ -312,9 +312,7 @@ export const orders = mysqlTable(
      * this is `PAID`, which itself only happens after server-side
      * verification of a provider transaction.
      */
-    paymentStatus: varchar("payment_status", { length: 20 })
-      .notNull()
-      .default("PENDING"),
+    paymentStatus: varchar("payment_status", { length: 20 }).notNull().default("PENDING"),
     subtotal: int("subtotal").notNull(),
     deliveryFee: int("delivery_fee").notNull().default(0),
     /**
@@ -817,9 +815,236 @@ export const transactions = mysqlTable(
     // never collides in MySQL, so the many legacy/rows-without-a-key rows
     // coexist and only real keys are constrained.
     uniqueIndex("transactions_idempotency_key_unique").on(table.idempotencyKey),
-    uniqueIndex("transactions_provider_idempotency_key_unique").on(
-      table.providerIdempotencyKey,
-    ),
+    uniqueIndex("transactions_provider_idempotency_key_unique").on(table.providerIdempotencyKey),
     index("transactions_provider_transaction_id_idx").on(table.providerTransactionId),
+  ],
+);
+
+/* --------------------------- seller payout methods ------------------------- */
+
+/**
+ * Where a seller wants their money sent.
+ *
+ * ## Only a masked label is ever stored
+ *
+ * There is no payout provider wired up in this app, so there is nothing to
+ * tokenise an account with — and a table that quietly accumulated full account
+ * numbers "until we add a provider" would be the worst possible place to start.
+ * So the row holds the **holder's name** and a **masked** label
+ * (`HDFC Bank •••• 4321`) that the seller types in themselves. No account number,
+ * no IFSC, no UPI VPA, no card data: the fields a real integration would need are
+ * exactly the fields that must never sit in this table.
+ *
+ * The masked label is snapshotted onto `payouts.methodLabel` when a payout is
+ * requested, so deleting a method later cannot rewrite what a past payout said it
+ * was sent to — the same reasoning as `orders.deliveryAddressSnapshot`.
+ */
+export const sellerPayoutMethods = mysqlTable(
+  "seller_payout_methods",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    sellerId: int("seller_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** BANK | UPI — the two destinations the UI offers. */
+    type: varchar("type", { length: 10 }).notNull().default("BANK"),
+    accountHolder: varchar("account_holder", { length: 80 }).notNull(),
+    /** Seller-supplied, already masked by them. Never validated as an account. */
+    maskedLabel: varchar("masked_label", { length: 80 }).notNull(),
+    isDefault: boolean("is_default").notNull().default(false),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [index("seller_payout_methods_seller_id_idx").on(table.sellerId)],
+);
+
+/* --------------------------------- payouts -------------------------------- */
+
+/**
+ * A seller's request to be paid out.
+ *
+ * ## A request is not a transfer
+ *
+ * Nothing in this app moves real money, and nothing pretends to. `status` walks
+ * PENDING → PROCESSING → COMPLETED only because an **admin** moved it there
+ * (`server/routes/admin.ts`); until then the honest state is "requested", and the
+ * seller UI says so in words rather than showing a green tick. A payout that has
+ * not been confirmed by whatever eventually pays it must never read as paid.
+ *
+ * ## The reservation is the double-payout guard
+ *
+ * The moment a payout is requested its amount is *reserved* — it stops counting
+ * towards the available balance. Reservation is not a counter that gets
+ * incremented: it is a `SUM` over the rows of this table in `PENDING` or
+ * `PROCESSING`, so it cannot drift from reality and cannot be edited by a
+ * client. `requestPayout` additionally locks the seller's user row for the
+ * duration, so two concurrent requests serialise instead of both reading the
+ * same pre-reservation balance.
+ *
+ * ## `idempotency_key` is unique
+ *
+ * A retried request or a double-clicked button hits the constraint and returns
+ * the payout that already exists instead of reserving the money twice. The same
+ * two-guard pattern `transactions` uses for checkout.
+ */
+export const payouts = mysqlTable(
+  "payouts",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    sellerId: int("seller_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    /** Public reference, `PAY-2026-XXXXXX`. Shown to the seller and to support. */
+    payoutNumber: varchar("payout_number", { length: 20 }).notNull(),
+    /** Integer paise, always positive. The ledger carries the sign. */
+    amount: int("amount").notNull(),
+    currency: varchar("currency", { length: 3 }).notNull().default("INR"),
+    /**
+     * PENDING | PROCESSING | COMPLETED | FAILED | CANCELLED.
+     *
+     * Deliberately **not** the same vocabulary as `wallet_transactions.status`:
+     * this is the state of a *request*, which an admin drives, and its states are
+     * about handling rather than about whether money is withdrawable. The ledger
+     * entry mirrored from it (`lib/wallet.ts`) is where the balance effect lives.
+     */
+    status: varchar("status", { length: 12 }).notNull().default("PENDING"),
+    methodId: int("method_id").references(() => sellerPayoutMethods.id, { onDelete: "set null" }),
+    /** The masked label as it stood when this payout was requested. */
+    methodLabel: varchar("method_label", { length: 120 }).notNull(),
+    /** Optional seller-facing note ("for Diwali stock"). Never instructions to staff. */
+    note: varchar("note", { length: 200 }),
+    /** Already-safe, already-written explanation shown to the seller. */
+    failureReason: varchar("failure_reason", { length: 255 }),
+    /**
+     * Server-issued key for "one payout attempt → one payout". Unique. See the
+     * note above; a NULL never collides in MySQL, so rows without a key coexist.
+     */
+    idempotencyKey: varchar("idempotency_key", { length: 100 }),
+    /** The admin who last acted on it. Null until somebody does. */
+    reviewedBy: int("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at"),
+    requestedAt: timestamp("requested_at").notNull().defaultNow(),
+    processingAt: timestamp("processing_at"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("payouts_payout_number_unique").on(table.payoutNumber),
+    uniqueIndex("payouts_idempotency_key_unique").on(table.idempotencyKey),
+    index("payouts_seller_id_idx").on(table.sellerId),
+    index("payouts_status_idx").on(table.status),
+    // The wallet's own list and its "what is reserved" aggregate are both
+    // seller-scoped and status-scoped, in that order.
+    index("payouts_seller_status_idx").on(table.sellerId, table.status),
+    index("payouts_requested_at_idx").on(table.requestedAt),
+  ],
+);
+
+/* -------------------------- seller wallet ledger --------------------------- */
+
+/**
+ * The seller financial ledger.
+ *
+ * ## Why this is separate from `transactions`
+ *
+ * `transactions` records what a **customer** paid: one row per provider payment
+ * intent, keyed by `user_id` (the buyer). This records what a **seller** earned:
+ * one row per event in the seller's money story, keyed by `seller_id`. They are
+ * different questions with different lifecycles — a customer's `SUCCEEDED` says
+ * nothing about whether the seller has been paid — and folding one into the
+ * other is how a seller's balance ends up derived from somebody else's checkout.
+ *
+ * ## Signed integer paise, never a decimal
+ *
+ * `amount` is a signed count of paise: credits positive, debits negative. The
+ * whole app already stores money this way (`orders.subtotal`, `order_items.
+ * line_total`), and it is the reason no financial figure in Revaro is ever
+ * subject to binary floating-point error. Balances are therefore plain
+ * `SUM(amount)` calls in SQL rather than arithmetic performed anywhere.
+ *
+ * ## Nothing is ever overwritten
+ *
+ * A refund is a new `REFUND` row; a reversed payout is a new `PAYOUT_REVERSAL`
+ * row. The original `SALE` stays exactly as it was written, because "this seller
+ * earned ₹2,000 and it was later returned" is a fact, and an audit trail that
+ * cannot express it is not an audit trail. `status` marks whether a row still
+ * counts towards the balance, never whether it happened.
+ *
+ * ## `idempotency_key` is unique, and is the recording guard
+ *
+ * Every earning is recorded from a lifecycle transition that can itself be
+ * retried (a replayed webhook, a double-clicked "Mark completed"). The key names
+ * the thing that earned the money — `sale:{orderItemId}`, `rental:{rentalId}`,
+ * `fee:{ledgerId}` — so a second recording attempt is a constraint violation
+ * rather than a second credit.
+ */
+export const walletTransactions = mysqlTable(
+  "wallet_transactions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    sellerId: int("seller_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    /** A sale or rental line's provenance. Null for a bare adjustment. */
+    orderId: int("order_id").references(() => orders.id, { onDelete: "set null" }),
+    orderItemId: int("order_item_id").references(() => orderItems.id, { onDelete: "set null" }),
+    rentalId: int("rental_id").references(() => rentals.id, { onDelete: "set null" }),
+    /** Set on the `PAYOUT` / `PAYOUT_REVERSAL` pair only. */
+    payoutId: int("payout_id").references(() => payouts.id, { onDelete: "set null" }),
+    /**
+     * SALE | RENTAL | REFUND | PLATFORM_FEE | PAYOUT | PAYOUT_REVERSAL |
+     * ADJUSTMENT — the vocabulary lives in `server/lib/wallet.ts`.
+     */
+    type: varchar("type", { length: 20 }).notNull(),
+    /** Signed integer paise. Credits positive, debits negative. */
+    amount: int("amount").notNull(),
+    currency: varchar("currency", { length: 3 }).notNull().default("INR"),
+    /**
+     * Two vocabularies in one column, partitioned by `type` and enforced by
+     * `assertWalletStatus`:
+     *
+     *  - earnings (SALE, RENTAL, PLATFORM_FEE, REFUND, ADJUSTMENT):
+     *    PENDING | AVAILABLE | REVERSED
+     *  - payout rows: the payout's own lifecycle verbatim
+     *    (PENDING | PROCESSING | COMPLETED | FAILED | CANCELLED)
+     *
+     * A payout row mirrors the request it belongs to rather than translating it,
+     * because the audit trail is more useful when it shows the states an admin
+     * actually set than a lossy translation of them. `PAYOUT_REVERSAL` rows are
+     * always `COMPLETED`: the reservation is released by the payout leaving the
+     * pending bucket, and this row is the memo that says so.
+     */
+    status: varchar("status", { length: 12 }).notNull().default("PENDING"),
+    /** One sentence a seller can read. Written by the server, never by a client. */
+    description: varchar("description", { length: 200 }).notNull(),
+    /**
+     * What the seller would recognise this by — an order number (`RV-…`), a
+     * payout number (`PAY-…`), or a product title. Searchable, and never the
+     * auto-increment id: that is a row count.
+     */
+    reference: varchar("reference", { length: 60 }),
+    /** See the note above. Unique; NULL never collides. */
+    idempotencyKey: varchar("idempotency_key", { length: 120 }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("wallet_transactions_seller_id_idx").on(table.sellerId),
+    index("wallet_transactions_type_idx").on(table.type),
+    index("wallet_transactions_status_idx").on(table.status),
+    index("wallet_transactions_created_at_idx").on(table.createdAt),
+    // The wallet list: one seller's rows, newest first, optionally narrowed to
+    // one type. The leading seller column is what keeps the query scoped.
+    index("wallet_transactions_seller_type_created_idx").on(
+      table.sellerId,
+      table.type,
+      table.createdAt,
+    ),
+    index("wallet_transactions_order_id_idx").on(table.orderId),
+    index("wallet_transactions_rental_id_idx").on(table.rentalId),
+    index("wallet_transactions_payout_id_idx").on(table.payoutId),
+    index("wallet_transactions_order_item_id_idx").on(table.orderItemId),
+    uniqueIndex("wallet_transactions_idempotency_key_unique").on(table.idempotencyKey),
   ],
 );

@@ -50,9 +50,7 @@ export function RentalSecurityDeposit({
           <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
             Security deposit
           </p>
-          <p className="mt-1 font-heading text-xl font-black tabular-nums">
-            {formatInr(amount)}
-          </p>
+          <p className="mt-1 font-heading text-xl font-black tabular-nums">{formatInr(amount)}</p>
         </div>
         <span
           className={cn(

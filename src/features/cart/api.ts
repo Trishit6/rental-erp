@@ -41,8 +41,9 @@ export async function updateCartItem(
 ): Promise<CartMutationResult> {
   // Parsed client-side first so an obviously invalid patch never leaves the
   // browser. The server validates again and stays the authority.
-  return (await api.patch<CartMutationResult>(`/cart/items/${itemId}`, updateCartItemSchema.parse(input)))
-    .data;
+  return (
+    await api.patch<CartMutationResult>(`/cart/items/${itemId}`, updateCartItemSchema.parse(input))
+  ).data;
 }
 
 export async function removeCartItem(itemId: number): Promise<void> {

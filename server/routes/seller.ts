@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Router } from "../lib/http";
 import { z } from "zod";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db";
@@ -52,7 +52,7 @@ import { productInputSchema, type ProductInput } from "./products";
  * router used to be gated on `requireUser`, so any signed-in customer could read
  * any seller's summary, earnings and transactions. `requireSeller` is the gate.
  */
-export const sellerRoute = new Hono();
+export const sellerRoute = new Router();
 
 /* ------------------------------- onboarding -------------------------------- */
 
@@ -413,9 +413,9 @@ async function createSellerProduct(
     const productId = Number(created.id);
 
     if (input.images.length) {
-      await tx.insert(productImages).values(
-        input.images.map((url, index) => ({ productId, url, sortOrder: index })),
-      );
+      await tx
+        .insert(productImages)
+        .values(input.images.map((url, index) => ({ productId, url, sortOrder: index })));
     }
     if (input.tags.length) {
       await tx
@@ -978,7 +978,10 @@ sellerRoute.post("/reports", async (c) => {
   // mysql2 inserts do not return rows, so the id is taken from `$returningId()`
   // and the row re-read. The previous version destructured the (empty) insert
   // result and answered `201` with no data at all.
-  const [created] = await db.insert(reports).values({ ...input, reporterId: user.id }).$returningId();
+  const [created] = await db
+    .insert(reports)
+    .values({ ...input, reporterId: user.id })
+    .$returningId();
   return c.json(ok({ id: Number(created.id) }), 201);
 });
 

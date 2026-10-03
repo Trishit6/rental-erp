@@ -61,7 +61,9 @@ export function OrderCard({ order }: { order: OrderSummaryType }) {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="space-y-1 text-xs text-muted-foreground">
             <p>
-              <span className="font-semibold text-foreground">{orderTypeLabel(order.orderType)}</span>
+              <span className="font-semibold text-foreground">
+                {orderTypeLabel(order.orderType)}
+              </span>
               {order.rentalStatus && (
                 <>
                   {" · "}

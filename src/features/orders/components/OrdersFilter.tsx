@@ -32,10 +32,7 @@ export function OrdersFilter({
   const count = activeFilterCount(search);
 
   return (
-    <section
-      className={cn("raised-surface space-y-4 p-4 sm:p-5", className)}
-      aria-label="Filters"
-    >
+    <section className={cn("raised-surface space-y-4 p-4 sm:p-5", className)} aria-label="Filters">
       <div className="flex items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-sm font-bold text-foreground">
           <SlidersHorizontal size={14} aria-hidden="true" />

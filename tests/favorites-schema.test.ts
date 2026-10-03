@@ -184,8 +184,12 @@ describe("favourite sort options", () => {
 
 describe("availability", () => {
   it("reads the stock the database actually tracks", () => {
-    expect(favoriteAvailabilityState({ status: "PUBLISHED", availableQuantity: 5 })).toBe("AVAILABLE");
-    expect(favoriteAvailabilityState({ status: "PUBLISHED", availableQuantity: 2 })).toBe("LIMITED");
+    expect(favoriteAvailabilityState({ status: "PUBLISHED", availableQuantity: 5 })).toBe(
+      "AVAILABLE",
+    );
+    expect(favoriteAvailabilityState({ status: "PUBLISHED", availableQuantity: 2 })).toBe(
+      "LIMITED",
+    );
     expect(favoriteAvailabilityState({ status: "PUBLISHED", availableQuantity: 0 })).toBe(
       "OUT_OF_STOCK",
     );
@@ -195,7 +199,9 @@ describe("availability", () => {
     expect(favoriteAvailabilityState({ status: "ARCHIVED", availableQuantity: 5 })).toBe(
       "UNAVAILABLE",
     );
-    expect(favoriteAvailabilityState({ status: "PAUSED", availableQuantity: 5 })).toBe("UNAVAILABLE");
+    expect(favoriteAvailabilityState({ status: "PAUSED", availableQuantity: 5 })).toBe(
+      "UNAVAILABLE",
+    );
   });
 
   it("gives every state a word, not just a colour", () => {
@@ -226,9 +232,7 @@ describe("header copy", () => {
 
 describe("accessibility", () => {
   it("names the product and the action, differently per state", () => {
-    expect(favoriteButtonLabel("Sony WH-1000XM5", false)).toBe(
-      "Add Sony WH-1000XM5 to favorites",
-    );
+    expect(favoriteButtonLabel("Sony WH-1000XM5", false)).toBe("Add Sony WH-1000XM5 to favorites");
     expect(favoriteButtonLabel("Sony WH-1000XM5", true)).toBe(
       "Remove Sony WH-1000XM5 from favorites",
     );

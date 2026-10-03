@@ -316,7 +316,9 @@ export function productSpecifications(product: ProductDetails): ProductSpecifica
  * title, and recomputing it here would be a second source of truth for a number
  * the database already stores.
  */
-export function headerRatingSummary(product: Pick<ProductDetails, "ratingAverage" | "ratingCount">): {
+export function headerRatingSummary(
+  product: Pick<ProductDetails, "ratingAverage" | "ratingCount">,
+): {
   average: number;
   count: number;
 } {

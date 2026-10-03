@@ -83,7 +83,10 @@ export function effectiveFulfillment(
 }
 
 /** What this line can move to next, given where it is. */
-export function allowedTransitions(orderStatus: string, lineStatus: string | null): {
+export function allowedTransitions(
+  orderStatus: string,
+  lineStatus: string | null,
+): {
   next: SellerFulfillmentState[];
   canCancel: boolean;
 } {
@@ -119,11 +122,7 @@ export function assertFulfillmentTransition(
     );
   }
   if (allowed.length === 0) {
-    throw new HttpError(
-      409,
-      "INVALID_TRANSITION",
-      "This order is not ready to be processed yet.",
-    );
+    throw new HttpError(409, "INVALID_TRANSITION", "This order is not ready to be processed yet.");
   }
 
   throw new HttpError(

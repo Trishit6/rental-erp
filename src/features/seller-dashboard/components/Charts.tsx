@@ -75,9 +75,14 @@ export function BarChart({
           role="presentation"
         >
           <defs>
+            {/* `--color-primary`, not `--primary`. The theme block declares the
+                `--color-*` family, so `--primary` resolved to nothing and the
+                gradient's stops fell back to black — the chart rendered, just not in
+                Revaro's orange. Naming the token that exists also means the bars
+                follow the dark-mode override for free. */}
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.95" />
-              <stop offset="100%" stopColor="var(--primary)" stopOpacity="0.45" />
+              <stop offset="0%" stopColor="var(--color-primary)" stopOpacity="0.95" />
+              <stop offset="100%" stopColor="var(--color-primary)" stopOpacity="0.45" />
             </linearGradient>
           </defs>
           {data.map((row, index) => {

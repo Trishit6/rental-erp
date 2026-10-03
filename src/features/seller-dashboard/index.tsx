@@ -46,7 +46,17 @@ import { useSellerSummary } from "./query";
  * changes and reads from the same router everything else does.
  */
 
-/** The tabs, in the order a seller works through them. */
+/**
+ * The tabs, in the order a seller works through them.
+ *
+ * `Wallet` sits next to `Earnings` rather than replacing it, because they answer
+ * different questions: earnings are *activity* ("how much did I make, and when"), the
+ * wallet is *position* ("what is mine, what has left, what can I withdraw right now").
+ * The two earnings cards below point at the wallet, because "after the platform fee"
+ * is only the first half of that sentence — what the fee leaves, and whether it has
+ * been paid out yet, live somewhere else, and making a seller go looking for it is how
+ * a platform fee turns into a complaint.
+ */
 const TABS = [
   { to: "/dashboard", label: "Overview" },
   { to: "/dashboard/products", label: "Listings" },
@@ -55,6 +65,7 @@ const TABS = [
   { to: "/dashboard/analytics", label: "Analytics" },
   { to: "/dashboard/reviews", label: "Reviews" },
   { to: "/dashboard/earnings", label: "Earnings" },
+  { to: "/dashboard/wallet", label: "Wallet" },
   { to: "/dashboard/messages", label: "Messages" },
 ] as const;
 
@@ -103,14 +114,14 @@ export function DashboardPage() {
               label="Sale earnings"
               value={formatInr(data?.earnings.saleNetPaise ?? 0)}
               note="After the platform fee"
-              to="/dashboard/earnings"
+              to="/dashboard/wallet"
             />
             <StatCard
               icon={Calendar}
               label="Rental earnings"
               value={formatInr(data?.earnings.rentalNetPaise ?? 0)}
               note="After the platform fee"
-              to="/dashboard/earnings"
+              to="/dashboard/wallet"
             />
             <StatCard
               icon={Package}
@@ -181,7 +192,11 @@ export function DashboardPage() {
                 </div>
                 <p className="mt-3 font-heading text-3xl font-black">
                   {(data?.reviews.average ?? 0).toFixed(1)}
-                  <Star size={18} aria-hidden className="mb-1 ml-1 inline fill-amber-400 text-amber-400" />
+                  <Star
+                    size={18}
+                    aria-hidden
+                    className="mb-1 ml-1 inline fill-amber-400 text-amber-400"
+                  />
                 </p>
                 <p className="text-sm text-muted-foreground">
                   {data?.reviews.count ?? 0} review{(data?.reviews.count ?? 0) === 1 ? "" : "s"}
@@ -250,7 +265,16 @@ function isActive(pathname: string, to: string): boolean {
 function ListingBreakdown({
   products,
 }: {
-  products: { total: number; active: number; draft: number; paused: number; archived: number; outOfStock: number } | undefined;
+  products:
+    | {
+        total: number;
+        active: number;
+        draft: number;
+        paused: number;
+        archived: number;
+        outOfStock: number;
+      }
+    | undefined;
 }) {
   if (!products || products.total === 0) {
     return (

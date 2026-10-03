@@ -148,7 +148,9 @@ describe("requesting an extension", () => {
 
 describe("requesting a return", () => {
   it("posts to the return-request endpoint", () => {
-    vi.mocked(api.post).mockResolvedValue({ data: { status: "RETURN_PENDING", requestedAt: null } } as never);
+    vi.mocked(api.post).mockResolvedValue({
+      data: { status: "RETURN_PENDING", requestedAt: null },
+    } as never);
 
     void requestRentalReturn(61, { method: "DROP_OFF" });
 
@@ -156,7 +158,9 @@ describe("requesting a return", () => {
   });
 
   it("defaults to drop-off when the caller says nothing", () => {
-    vi.mocked(api.post).mockResolvedValue({ data: { status: "RETURN_PENDING", requestedAt: null } } as never);
+    vi.mocked(api.post).mockResolvedValue({
+      data: { status: "RETURN_PENDING", requestedAt: null },
+    } as never);
 
     void requestRentalReturn(61);
 

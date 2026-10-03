@@ -27,6 +27,14 @@
  */
 export const TRUNCATED_TABLES = [
   "transactions",
+  // Before `payouts`, and both before `users` — the wallet's own money. A ledger row
+  // left behind keeps its `seller_id` pointing at a user the TRUNCATE below has
+  // already removed, and the next run's auto-increment hands that id to somebody
+  // else: the seller who then opens `/dashboard/wallet` sees another seller's
+  // balance, which is the exact failure this list exists to prevent.
+  "wallet_transactions",
+  "seller_payout_methods",
+  "payouts",
   "notifications",
   "messages",
   "conversation_participants",

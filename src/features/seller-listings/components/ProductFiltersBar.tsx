@@ -68,9 +68,7 @@ export function ProductFiltersBar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchDraft]);
 
-  const activeCount = [filters.status, filters.listingType, filters.stock].filter(
-    Boolean,
-  ).length;
+  const activeCount = [filters.status, filters.listingType, filters.stock].filter(Boolean).length;
 
   function clearAll() {
     setSearchDraft("");
@@ -107,7 +105,9 @@ export function ProductFiltersBar({
           <Select
             label="Sort"
             value={filters.sort}
-            onChange={(value) => onChange({ ...filters, sort: value as SellerProductSort, page: 1 })}
+            onChange={(value) =>
+              onChange({ ...filters, sort: value as SellerProductSort, page: 1 })
+            }
             options={SELLER_PRODUCT_SORTS.map((sort) => ({
               value: sort,
               label: SELLER_SORT_LABELS[sort],

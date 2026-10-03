@@ -65,13 +65,7 @@ export type VerifyPaymentForm = z.infer<typeof verifyPaymentSchema>;
 
 /* ---------------------------------- steps ----------------------------------- */
 
-export const PAYMENT_STEPS = [
-  "method",
-  "processing",
-  "success",
-  "failed",
-  "cancelled",
-] as const;
+export const PAYMENT_STEPS = ["method", "processing", "success", "failed", "cancelled"] as const;
 
 export type PaymentStep = (typeof PAYMENT_STEPS)[number];
 

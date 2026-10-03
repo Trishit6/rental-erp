@@ -28,11 +28,7 @@ export function OrdersEmptyState({
         icon={SearchX}
         title="No orders found"
         description="Try changing your search or filters."
-        action={
-          onClearFilters && (
-            <Button onClick={onClearFilters}>Clear filters</Button>
-          )
-        }
+        action={onClearFilters && <Button onClick={onClearFilters}>Clear filters</Button>}
       />
     );
   }

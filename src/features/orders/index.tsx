@@ -63,7 +63,11 @@ export function OrdersPage() {
 
   const clearFilters = useCallback(() => {
     // Keeps the sort — clearing filters is not the same as resetting the view.
-    void navigate({ to: "/orders", search: search.sort ? { sort: search.sort } : {}, replace: true });
+    void navigate({
+      to: "/orders",
+      search: search.sort ? { sort: search.sort } : {},
+      replace: true,
+    });
   }, [navigate, search.sort]);
 
   const prefetchPage = useCallback(

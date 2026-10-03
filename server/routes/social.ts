@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Router } from "../lib/http";
 import { z } from "zod";
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "../db";
@@ -13,9 +13,9 @@ import {
 import { ok, HttpError } from "../lib/api";
 import { requireUser } from "../lib/auth";
 
-export const messagesRoute = new Hono();
-export const notificationsRoute = new Hono();
-export const usersRoute = new Hono();
+export const messagesRoute = new Router();
+export const notificationsRoute = new Router();
+export const usersRoute = new Router();
 
 /* --------------------------------- messages -------------------------------- */
 

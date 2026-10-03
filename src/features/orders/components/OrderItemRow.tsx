@@ -48,11 +48,15 @@ export function OrderItemRow({
               </span>
             )}
             {item.condition && (
-              <p className="text-[11px] text-muted-foreground">Condition: {prettyCondition(item.condition)}</p>
+              <p className="text-[11px] text-muted-foreground">
+                Condition: {prettyCondition(item.condition)}
+              </p>
             )}
           </div>
 
-          <span className="shrink-0 text-sm font-bold tabular-nums">{formatInr(item.lineTotal)}</span>
+          <span className="shrink-0 text-sm font-bold tabular-nums">
+            {formatInr(item.lineTotal)}
+          </span>
         </div>
 
         <dl className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">

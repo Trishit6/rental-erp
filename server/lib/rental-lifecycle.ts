@@ -246,7 +246,12 @@ export async function reconcileRentalStatuses(
     await executor
       .update(rentals)
       .set({ status: "OVERDUE", updatedAt: new Date() })
-      .where(inArray(rentals.id, ending.map((r) => r.id)));
+      .where(
+        inArray(
+          rentals.id,
+          ending.map((r) => r.id),
+        ),
+      );
   }
 }
 

@@ -15,7 +15,12 @@ import {
   usePaymentSummary,
   useVerifyPayment,
 } from "../query";
-import { isReviewRequired, type OrderConfirmation, type PaymentIntent, type PaymentMethod } from "../types";
+import {
+  isReviewRequired,
+  type OrderConfirmation,
+  type PaymentIntent,
+  type PaymentMethod,
+} from "../types";
 import { parsePaymentSearch, type PaymentStep } from "./schema";
 import { PaymentCancelled } from "./PaymentCancelled";
 import { PaymentErrorState } from "./PaymentErrorState";
@@ -54,7 +59,9 @@ export function PaymentPage() {
 
   const providerQuery = usePaymentProviderInfo();
   const summaryQuery = usePaymentSummary({ deliveryMethod, deliveryAddressId });
-  const statusQuery = usePaymentStatus(step === "processing" ? (intent?.transactionId ?? null) : null);
+  const statusQuery = usePaymentStatus(
+    step === "processing" ? (intent?.transactionId ?? null) : null,
+  );
 
   const createIntent = useCreatePaymentIntent();
   const verify = useVerifyPayment(intent?.transactionId ?? 0);
@@ -294,8 +301,15 @@ export function PaymentPage() {
           </div>
 
           {/* Sticky on small screens so the primary action is always reachable
-              without covering the summary above it. */}
-          <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border/60 bg-background/95 p-4 backdrop-blur lg:static lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
+              without covering the summary above it.
+
+              Not `MobileActionBar`: this one keeps its markup at `lg` (it becomes
+              an inline block in the summary column rather than disappearing), so
+              it cannot be swapped for a `lg:hidden` component. It still takes the
+              `--layer-mobile-bar` rung — it used to be a bare `z-20`, the only
+              un-tokenised layer in the app — and the same safe-area padding as the
+              other two bars, so it clears a phone's home indicator. */}
+          <div className="fixed inset-x-0 bottom-0 z-[var(--layer-mobile-bar)] border-t border-border/60 bg-background/95 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-4 backdrop-blur lg:static lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
             <Button
               size="lg"
               className="w-full"

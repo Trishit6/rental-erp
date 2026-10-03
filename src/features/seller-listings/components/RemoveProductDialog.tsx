@@ -98,7 +98,12 @@ export function RemoveProductDialog({
         </div>
 
         <DialogFooter className="mt-5">
-          <Button type="button" variant="secondary" disabled={busy} onClick={() => onOpenChange(false)}>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => onOpenChange(false)}
+          >
             Keep it
           </Button>
           {!hasHistory && (

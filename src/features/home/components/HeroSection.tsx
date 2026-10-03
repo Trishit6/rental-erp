@@ -1,6 +1,16 @@
 import { Link } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ArrowRight, ChevronLeft, ChevronRight, Leaf, MapPin, Repeat, ShieldCheck, Star, Truck } from "lucide-react";
+import {
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
+  Leaf,
+  MapPin,
+  Repeat,
+  ShieldCheck,
+  Star,
+  Truck,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useState } from "react";
 import type { MarketplaceStats } from "@/lib/types";
@@ -217,7 +227,11 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
               {slide.captionTitle}
             </Badge>
 
-            <div className="absolute inset-x-4 bottom-4 flex items-center justify-between rounded-2xl bg-background/95 px-4 py-3 shadow-lg backdrop-blur">
+            {/* A scrim panel over a photo: one drop shadow, so it takes a ladder rung
+                rather than Tailwind's `shadow-lg` — which is what made this read
+                as a bright bar sitting *on top of* the slide rather than as part
+                of it. */}
+            <div className="elev-floating absolute inset-x-4 bottom-4 flex items-center justify-between rounded-2xl bg-background/95 px-4 py-3 backdrop-blur">
               <div>
                 <p className="text-xs font-medium text-muted-foreground">{slide.captionLabel}</p>
                 <p className="font-heading text-sm font-extrabold">{slide.captionTitle}</p>

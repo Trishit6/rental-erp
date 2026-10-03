@@ -28,7 +28,9 @@ export function RentalsEmptyState({
         icon={SearchX}
         title="No rentals found"
         description="Try changing your search or filters."
-        action={onClearFilters ? <Button onClick={onClearFilters}>Clear filters</Button> : undefined}
+        action={
+          onClearFilters ? <Button onClick={onClearFilters}>Clear filters</Button> : undefined
+        }
       />
     );
   }
@@ -41,7 +43,9 @@ export function RentalsEmptyState({
         description="Your current rentals will appear here."
         action={
           <Button asChild variant="secondary">
-            <Link to="/browse" search={{ mode: "rent" }}>Browse rentals</Link>
+            <Link to="/browse" search={{ mode: "rent" }}>
+              Browse rentals
+            </Link>
           </Button>
         }
       />
@@ -56,7 +60,9 @@ export function RentalsEmptyState({
         description="Nothing booked yet for a future date."
         action={
           <Button asChild variant="secondary">
-            <Link to="/browse" search={{ mode: "rent" }}>Browse rentals</Link>
+            <Link to="/browse" search={{ mode: "rent" }}>
+              Browse rentals
+            </Link>
           </Button>
         }
       />
@@ -70,7 +76,9 @@ export function RentalsEmptyState({
       description="Rent something you need without committing to ownership."
       action={
         <Button asChild>
-          <Link to="/browse" search={{ mode: "rent" }}>Browse rentals</Link>
+          <Link to="/browse" search={{ mode: "rent" }}>
+            Browse rentals
+          </Link>
         </Button>
       }
     />

@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Router } from "../lib/http";
 import { z } from "zod";
 import { desc, eq } from "drizzle-orm";
 import { ok, rateLimit } from "../lib/api";
@@ -13,7 +13,7 @@ import {
   isProductSeeking,
 } from "../lib/chatbot-knowledge";
 
-export const chatRoute = new Hono();
+export const chatRoute = new Router();
 
 /* --------------------------------- config ---------------------------------- */
 
@@ -106,7 +106,11 @@ async function answerOwnOrderQuestion(
     .join(" ");
   return {
     reply: `Your most recent order ${latest.orderNumber ?? ref} is “${status}”. You can see the full timeline on your orders page — tap a card in My Orders for every step.`,
-    suggestions: ["Where is my latest order?", "How do I cancel an order?", "What is a security deposit?"],
+    suggestions: [
+      "Where is my latest order?",
+      "How do I cancel an order?",
+      "What is a security deposit?",
+    ],
   };
 }
 
@@ -122,9 +126,7 @@ chatRoute.post("/", async (c) => {
     const user = c.get("user") ?? null;
     const orderAnswer = await answerOwnOrderQuestion(user?.id);
     if (orderAnswer) {
-      return c.json(
-        ok({ ...orderAnswer, source: "assistant" as const, products: [] }),
-      );
+      return c.json(ok({ ...orderAnswer, source: "assistant" as const, products: [] }));
     }
   }
 
@@ -143,11 +145,7 @@ chatRoute.post("/", async (c) => {
 
   if (CHATBOT_API_KEY) {
     try {
-      const reply = await askProvider(
-        messages,
-        buildSystemPrompt(productContext),
-        c.req.raw.signal,
-      );
+      const reply = await askProvider(messages, buildSystemPrompt(productContext), c.signal);
       if (reply) {
         return c.json(
           ok({

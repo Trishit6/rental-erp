@@ -1,16 +1,16 @@
 import { useCallback, useMemo } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type QueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth/auth-context";
 import { queryKeys } from "./keys";
-import { addFavorite, clearFavorites, getFavoriteIds, removeFavorite } from "@/features/favorites/api";
+import {
+  addFavorite,
+  clearFavorites,
+  getFavoriteIds,
+  removeFavorite,
+} from "@/features/favorites/api";
 import { favoriteProductIdSchema } from "@/features/favorites/components/schema";
 import type { FavoriteListResponse, FavoriteMutationResult } from "@/features/favorites/types";
 
@@ -151,7 +151,11 @@ function restoreListPages(
 }
 
 /** Keep the product page's own counter in step without refetching it. */
-function patchProductDetail(queryClient: QueryClient, slug: string | undefined, favorited: boolean) {
+function patchProductDetail(
+  queryClient: QueryClient,
+  slug: string | undefined,
+  favorited: boolean,
+) {
   if (!slug) return;
   queryClient.setQueryData(queryKeys.product(slug), (previous: unknown) => {
     if (!previous || typeof previous !== "object") return previous;
@@ -177,11 +181,16 @@ export type FavoriteToggleInput = {
 export function useFavoriteMutation() {
   const queryClient = useQueryClient();
 
-  return useMutation<FavoriteMutationResult, Error, FavoriteToggleInput, {
-    previousIds: number[] | undefined;
-    previousLists: [readonly unknown[], FavoriteListResponse | undefined][];
-    input: FavoriteToggleInput;
-  }>({
+  return useMutation<
+    FavoriteMutationResult,
+    Error,
+    FavoriteToggleInput,
+    {
+      previousIds: number[] | undefined;
+      previousLists: [readonly unknown[], FavoriteListResponse | undefined][];
+      input: FavoriteToggleInput;
+    }
+  >({
     mutationFn: ({ productId, favorited }) =>
       favorited ? addFavorite(productId) : removeFavorite(productId),
 
@@ -310,9 +319,7 @@ export function useFavoriteToggle({
       if (isGuest) return signIn();
       mutation.mutate(
         { productId, favorited, slug },
-        favorited
-          ? undefined
-          : { onSuccess: () => onRemoved?.({ productId, slug }) },
+        favorited ? undefined : { onSuccess: () => onRemoved?.({ productId, slug }) },
       );
     },
     [isGuest, isPending, mutation, onRemoved, productId, signIn, slug],

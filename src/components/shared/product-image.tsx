@@ -81,8 +81,8 @@ export function ProductImage({
   imgClassName,
   label = "Image unavailable",
   fallback,
-  /** Above-the-fold images skip the lazy hint; the rest stay lazy. */
   priority = false,
+  onFailure,
 }: {
   src: string | null | undefined;
   alt: string;
@@ -103,6 +103,15 @@ export function ProductImage({
    */
   fallback?: ReactNode;
   priority?: boolean;
+  /**
+   * Called once per failing URL, with the URL that failed.
+   *
+   * Only for a caller that has to *change something else* as a result — a
+   * gallery hiding its "open full-size" button, because there is no full-size
+   * image to open. Without this, each caller has to keep its own parallel copy of
+   * the failure state, which is the duplication this component exists to remove.
+   */
+  onFailure?: (src: string) => void;
 }) {
   // Treat a blank/whitespace string as "no image", not as a request for "".
   const usable = typeof src === "string" && src.trim().length > 0 ? src.trim() : null;
@@ -159,6 +168,7 @@ export function ProductImage({
         onError={() => {
           setPhase((current) => (current.failed ? current : { ...current, failed: true }));
           reportFailure(usable, alt);
+          onFailure?.(usable);
         }}
         className={cn(
           "absolute inset-0 size-full object-cover transition-opacity duration-300 motion-reduce:transition-none",

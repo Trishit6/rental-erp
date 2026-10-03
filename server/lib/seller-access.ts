@@ -1,8 +1,8 @@
-import type { Context } from "hono";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { sellerProfiles } from "../schema";
 import { HttpError } from "./api";
+import type { Ctx } from "./http";
 import { requireUser, type SessionUser } from "./auth";
 
 /**
@@ -50,7 +50,7 @@ export function isSellerRole(role: string | null | undefined): boolean {
  * are simply not a seller yet. The code is branchable, so the client can offer
  * "Become a seller" instead of a dead end.
  */
-export function requireSeller(c: Context): SessionUser {
+export function requireSeller(c: Ctx): SessionUser {
   const user = requireUser(c);
   if (!isSellerRole(user.role)) {
     throw new HttpError(

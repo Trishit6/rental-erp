@@ -1,5 +1,4 @@
 import "dotenv/config";
-import { readFileSync } from "node:fs";
 import bcrypt from "bcryptjs";
 import { sql } from "drizzle-orm";
 import { db, pool } from "./db";
@@ -12,20 +11,31 @@ import {
   notifications,
   orderItems,
   orders,
+  payouts,
   productImages,
   products,
   productTags,
   rentals,
   reviews,
   reviewHelpfulVotes,
+  sellerPayoutMethods,
   sellerProfiles,
   transactions,
   users,
+  walletTransactions,
 } from "./schema";
-import { effectiveDailyRate, rentalDays } from "../src/lib/pricing";
+import { effectiveDailyRate, platformFee, rentalDays } from "../src/lib/pricing";
+import {
+  DEV_ADMIN_EMAIL,
+  DEV_ADMIN_PASSWORD,
+  DEV_PASSWORD,
+  PLATFORM_RENTAL_FEE_PERCENT,
+  PLATFORM_SALE_FEE_PERCENT,
+} from "./lib/config";
 import { refreshProductRatings } from "./lib/rating-aggregate";
 import { TRUNCATED_TABLES } from "./lib/seed-truncate";
 import { createOrderNumber } from "./lib/payments/order-number";
+import { createPayoutNumber } from "./lib/wallet";
 
 /* --------------------------------- helpers --------------------------------- */
 
@@ -51,44 +61,25 @@ function paise(rupees: number): number {
  * world and the 20k bulk world share one image source, and that source is the
  * one `allowedImageHosts()` actually permits.
  *
- * `IMG` is kept, and keyed by the product's own category, so each demo product
- * keeps a stable picture across re-seeds. The category is passed at the call
- * site rather than read from the product row, because the `IMG(...)` entries sit
- * in the same object literal as `categoryId` and would otherwise need the row
- * before it exists.
+ * The picker itself lives in `lib/demo-images`, not here, so that
+ * `db:repair-demo-images` can recompute a URL that is provably identical to the
+ * one this seed writes. A repair that disagreed with the seed would reintroduce
+ * the same class of bug one re-seed later.
+ *
+ * `IMG` is keyed by the product's own category, so each demo product keeps a
+ * stable picture across re-seeds. The category is passed at the call site rather
+ * than read from the product row, because the `IMG(...)` entries sit in the same
+ * object literal as `categoryId` and would otherwise need the row before it
+ * exists.
  */
-function loadImagePools(): Record<string, { url: string }[]> {
-  try {
-    return JSON.parse(
-      readFileSync(new URL("./data/product-images.json", import.meta.url), "utf8"),
-    ) as Record<string, { url: string }[]>;
-  } catch {
-    return {};
-  }
-}
-
-const IMAGE_POOLS = loadImagePools();
-
-/** A stable index from any string — so a given product always gets a given photo. */
-function pick(pool: { url: string }[], seed: string) {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-  }
-  return pool[hash % pool.length]?.url ?? null;
-}
-
-/** Prefer the category's own pool; fall back to any pool so no listing is imageless. */
-function IMG(categorySlug: string, seed: string): string {
-  const pool = IMAGE_POOLS[categorySlug] ?? [];
-  const anyPool = Object.values(IMAGE_POOLS).flat();
-  return pick(pool, seed) ?? pick(anyPool, seed) ?? "";
-}
+import { IMG, IMAGE_POOLS, pick } from "./lib/demo-images";
 
 /* ------------------------------- seed accounts ------------------------------ */
 
-const PASSWORD = "revaro-dev-2026";
-
+/**
+ * Every demo account's credentials come from `lib/config`, so a deployment can set
+ * them in the environment instead of editing this file — see the note there.
+ */
 async function seed() {
   console.log("Clearing existing data...");
   await db.execute(sql`SET FOREIGN_KEY_CHECKS = 0`);
@@ -98,14 +89,16 @@ async function seed() {
   await db.execute(sql`SET FOREIGN_KEY_CHECKS = 1`);
 
   console.log("Seeding users...");
-  const passwordHash = await bcrypt.hash(PASSWORD, 10);
+  const passwordHash = await bcrypt.hash(DEV_PASSWORD, 10);
+  // Hashed separately so `ADMIN_PASSWORD` can differ from the shared demo password.
+  const adminPasswordHash = await bcrypt.hash(DEV_ADMIN_PASSWORD, 10);
   const insertedUsers = await db
     .insert(users)
     .values([
       {
         name: "Admin Revaro",
-        email: "admin@revaro.local",
-        passwordHash,
+        email: DEV_ADMIN_EMAIL,
+        passwordHash: adminPasswordHash,
         role: "ADMIN",
         verified: true,
       },
@@ -809,11 +802,12 @@ async function seed() {
   const projectorId = Number(insertedProducts[7].id);
 
   // Purchase: Arjun buys the vacuum
+  const order1Number = createOrderNumber();
   const [order1] = await db
     .insert(orders)
     .values({
       userId: arjun,
-      orderNumber: createOrderNumber(),
+      orderNumber: order1Number,
       orderType: "PURCHASE",
       status: "DELIVERED",
       subtotal: paise(2400),
@@ -990,11 +984,12 @@ async function seed() {
   const chairDays = rentalDays({ startDate: chairStart, endDate: chairEnd });
   const chairRate = paise(700);
   const chairSubtotal = chairRate * chairDays;
+  const order4Number = createOrderNumber();
   const [order4] = await db
     .insert(orders)
     .values({
       userId: sara,
-      orderNumber: createOrderNumber(),
+      orderNumber: order4Number,
       orderType: "RENTAL",
       status: "COMPLETED",
       subtotal: chairSubtotal,
@@ -1024,22 +1019,25 @@ async function seed() {
       createdAt: chairStart,
     })
     .$returningId();
-  await db.insert(rentals).values({
-    orderId: Number(order4.id),
-    orderItemId: Number(item4.id),
-    productId: chairId,
-    renterId: sara,
-    ownerId: maya,
-    startDate: chairStart,
-    endDate: chairEnd,
-    dailyRate: chairRate,
-    rentalSubtotal: chairSubtotal,
-    securityDeposit: paise(5000),
-    deliveryFee: 0,
-    total: chairSubtotal + paise(5000),
-    status: "RETURNED",
-    createdAt: chairStart,
-  });
+  const [rental1] = await db
+    .insert(rentals)
+    .values({
+      orderId: Number(order4.id),
+      orderItemId: Number(item4.id),
+      productId: chairId,
+      renterId: sara,
+      ownerId: maya,
+      startDate: chairStart,
+      endDate: chairEnd,
+      dailyRate: chairRate,
+      rentalSubtotal: chairSubtotal,
+      securityDeposit: paise(5000),
+      deliveryFee: 0,
+      total: chairSubtotal + paise(5000),
+      status: "RETURNED",
+      createdAt: chairStart,
+    })
+    .$returningId();
 
   // A finished rental of the camera, so the live ACTIVE rental above stays active
   // and this one can carry a review. It is left HIDDEN on purpose: the admin queue
@@ -1058,11 +1056,12 @@ async function seed() {
     pastDays,
   );
   const pastSubtotal = pastRate * pastDays;
+  const order5Number = createOrderNumber();
   const [order5] = await db
     .insert(orders)
     .values({
       userId: arjun,
-      orderNumber: createOrderNumber(),
+      orderNumber: order5Number,
       orderType: "RENTAL",
       status: "COMPLETED",
       subtotal: pastSubtotal,
@@ -1273,11 +1272,515 @@ async function seed() {
     },
   ]);
 
+  /* ------------------------------ seller wallets ----------------------------- */
+
+  /*
+   * Financial records.
+   *
+   * ## These rows are written by hand, and that is a deliberate risk
+   *
+   * Everything in `wallet_transactions` and `payouts` below is inserted directly
+   * rather than replayed through `recordEarning` / `requestPayout`. Replaying would
+   * be more faithful, but it cannot produce history: the settlement delay, the
+   * reversal and two payout outcomes all happened *in the past*, and the live helpers
+   * only ever write "now". So the seed states the same invariants by hand, and the
+   * invariants are:
+   *
+   *  - money is signed integer paise, credits positive and debits negative;
+   *  - an earning and its fee are written **both** as `PENDING` and released together,
+   *    so no fee can be left stranded in the settling bucket;
+   *  - a reversal flips the originals to `REVERSED` **and** writes one `REFUND` row
+   *    at the state the originals held — never an edit of the original;
+   *  - a payout row mirrors the request's own lifecycle, and `PAYOUT_REVERSAL` is a
+   *    memo that counts for nothing (the reservation is released by the payout
+   *    leaving `PENDING`/`PROCESSING`, so counting the memo too would refund twice);
+   *  - fees come from `platformFee` with the **live** configured percentages, so a
+   *    seeded wallet cannot disagree with what the platform would really have taken.
+   *
+   * Priya is left with no wallet rows at all on purpose: an empty wallet is the
+   * normal state for a seller who has not sold anything, and the page has to be
+   * judged on that copy too.
+   */
+  console.log("Seeding seller wallets...");
+
+  const saleFee = (grossPaise: number) => platformFee(grossPaise, PLATFORM_SALE_FEE_PERCENT);
+  const rentalFee = (grossPaise: number) => platformFee(grossPaise, PLATFORM_RENTAL_FEE_PERCENT);
+
+  const [mayaBank] = await db
+    .insert(sellerPayoutMethods)
+    .values({
+      sellerId: maya,
+      type: "BANK",
+      accountHolder: "Maya Sharma",
+      maskedLabel: "HDFC Bank •••• 4321",
+      isDefault: true,
+    })
+    .$returningId();
+
+  const [danielBank, danielUpi] = await db
+    .insert(sellerPayoutMethods)
+    .values([
+      {
+        sellerId: daniel,
+        type: "BANK",
+        accountHolder: "Daniel Kapoor",
+        maskedLabel: "ICICI Bank •••• 7719",
+        isDefault: true,
+      },
+      {
+        sellerId: daniel,
+        type: "UPI",
+        accountHolder: "Daniel Kapoor",
+        maskedLabel: "danielk@okaxis",
+        isDefault: false,
+      },
+    ])
+    .$returningId();
+
+  // A sale delivered yesterday: still inside the settlement delay, so it is `PENDING`
+  // and is *not* withdrawable. This is the row that makes the "Settling" card mean
+  // something on a freshly seeded database.
+  const airFryerId = Number(insertedProducts[17].id);
+  const airFryerSoldAt = daysFromNow(-1);
+  const airFryerNumber = createOrderNumber();
+  const airFryerGross = paise(7500);
+  const [order6] = await db
+    .insert(orders)
+    .values({
+      userId: sara,
+      orderNumber: airFryerNumber,
+      orderType: "PURCHASE",
+      status: "DELIVERED",
+      subtotal: airFryerGross,
+      deliveryFee: paise(49),
+      depositTotal: 0,
+      total: airFryerGross + paise(49),
+      deliveryMethod: "DELIVERY",
+      paymentProvider: "mock",
+      paymentReference: "mock_seed_006",
+      createdAt: airFryerSoldAt,
+    })
+    .$returningId();
+  const [item6] = await db
+    .insert(orderItems)
+    .values({
+      orderId: Number(order6.id),
+      productId: airFryerId,
+      sellerId: maya,
+      mode: "BUY",
+      quantity: 1,
+      unitPrice: airFryerGross,
+      lineTotal: airFryerGross,
+      titleSnapshot: seedProducts[17].title,
+      createdAt: airFryerSoldAt,
+    })
+    .$returningId();
+  await db.insert(transactions).values({
+    userId: sara,
+    orderId: Number(order6.id),
+    type: "PAYMENT",
+    amount: airFryerGross + paise(49),
+    status: "SUCCEEDED",
+    provider: "mock",
+    providerTransactionId: "mock_seed_006",
+    createdAt: airFryerSoldAt,
+  });
+
+  // A rental that came back and was then cancelled, so support reversed the earning
+  // nine days ago. Without this the seeded wallet has no `REFUND` row and no
+  // `REVERSED` originals, and the two behaviours that matter most in an audit trail
+  // are exactly the ones nothing exercises.
+  const officeChairId = Number(insertedProducts[11].id);
+  const chair2Start = daysFromNow(-12);
+  const chair2End = daysFromNow(-10);
+  const chair2Days = rentalDays({ startDate: chair2Start, endDate: chair2End });
+  const chair2Rate = paise(900);
+  const chair2Gross = chair2Rate * chair2Days;
+  const order7Number = createOrderNumber();
+  const [order7] = await db
+    .insert(orders)
+    .values({
+      userId: arjun,
+      orderNumber: order7Number,
+      orderType: "RENTAL",
+      status: "CANCELLED",
+      subtotal: chair2Gross,
+      deliveryFee: paise(49),
+      depositTotal: paise(5000),
+      total: chair2Gross + paise(5000) + paise(49),
+      deliveryMethod: "DELIVERY",
+      paymentProvider: "mock",
+      paymentReference: "mock_seed_007",
+      createdAt: chair2Start,
+    })
+    .$returningId();
+  const [item7] = await db
+    .insert(orderItems)
+    .values({
+      orderId: Number(order7.id),
+      productId: officeChairId,
+      sellerId: maya,
+      mode: "RENT",
+      quantity: 1,
+      unitPrice: chair2Rate,
+      lineTotal: chair2Gross,
+      titleSnapshot: seedProducts[11].title,
+      startDate: chair2Start,
+      endDate: chair2End,
+      rentalDays: chair2Days,
+      createdAt: chair2Start,
+    })
+    .$returningId();
+  const [rental3] = await db
+    .insert(rentals)
+    .values({
+      orderId: Number(order7.id),
+      orderItemId: Number(item7.id),
+      productId: officeChairId,
+      renterId: arjun,
+      ownerId: maya,
+      startDate: chair2Start,
+      endDate: chair2End,
+      dailyRate: chair2Rate,
+      rentalSubtotal: chair2Gross,
+      securityDeposit: paise(5000),
+      deliveryFee: paise(49),
+      total: chair2Gross + paise(5000) + paise(49),
+      status: "CANCELLED",
+      createdAt: chair2Start,
+    })
+    .$returningId();
+
+  // Maya's ledger, oldest first.
+  await db.insert(walletTransactions).values([
+    {
+      sellerId: maya,
+      orderId: Number(order4.id),
+      orderItemId: Number(item4.id),
+      rentalId: Number(rental1.id),
+      type: "RENTAL",
+      amount: chairSubtotal,
+      status: "AVAILABLE",
+      description: `Rental of ${seedProducts[0].title} · ${chairDays} days`,
+      reference: order4Number,
+      idempotencyKey: `rental:${rental1.id}`,
+      createdAt: chairStart,
+    },
+    {
+      sellerId: maya,
+      orderId: Number(order4.id),
+      orderItemId: Number(item4.id),
+      rentalId: Number(rental1.id),
+      type: "PLATFORM_FEE",
+      amount: -rentalFee(chairSubtotal),
+      status: "AVAILABLE",
+      description: `Platform fee on ${order4Number}`,
+      reference: order4Number,
+      idempotencyKey: `fee:rental:${rental1.id}`,
+      createdAt: chairStart,
+    },
+    {
+      sellerId: maya,
+      orderId: Number(order1.id),
+      orderItemId: Number(item1.id),
+      type: "SALE",
+      amount: paise(2400),
+      status: "AVAILABLE",
+      description: `Sold ${seedProducts[5].title}`,
+      reference: order1Number,
+      idempotencyKey: `sale:${item1.id}`,
+      createdAt: daysFromNow(-21),
+    },
+    {
+      sellerId: maya,
+      orderId: Number(order1.id),
+      orderItemId: Number(item1.id),
+      type: "PLATFORM_FEE",
+      amount: -saleFee(paise(2400)),
+      status: "AVAILABLE",
+      description: `Platform fee on ${order1Number}`,
+      reference: order1Number,
+      idempotencyKey: `fee:sale:${item1.id}`,
+      createdAt: daysFromNow(-21),
+    },
+    {
+      sellerId: maya,
+      type: "ADJUSTMENT",
+      amount: paise(150),
+      status: "AVAILABLE",
+      description: "Goodwill credit for a delayed collection",
+      reference: null,
+      idempotencyKey: "adjustment:seed-goodwill-1",
+      createdAt: daysFromNow(-6),
+    },
+    {
+      sellerId: maya,
+      orderId: Number(order6.id),
+      orderItemId: Number(item6.id),
+      type: "SALE",
+      amount: airFryerGross,
+      status: "PENDING",
+      description: `Sold ${seedProducts[17].title}`,
+      reference: airFryerNumber,
+      idempotencyKey: `sale:${item6.id}`,
+      createdAt: airFryerSoldAt,
+    },
+    {
+      sellerId: maya,
+      orderId: Number(order6.id),
+      orderItemId: Number(item6.id),
+      type: "PLATFORM_FEE",
+      amount: -saleFee(airFryerGross),
+      status: "PENDING",
+      description: `Platform fee on ${airFryerNumber}`,
+      reference: airFryerNumber,
+      idempotencyKey: `fee:sale:${item6.id}`,
+      createdAt: airFryerSoldAt,
+    },
+  ]);
+
+  /*
+   * The cancelled rental's two rows, in their own insert so their ids are known
+   * rather than guessed at by position — the refund below names them in its
+   * idempotency key, exactly as `recordEarningReversal` would have, so running a
+   * reversal against this rental again is a constraint violation rather than a
+   * second credit to Maya.
+   *
+   * Both are `REVERSED`, so they contribute to nothing at all. The refund carries the
+   * whole story by itself; this is what "the ledger is append-only" means in practice.
+   */
+  const reversedIds = (
+    await db
+      .insert(walletTransactions)
+      .values([
+        {
+          sellerId: maya,
+          orderId: Number(order7.id),
+          orderItemId: Number(item7.id),
+          rentalId: Number(rental3.id),
+          type: "RENTAL",
+          amount: chair2Gross,
+          status: "REVERSED",
+          description: `Rental of ${seedProducts[11].title} · ${chair2Days} days`,
+          reference: order7Number,
+          idempotencyKey: `rental:${rental3.id}`,
+          createdAt: chair2Start,
+        },
+        {
+          sellerId: maya,
+          orderId: Number(order7.id),
+          orderItemId: Number(item7.id),
+          rentalId: Number(rental3.id),
+          type: "PLATFORM_FEE",
+          amount: -rentalFee(chair2Gross),
+          status: "REVERSED",
+          description: `Platform fee on ${order7Number}`,
+          reference: order7Number,
+          idempotencyKey: `fee:rental:${rental3.id}`,
+          createdAt: chair2Start,
+        },
+      ])
+      .$returningId()
+  ).map((row) => Number(row.id));
+
+  // The refund, written at the state its originals held when they were reversed —
+  // `AVAILABLE`, because the nine days since delivery are well past the settlement
+  // delay. Had they still been settling, the refund would be `REVERSED` too: a refund
+  // for money that was never withdrawable must not become withdrawable itself.
+  await db.insert(walletTransactions).values({
+    sellerId: maya,
+    orderId: Number(order7.id),
+    orderItemId: Number(item7.id),
+    rentalId: Number(rental3.id),
+    type: "REFUND",
+    amount: -(chair2Gross - rentalFee(chair2Gross)),
+    status: "AVAILABLE",
+    description: `Refund · rental cancelled after return (${order7Number})`,
+    reference: order7Number,
+    idempotencyKey: `refund:${reversedIds.sort((a, b) => a - b).join(",")}`,
+    createdAt: daysFromNow(-9),
+  });
+
+  // Maya's two payouts: one settled, one awaiting an admin. The pending one is the
+  // reason the "Reserved" card is non-zero on a fresh seed, and it is the state a
+  // seller spends the most time staring at, so it is the one worth having.
+  const payoutDoneNumber = createPayoutNumber();
+  const payoutOpenNumber = createPayoutNumber();
+  const [payoutDone, payoutOpen] = await db
+    .insert(payouts)
+    .values([
+      {
+        sellerId: maya,
+        payoutNumber: payoutDoneNumber,
+        amount: paise(1000),
+        status: "COMPLETED",
+        methodId: Number(mayaBank.id),
+        methodLabel: "HDFC Bank •••• 4321",
+        note: "Diwali stock",
+        idempotencyKey: "seed-maya-payout-completed",
+        requestedAt: daysFromNow(-18),
+        processingAt: daysFromNow(-17),
+        completedAt: daysFromNow(-17),
+      },
+      {
+        sellerId: maya,
+        payoutNumber: payoutOpenNumber,
+        amount: paise(500),
+        status: "PENDING",
+        methodId: Number(mayaBank.id),
+        methodLabel: "HDFC Bank •••• 4321",
+        note: null,
+        idempotencyKey: "seed-maya-payout-pending",
+        requestedAt: daysFromNow(-2),
+      },
+    ])
+    .$returningId();
+
+  await db.insert(walletTransactions).values([
+    {
+      sellerId: maya,
+      payoutId: Number(payoutDone.id),
+      type: "PAYOUT",
+      amount: -paise(1000),
+      status: "COMPLETED",
+      description: `Payout ${payoutDoneNumber} sent`,
+      reference: payoutDoneNumber,
+      idempotencyKey: `payout-ledger:${payoutDone.id}`,
+      createdAt: daysFromNow(-17),
+    },
+    {
+      sellerId: maya,
+      payoutId: Number(payoutOpen.id),
+      type: "PAYOUT",
+      amount: -paise(500),
+      status: "PENDING",
+      description: `Payout ${payoutOpenNumber} requested`,
+      reference: payoutOpenNumber,
+      idempotencyKey: `payout-ledger:${payoutOpen.id}`,
+      createdAt: daysFromNow(-2),
+    },
+  ]);
+
+  /*
+   * Daniel: one completed rental, and a payout that came **back**.
+   *
+   * A `FAILED` payout is the case a wallet most easily gets wrong, so it is seeded
+   * deliberately. The reservation is released by the `PAYOUT` row leaving
+   * `PENDING`/`PROCESSING` — it is `FAILED` now, so it reserves nothing — and the
+   * `PAYOUT_REVERSAL` row is the visible memo that says why. It is stored as a
+   * positive amount and is counted for nothing; if the balance read it, Daniel would
+   * be handed the same ₹2,000 twice.
+   */
+  const danielFailedNumber = createPayoutNumber();
+  const danielSendingNumber = createPayoutNumber();
+  const [danielPayout, danielSending] = await db
+    .insert(payouts)
+    .values([
+      {
+        sellerId: daniel,
+        payoutNumber: danielFailedNumber,
+        amount: paise(2000),
+        status: "FAILED",
+        methodId: Number(danielUpi.id),
+        methodLabel: "danielk@okaxis",
+        note: "Shoot expenses",
+        failureReason: "The UPI handle could not be verified within 24 hours.",
+        idempotencyKey: "seed-daniel-payout-failed",
+        requestedAt: daysFromNow(-10),
+        processingAt: daysFromNow(-9),
+        completedAt: null,
+      },
+      // The one state a seller cannot move on their own and cannot be talked out of:
+      // an admin has said "sending", and until they confirm otherwise it is still
+      // reserved. Seeded so the admin queue has a row in every live state.
+      {
+        sellerId: daniel,
+        payoutNumber: danielSendingNumber,
+        amount: paise(1000),
+        status: "PROCESSING",
+        methodId: Number(danielBank.id),
+        methodLabel: "ICICI Bank •••• 7719",
+        note: null,
+        idempotencyKey: "seed-daniel-payout-processing",
+        requestedAt: daysFromNow(-3),
+        processingAt: daysFromNow(-1),
+        completedAt: null,
+      },
+    ])
+    .$returningId();
+
+  await db.insert(walletTransactions).values([
+    {
+      sellerId: daniel,
+      orderId: Number(order5.id),
+      orderItemId: Number(item5.id),
+      rentalId: Number(rental2.id),
+      type: "RENTAL",
+      amount: pastSubtotal,
+      status: "AVAILABLE",
+      description: `Rental of ${seedProducts[1].title} · ${pastDays} days`,
+      reference: order5Number,
+      idempotencyKey: `rental:${rental2.id}`,
+      createdAt: pastStart,
+    },
+    {
+      sellerId: daniel,
+      orderId: Number(order5.id),
+      orderItemId: Number(item5.id),
+      rentalId: Number(rental2.id),
+      type: "PLATFORM_FEE",
+      amount: -rentalFee(pastSubtotal),
+      status: "AVAILABLE",
+      description: `Platform fee on ${order5Number}`,
+      reference: order5Number,
+      idempotencyKey: `fee:rental:${rental2.id}`,
+      createdAt: pastStart,
+    },
+    {
+      sellerId: daniel,
+      payoutId: Number(danielPayout.id),
+      type: "PAYOUT",
+      amount: -paise(2000),
+      status: "FAILED",
+      description: `Payout ${danielFailedNumber} requested`,
+      reference: danielFailedNumber,
+      idempotencyKey: `payout-ledger:${danielPayout.id}`,
+      createdAt: daysFromNow(-10),
+    },
+    {
+      sellerId: daniel,
+      payoutId: Number(danielPayout.id),
+      type: "PAYOUT_REVERSAL",
+      amount: paise(2000),
+      status: "COMPLETED",
+      description: `Payout ${danielFailedNumber} did not complete — released back to your balance`,
+      reference: danielFailedNumber,
+      idempotencyKey: `payout-reversal:${danielPayout.id}:FAILED`,
+      createdAt: daysFromNow(-9),
+    },
+    {
+      sellerId: daniel,
+      payoutId: Number(danielSending.id),
+      type: "PAYOUT",
+      amount: -paise(1000),
+      status: "PROCESSING",
+      description: `Payout ${danielSendingNumber} requested`,
+      reference: danielSendingNumber,
+      idempotencyKey: `payout-ledger:${danielSending.id}`,
+      createdAt: daysFromNow(-3),
+    },
+  ]);
+
   console.log("\nSeed complete!");
-  console.log(`  Admin:  admin@revaro.local / ${PASSWORD}`);
-  console.log(`  Seller: seller@revaro.local / ${PASSWORD}`);
-  console.log(`  Buyer:  buyer@revaro.local / ${PASSWORD}`);
-  console.log(`  Also:   daniel@revaro.local, priya@revaro.local, sara@revaro.local / ${PASSWORD}`);
+  // Echoed so a fresh clone knows what to sign in with. These are the *seeded*
+  // credentials, read from the environment — see `lib/config` — and printing them
+  // here is the whole point: they only work against a local demo database.
+  console.log(`  Admin:  ${DEV_ADMIN_EMAIL} / ${DEV_ADMIN_PASSWORD}`);
+  console.log(`  Seller: seller@revaro.local / ${DEV_PASSWORD}`);
+  console.log(`  Buyer:  buyer@revaro.local / ${DEV_PASSWORD}`);
+  console.log(
+    `  Also:   daniel@revaro.local, priya@revaro.local, sara@revaro.local / ${DEV_PASSWORD}`,
+  );
 }
 
 seed()

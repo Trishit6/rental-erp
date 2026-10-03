@@ -101,7 +101,7 @@ function mulberry32(seed: number) {
 
 const rand = mulberry32(RNG_SEED);
 const randInt = (min: number, max: number) => min + Math.floor(rand() * (max - min + 1));
-const pick = <T,>(items: readonly T[]): T => items[Math.floor(rand() * items.length)]!;
+const pick = <T>(items: readonly T[]): T => items[Math.floor(rand() * items.length)]!;
 const chance = (probability: number) => rand() < probability;
 /** Fisher–Yates with the seeded RNG, so a sample is random but reproducible. */
 function shuffle<T>(items: readonly T[]): T[] {
@@ -142,16 +142,79 @@ async function insertInChunks<T>(
 /* --------------------------------- vocabularies ------------------------------ */
 
 const FIRST_NAMES = [
-  "Aarav", "Diya", "Vivaan", "Ananya", "Aditya", "Ishita", "Arjun", "Meera", "Kabir", "Riya",
-  "Rohan", "Sneha", "Karthik", "Pooja", "Nikhil", "Tanvi", "Siddharth", "Neha", "Varun", "Kavya",
-  "Manish", "Shreya", "Harsh", "Nandini", "Farhan", "Aditi", "Gaurav", "Priya", "Devansh", "Ira",
-  "Yash", "Simran", "Aryan", "Megha", "Naveen", "Divya", "Sameer", "Ritika", "Ashwin", "Lakshmi",
-  "Jatin", "Sanjana", "Tejas", "Aisha", "Manoj", "Bhavana", "Rakesh", "Sunita", "Vivek", "Anjali",
+  "Aarav",
+  "Diya",
+  "Vivaan",
+  "Ananya",
+  "Aditya",
+  "Ishita",
+  "Arjun",
+  "Meera",
+  "Kabir",
+  "Riya",
+  "Rohan",
+  "Sneha",
+  "Karthik",
+  "Pooja",
+  "Nikhil",
+  "Tanvi",
+  "Siddharth",
+  "Neha",
+  "Varun",
+  "Kavya",
+  "Manish",
+  "Shreya",
+  "Harsh",
+  "Nandini",
+  "Farhan",
+  "Aditi",
+  "Gaurav",
+  "Priya",
+  "Devansh",
+  "Ira",
+  "Yash",
+  "Simran",
+  "Aryan",
+  "Megha",
+  "Naveen",
+  "Divya",
+  "Sameer",
+  "Ritika",
+  "Ashwin",
+  "Lakshmi",
+  "Jatin",
+  "Sanjana",
+  "Tejas",
+  "Aisha",
+  "Manoj",
+  "Bhavana",
+  "Rakesh",
+  "Sunita",
+  "Vivek",
+  "Anjali",
 ] as const;
 
 const LAST_NAMES = [
-  "Sharma", "Verma", "Iyer", "Nair", "Reddy", "Patel", "Mehta", "Kapoor", "Bose", "Chatterjee",
-  "Desai", "Gupta", "Joshi", "Kulkarni", "Malhotra", "Nair", "Pandey", "Rao", "Sethi", "Trivedi",
+  "Sharma",
+  "Verma",
+  "Iyer",
+  "Nair",
+  "Reddy",
+  "Patel",
+  "Mehta",
+  "Kapoor",
+  "Bose",
+  "Chatterjee",
+  "Desai",
+  "Gupta",
+  "Joshi",
+  "Kulkarni",
+  "Malhotra",
+  "Nair",
+  "Pandey",
+  "Rao",
+  "Sethi",
+  "Trivedi",
 ] as const;
 
 const LOCALITIES = [
@@ -210,7 +273,8 @@ const FULFILLMENT_BY_STATUS: Record<string, string | null> = {
 };
 
 function statusForAge(ageDays: number): string {
-  const band = PURCHASE_STATUS_BY_AGE.find((entry) => ageDays <= entry.maxAgeDays) ??
+  const band =
+    PURCHASE_STATUS_BY_AGE.find((entry) => ageDays <= entry.maxAgeDays) ??
     PURCHASE_STATUS_BY_AGE[PURCHASE_STATUS_BY_AGE.length - 1]!;
   return pick(band.statuses);
 }
@@ -278,11 +342,15 @@ async function main() {
     .where(and(ne(products.status, "ARCHIVED"), inArray(products.categoryId, categoryIds)))
     .limit(8000)) as unknown as CatalogueProduct[];
   if (catalogue.length < 100) {
-    throw new Error(`Only ${catalogue.length} listed products — run \`pnpm db:seed:products\` first.`);
+    throw new Error(
+      `Only ${catalogue.length} listed products — run \`pnpm db:seed:products\` first.`,
+    );
   }
   const forSale = catalogue.filter((p) => p.purchasePrice !== null);
   const forRent = catalogue.filter((p) => p.rentalPricePerDay !== null);
-  console.log(`  catalogue: ${catalogue.length} listed (${forSale.length} buyable, ${forRent.length} rentable)`);
+  console.log(
+    `  catalogue: ${catalogue.length} listed (${forSale.length} buyable, ${forRent.length} rentable)`,
+  );
 
   /* --------------------------------- people --------------------------------- */
 
@@ -325,16 +393,23 @@ async function main() {
     createdAt: daysAgo(randInt(20, HISTORY_DAYS)),
   }));
 
-  const insertedSellers = (await db.insert(users).values(newSellerRows).$returningId()) as unknown as {
+  const insertedSellers = (await db
+    .insert(users)
+    .values(newSellerRows)
+    .$returningId()) as unknown as {
     id: number;
   }[];
-  const insertedBuyers = (await db.insert(users).values(newBuyerRows).$returningId()) as unknown as {
+  const insertedBuyers = (await db
+    .insert(users)
+    .values(newBuyerRows)
+    .$returningId()) as unknown as {
     id: number;
   }[];
 
   const sellerIds = [...existingSellers.map((s) => s.id), ...insertedSellers.map((u) => u.id)];
   const buyerIds = [...existingBuyers.map((b) => b.id), ...insertedBuyers.map((u) => u.id)];
-  if (sellerIds.length === 0 || buyerIds.length === 0) throw new Error("No accounts to trade with.");
+  if (sellerIds.length === 0 || buyerIds.length === 0)
+    throw new Error("No accounts to trade with.");
 
   await insertInChunks(
     insertedSellers.map((row, index) => ({
@@ -360,7 +435,9 @@ async function main() {
         name: makeName(),
         phone: `+91 ${randInt(70, 99)}${randInt(10000000, 99999999)}`,
         addressLine1: `${randInt(1, 240)}, ${place.locality}`,
-        addressLine2: chance(0.4) ? `Flat ${randInt(101, 1404)}, ${pick(["A", "B", "C", "D"])} block` : null,
+        addressLine2: chance(0.4)
+          ? `Flat ${randInt(101, 1404)}, ${pick(["A", "B", "C", "D"])} block`
+          : null,
         city: place.city,
         state: place.state,
         postalCode: place.pin,
@@ -412,24 +489,24 @@ async function main() {
     `RVX${String(9_800_000 + randInt(0, 999_999))}${Math.max(0, HISTORY_DAYS - ageDays)}IN`;
 
   /**
- * Pick a product this order has not used, preferring a seller it has not used
- * either. Falls back to any unused product once every seller is taken, so the
- * line count is never short just because one seller dominates the catalogue.
- */
-function pickProductFromUnusedSeller(
-  pool: readonly CatalogueProduct[],
-  usedProducts: Set<number>,
-  usedSellers: Set<number>,
-): CatalogueProduct | null {
-  const fresh = pool.filter(
-    (product) => !usedProducts.has(product.id) && !usedSellers.has(product.sellerId),
-  );
-  if (fresh.length > 0) return pick(fresh);
-  const unused = pool.filter((product) => !usedProducts.has(product.id));
-  return unused.length > 0 ? pick(unused) : null;
-}
+   * Pick a product this order has not used, preferring a seller it has not used
+   * either. Falls back to any unused product once every seller is taken, so the
+   * line count is never short just because one seller dominates the catalogue.
+   */
+  function pickProductFromUnusedSeller(
+    pool: readonly CatalogueProduct[],
+    usedProducts: Set<number>,
+    usedSellers: Set<number>,
+  ): CatalogueProduct | null {
+    const fresh = pool.filter(
+      (product) => !usedProducts.has(product.id) && !usedSellers.has(product.sellerId),
+    );
+    if (fresh.length > 0) return pick(fresh);
+    const unused = pool.filter((product) => !usedProducts.has(product.id));
+    return unused.length > 0 ? pick(unused) : null;
+  }
 
-type PlannedLine = { product: CatalogueProduct; mode: "BUY" | "RENT"; quantity: number };
+  type PlannedLine = { product: CatalogueProduct; mode: "BUY" | "RENT"; quantity: number };
 
   const orderRows: (typeof orders.$inferInsert)[] = [];
   const linePlans: { orderIndex: number; line: PlannedLine }[] = [];
@@ -528,8 +605,18 @@ type PlannedLine = { product: CatalogueProduct; mode: "BUY" | "RENT"; quantity: 
 
   await insertInChunks(orderRows, (batch) => db.insert(orders).values(batch));
   const insertedOrders = (await db
-    .select({ id: orders.id, status: orders.status, orderType: orders.orderType, userId: orders.userId })
-    .from(orders)) as unknown as { id: number; status: string; orderType: string; userId: number }[];
+    .select({
+      id: orders.id,
+      status: orders.status,
+      orderType: orders.orderType,
+      userId: orders.userId,
+    })
+    .from(orders)) as unknown as {
+    id: number;
+    status: string;
+    orderType: string;
+    userId: number;
+  }[];
   console.log(`  orders: ${insertedOrders.length}`);
 
   // Order rows are inserted in one order, so the newest id is the last row that
@@ -601,7 +688,8 @@ type PlannedLine = { product: CatalogueProduct; mode: "BUY" | "RENT"; quantity: 
       unitPrice: rate,
       rentalCharge: rate * window.days * line.quantity,
       securityDeposit: (line.product.securityDeposit ?? 0) * line.quantity,
-      lineTotal: rate * window.days * line.quantity + (line.product.securityDeposit ?? 0) * line.quantity,
+      lineTotal:
+        rate * window.days * line.quantity + (line.product.securityDeposit ?? 0) * line.quantity,
       titleSnapshot: line.product.title,
       imageSnapshot: line.product.imageUrl ?? null,
       startDate: window.start,
@@ -767,7 +855,10 @@ type PlannedLine = { product: CatalogueProduct; mode: "BUY" | "RENT"; quantity: 
         line: (typeof itemRows)[number];
         itemId: number;
         order: (typeof insertedOrders)[number];
-      } => entry.itemId !== null && !!entry.order && ["DELIVERED", "COMPLETED"].includes(entry.order.status),
+      } =>
+        entry.itemId !== null &&
+        !!entry.order &&
+        ["DELIVERED", "COMPLETED"].includes(entry.order.status),
     );
 
   const reviewRows: (typeof reviews.$inferInsert)[] = [];
@@ -903,7 +994,9 @@ type PlannedLine = { product: CatalogueProduct; mode: "BUY" | "RENT"; quantity: 
       .set({ favoriteCount: entry.n })
       .where(eq(products.id, entry.productId));
   }
-  console.log(`  favourites: ${favoriteRows.length} (counts refreshed on ${favoriteCounts.length} products)`);
+  console.log(
+    `  favourites: ${favoriteRows.length} (counts refreshed on ${favoriteCounts.length} products)`,
+  );
 
   /* ---------------------------- rating aggregates ---------------------------- */
 
@@ -978,8 +1071,12 @@ type PlannedLine = { product: CatalogueProduct; mode: "BUY" | "RENT"; quantity: 
 
   console.log("Seeding conversations and messages...");
   const conversationRows: (typeof conversations.$inferInsert)[] = [];
-  const messagePlan: { conversationIndex: number; senderIsOwner: boolean; body: string; daysAgo: number }[] =
-    [];
+  const messagePlan: {
+    conversationIndex: number;
+    senderIsOwner: boolean;
+    body: string;
+    daysAgo: number;
+  }[] = [];
   const OPENERS = [
     "Hi! Is this still available?",
     "Hello — could you share the condition details?",
@@ -1003,12 +1100,27 @@ type PlannedLine = { product: CatalogueProduct; mode: "BUY" | "RENT"; quantity: 
       createdAt: daysAgo(ageDays),
       lastMessageAt: daysAgo(Math.max(0, ageDays - randInt(0, 5))),
     });
-    messagePlan.push({ conversationIndex: i, senderIsOwner: false, body: pick(OPENERS), daysAgo: ageDays });
+    messagePlan.push({
+      conversationIndex: i,
+      senderIsOwner: false,
+      body: pick(OPENERS),
+      daysAgo: ageDays,
+    });
     if (chance(0.75)) {
-      messagePlan.push({ conversationIndex: i, senderIsOwner: true, body: pick(REPLIES), daysAgo: Math.max(0, ageDays - randInt(0, 2)) });
+      messagePlan.push({
+        conversationIndex: i,
+        senderIsOwner: true,
+        body: pick(REPLIES),
+        daysAgo: Math.max(0, ageDays - randInt(0, 2)),
+      });
     }
     if (chance(0.25)) {
-      messagePlan.push({ conversationIndex: i, senderIsOwner: false, body: pick(OPENERS), daysAgo: Math.max(0, ageDays - randInt(0, 1)) });
+      messagePlan.push({
+        conversationIndex: i,
+        senderIsOwner: false,
+        body: pick(OPENERS),
+        daysAgo: Math.max(0, ageDays - randInt(0, 1)),
+      });
     }
   }
 
@@ -1118,7 +1230,9 @@ type PlannedLine = { product: CatalogueProduct; mode: "BUY" | "RENT"; quantity: 
   console.log(`  notifications: ${notificationRows.length}`);
 
   console.log("\nHistory seed complete.");
-  console.log(`  demo login: buyer@revaro.local / ${PASSWORD} (volume accounts use the same password)`);
+  console.log(
+    `  demo login: buyer@revaro.local / ${PASSWORD} (volume accounts use the same password)`,
+  );
 }
 
 main()

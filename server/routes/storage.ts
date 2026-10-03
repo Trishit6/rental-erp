@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Router } from "../lib/http";
 import { z } from "zod";
 import { ok, HttpError } from "../lib/api";
 import { requireUser } from "../lib/auth";
@@ -13,7 +13,7 @@ import {
   MAX_IMAGES_PER_LISTING,
 } from "../lib/storage/types";
 
-export const storageRoute = new Hono();
+export const storageRoute = new Router();
 
 /* --------------------------------- config ---------------------------------- */
 
@@ -64,11 +64,7 @@ storageRoute.post("/upload-target", async (c) => {
   const input = uploadTargetSchema.parse(await c.req.json());
 
   if (!isAllowedImageMimeType(input.contentType)) {
-    throw new HttpError(
-      400,
-      "UNSUPPORTED_IMAGE_TYPE",
-      "Use a JPEG, PNG, WebP or AVIF image.",
-    );
+    throw new HttpError(400, "UNSUPPORTED_IMAGE_TYPE", "Use a JPEG, PNG, WebP or AVIF image.");
   }
   if (input.byteSize > MAX_IMAGE_BYTES) {
     throw new HttpError(413, "IMAGE_TOO_LARGE", `Images must be under ${MAX_IMAGE_BYTES} bytes.`);

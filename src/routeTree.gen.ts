@@ -26,6 +26,9 @@ import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as RentalsRouteImport } from './routes/rentals'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
 import { Route as AuthRegisterRouteImport } from './routes/_auth/register'
+import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as AdminModerationRouteImport } from './routes/admin/moderation'
+import { Route as AdminProductsRouteImport } from './routes/admin/products'
 import { Route as CategoriesIndexRouteImport } from './routes/categories/index'
 import { Route as CategoriesCategorySlugRouteImport } from './routes/categories/$categorySlug'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
@@ -38,12 +41,13 @@ import { Route as DashboardProductsRouteImport } from './routes/dashboard/produc
 import { Route as DashboardRentalsRouteImport } from './routes/dashboard/rentals'
 import { Route as DashboardReviewsRouteImport } from './routes/dashboard/reviews'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard/settings'
+import { Route as DashboardWalletRouteImport } from './routes/dashboard/wallet'
 import { Route as OrdersOrderIdRouteImport } from './routes/orders.$orderId'
 import { Route as ProductSlugRouteImport } from './routes/product.$slug'
 import { Route as RentalsRentalIdRouteImport } from './routes/rentals.$rentalId'
 import { Route as SellerIdRouteImport } from './routes/seller.$id'
 import { Route as DashboardProductsNewRouteImport } from './routes/dashboard/products.new'
-import { Route as DashboardProductsProductIdEditRouteImport } from './routes/dashboard/products./$productId.edit'
+import { Route as DashboardProductsProductIdEditRouteImport } from './routes/dashboard/products.$productId.edit'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -129,6 +133,21 @@ const AuthRegisterRoute = AuthRegisterRouteImport.update({
   path: '/register',
   getParentRoute: () => AuthRoute,
 } as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminModerationRoute = AdminModerationRouteImport.update({
+  id: '/moderation',
+  path: '/moderation',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminProductsRoute = AdminProductsRouteImport.update({
+  id: '/products',
+  path: '/products',
+  getParentRoute: () => AdminRoute,
+} as any)
 const CategoriesIndexRoute = CategoriesIndexRouteImport.update({
   id: '/categories/',
   path: '/categories/',
@@ -189,6 +208,11 @@ const DashboardSettingsRoute = DashboardSettingsRouteImport.update({
   path: '/dashboard/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardWalletRoute = DashboardWalletRouteImport.update({
+  id: '/dashboard/wallet',
+  path: '/dashboard/wallet',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OrdersOrderIdRoute = OrdersOrderIdRouteImport.update({
   id: '/$orderId',
   path: '/$orderId',
@@ -223,7 +247,7 @@ const DashboardProductsProductIdEditRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/admin': typeof AdminRoute
+  '/admin': typeof AdminRouteWithChildren
   '/auth-check': typeof AuthCheckRoute
   '/browse': typeof BrowseRoute
   '/cart': typeof CartRoute
@@ -238,6 +262,8 @@ export interface FileRoutesByFullPath {
   '/rentals': typeof RentalsRouteWithChildren
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
+  '/admin/moderation': typeof AdminModerationRoute
+  '/admin/products': typeof AdminProductsRoute
   '/categories/$categorySlug': typeof CategoriesCategorySlugRoute
   '/dashboard/analytics': typeof DashboardAnalyticsRoute
   '/dashboard/become-a-seller': typeof DashboardBecomeASellerRoute
@@ -248,10 +274,12 @@ export interface FileRoutesByFullPath {
   '/dashboard/rentals': typeof DashboardRentalsRoute
   '/dashboard/reviews': typeof DashboardReviewsRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
+  '/dashboard/wallet': typeof DashboardWalletRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
   '/product/$slug': typeof ProductSlugRoute
   '/rentals/$rentalId': typeof RentalsRentalIdRoute
   '/seller/$id': typeof SellerIdRoute
+  '/admin/': typeof AdminIndexRoute
   '/categories/': typeof CategoriesIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/dashboard/products/new': typeof DashboardProductsNewRoute
@@ -259,7 +287,6 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/admin': typeof AdminRoute
   '/auth-check': typeof AuthCheckRoute
   '/browse': typeof BrowseRoute
   '/cart': typeof CartRoute
@@ -274,6 +301,8 @@ export interface FileRoutesByTo {
   '/rentals': typeof RentalsRouteWithChildren
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
+  '/admin/moderation': typeof AdminModerationRoute
+  '/admin/products': typeof AdminProductsRoute
   '/categories/$categorySlug': typeof CategoriesCategorySlugRoute
   '/dashboard/analytics': typeof DashboardAnalyticsRoute
   '/dashboard/become-a-seller': typeof DashboardBecomeASellerRoute
@@ -284,10 +313,12 @@ export interface FileRoutesByTo {
   '/dashboard/rentals': typeof DashboardRentalsRoute
   '/dashboard/reviews': typeof DashboardReviewsRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
+  '/dashboard/wallet': typeof DashboardWalletRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
   '/product/$slug': typeof ProductSlugRoute
   '/rentals/$rentalId': typeof RentalsRentalIdRoute
   '/seller/$id': typeof SellerIdRoute
+  '/admin': typeof AdminIndexRoute
   '/categories': typeof CategoriesIndexRoute
   '/dashboard': typeof DashboardIndexRoute
   '/dashboard/products/new': typeof DashboardProductsNewRoute
@@ -297,7 +328,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_auth': typeof AuthRouteWithChildren
-  '/admin': typeof AdminRoute
+  '/admin': typeof AdminRouteWithChildren
   '/auth-check': typeof AuthCheckRoute
   '/browse': typeof BrowseRoute
   '/cart': typeof CartRoute
@@ -312,6 +343,8 @@ export interface FileRoutesById {
   '/rentals': typeof RentalsRouteWithChildren
   '/_auth/login': typeof AuthLoginRoute
   '/_auth/register': typeof AuthRegisterRoute
+  '/admin/moderation': typeof AdminModerationRoute
+  '/admin/products': typeof AdminProductsRoute
   '/categories/$categorySlug': typeof CategoriesCategorySlugRoute
   '/dashboard/analytics': typeof DashboardAnalyticsRoute
   '/dashboard/become-a-seller': typeof DashboardBecomeASellerRoute
@@ -322,10 +355,12 @@ export interface FileRoutesById {
   '/dashboard/rentals': typeof DashboardRentalsRoute
   '/dashboard/reviews': typeof DashboardReviewsRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
+  '/dashboard/wallet': typeof DashboardWalletRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
   '/product/$slug': typeof ProductSlugRoute
   '/rentals/$rentalId': typeof RentalsRentalIdRoute
   '/seller/$id': typeof SellerIdRoute
+  '/admin/': typeof AdminIndexRoute
   '/categories/': typeof CategoriesIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/dashboard/products/new': typeof DashboardProductsNewRoute
@@ -350,6 +385,8 @@ export interface FileRouteTypes {
     | '/rentals'
     | '/login'
     | '/register'
+    | '/admin/moderation'
+    | '/admin/products'
     | '/categories/$categorySlug'
     | '/dashboard/analytics'
     | '/dashboard/become-a-seller'
@@ -360,10 +397,12 @@ export interface FileRouteTypes {
     | '/dashboard/rentals'
     | '/dashboard/reviews'
     | '/dashboard/settings'
+    | '/dashboard/wallet'
     | '/orders/$orderId'
     | '/product/$slug'
     | '/rentals/$rentalId'
     | '/seller/$id'
+    | '/admin/'
     | '/categories/'
     | '/dashboard/'
     | '/dashboard/products/new'
@@ -371,7 +410,6 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/admin'
     | '/auth-check'
     | '/browse'
     | '/cart'
@@ -386,6 +424,8 @@ export interface FileRouteTypes {
     | '/rentals'
     | '/login'
     | '/register'
+    | '/admin/moderation'
+    | '/admin/products'
     | '/categories/$categorySlug'
     | '/dashboard/analytics'
     | '/dashboard/become-a-seller'
@@ -396,10 +436,12 @@ export interface FileRouteTypes {
     | '/dashboard/rentals'
     | '/dashboard/reviews'
     | '/dashboard/settings'
+    | '/dashboard/wallet'
     | '/orders/$orderId'
     | '/product/$slug'
     | '/rentals/$rentalId'
     | '/seller/$id'
+    | '/admin'
     | '/categories'
     | '/dashboard'
     | '/dashboard/products/new'
@@ -423,6 +465,8 @@ export interface FileRouteTypes {
     | '/rentals'
     | '/_auth/login'
     | '/_auth/register'
+    | '/admin/moderation'
+    | '/admin/products'
     | '/categories/$categorySlug'
     | '/dashboard/analytics'
     | '/dashboard/become-a-seller'
@@ -433,10 +477,12 @@ export interface FileRouteTypes {
     | '/dashboard/rentals'
     | '/dashboard/reviews'
     | '/dashboard/settings'
+    | '/dashboard/wallet'
     | '/orders/$orderId'
     | '/product/$slug'
     | '/rentals/$rentalId'
     | '/seller/$id'
+    | '/admin/'
     | '/categories/'
     | '/dashboard/'
     | '/dashboard/products/new'
@@ -446,7 +492,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRouteWithChildren
-  AdminRoute: typeof AdminRoute
+  AdminRoute: typeof AdminRouteWithChildren
   AuthCheckRoute: typeof AuthCheckRoute
   BrowseRoute: typeof BrowseRoute
   CartRoute: typeof CartRoute
@@ -469,6 +515,7 @@ export interface RootRouteChildren {
   DashboardRentalsRoute: typeof DashboardRentalsRoute
   DashboardReviewsRoute: typeof DashboardReviewsRoute
   DashboardSettingsRoute: typeof DashboardSettingsRoute
+  DashboardWalletRoute: typeof DashboardWalletRoute
   ProductSlugRoute: typeof ProductSlugRoute
   SellerIdRoute: typeof SellerIdRoute
   CategoriesIndexRoute: typeof CategoriesIndexRoute
@@ -596,6 +643,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthRegisterRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/moderation': {
+      id: '/admin/moderation'
+      path: '/moderation'
+      fullPath: '/admin/moderation'
+      preLoaderRoute: typeof AdminModerationRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/products': {
+      id: '/admin/products'
+      path: '/products'
+      fullPath: '/admin/products'
+      preLoaderRoute: typeof AdminProductsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/categories/': {
       id: '/categories/'
       path: '/categories'
@@ -680,6 +748,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardSettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard/wallet': {
+      id: '/dashboard/wallet'
+      path: '/dashboard/wallet'
+      fullPath: '/dashboard/wallet'
+      preLoaderRoute: typeof DashboardWalletRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/orders/$orderId': {
       id: '/orders/$orderId'
       path: '/$orderId'
@@ -737,6 +812,20 @@ const AuthRouteChildren: AuthRouteChildren = {
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
+interface AdminRouteChildren {
+  AdminModerationRoute: typeof AdminModerationRoute
+  AdminProductsRoute: typeof AdminProductsRoute
+  AdminIndexRoute: typeof AdminIndexRoute
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminModerationRoute: AdminModerationRoute,
+  AdminProductsRoute: AdminProductsRoute,
+  AdminIndexRoute: AdminIndexRoute,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+
 interface OrdersRouteChildren {
   OrdersOrderIdRoute: typeof OrdersOrderIdRoute
 }
@@ -775,7 +864,7 @@ const DashboardProductsRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRouteWithChildren,
-  AdminRoute: AdminRoute,
+  AdminRoute: AdminRouteWithChildren,
   AuthCheckRoute: AuthCheckRoute,
   BrowseRoute: BrowseRoute,
   CartRoute: CartRoute,
@@ -798,6 +887,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRentalsRoute: DashboardRentalsRoute,
   DashboardReviewsRoute: DashboardReviewsRoute,
   DashboardSettingsRoute: DashboardSettingsRoute,
+  DashboardWalletRoute: DashboardWalletRoute,
   ProductSlugRoute: ProductSlugRoute,
   SellerIdRoute: SellerIdRoute,
   CategoriesIndexRoute: CategoriesIndexRoute,

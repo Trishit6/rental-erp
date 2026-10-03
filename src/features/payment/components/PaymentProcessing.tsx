@@ -58,7 +58,8 @@ export function PaymentProcessing({
       <h1 className="section-title mt-6 text-2xl">{copy.title}</h1>
       <p className="mt-2 text-sm text-muted-foreground">{copy.description}</p>
       <p className="mt-4 font-heading text-xl font-black tabular-nums">
-        {formatInr(amount)} <span className="text-xs font-semibold text-muted-foreground">{currency}</span>
+        {formatInr(amount)}{" "}
+        <span className="text-xs font-semibold text-muted-foreground">{currency}</span>
       </p>
 
       {/* Announced politely: a screen-reader user would otherwise get silence

@@ -18,10 +18,7 @@ import { ApiError } from "@/lib/api/client";
 import { cancelOrder } from "../api";
 import { useOrderAgain } from "../query";
 import type { OrderDetail, OrderItem, OrderRental } from "../types";
-import {
-  CANCELLATION_REASON_OPTIONS,
-  type CancellationReasonValue,
-} from "./schema";
+import { CANCELLATION_REASON_OPTIONS, type CancellationReasonValue } from "./schema";
 
 const CANCELLATION_REASONS: readonly { value: CancellationReasonValue; label: string }[] =
   CANCELLATION_REASON_OPTIONS;
@@ -93,9 +90,7 @@ export function OrderActionsPanel({
       void navigate({ to: "/cart" });
     } catch (error) {
       const message =
-        error instanceof ApiError
-          ? error.message
-          : "This product is no longer available.";
+        error instanceof ApiError ? error.message : "This product is no longer available.";
       toast.error(message);
     }
   }
@@ -145,8 +140,8 @@ export function OrderActionsPanel({
 
       {!firstRepeatable && (
         <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
-          The products in this order are no longer listed, so buying them again is not
-          possible. Your order record is unaffected.
+          The products in this order are no longer listed, so buying them again is not possible.
+          Your order record is unaffected.
         </p>
       )}
 
@@ -160,8 +155,8 @@ export function OrderActionsPanel({
             <DialogHeader>
               <DialogTitle>Cancel order?</DialogTitle>
               <DialogDescription>
-                Why are you cancelling? This helps sellers understand — the order is
-                only cancelled once you confirm.
+                Why are you cancelling? This helps sellers understand — the order is only cancelled
+                once you confirm.
               </DialogDescription>
             </DialogHeader>
 

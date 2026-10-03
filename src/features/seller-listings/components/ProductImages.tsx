@@ -88,9 +88,7 @@ export function ProductImages({
       }
     } catch (uploadError) {
       setError(
-        uploadError instanceof Error
-          ? uploadError.message
-          : "That image couldn't be uploaded.",
+        uploadError instanceof Error ? uploadError.message : "That image couldn't be uploaded.",
       );
     } finally {
       setUploading(false);

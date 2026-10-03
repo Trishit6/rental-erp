@@ -41,7 +41,10 @@ export function PaymentSuccess({
       <div className="raised-surface space-y-2 p-5">
         <div className="flex items-baseline justify-between gap-3 text-sm">
           <span className="text-muted-foreground">Order</span>
-          <span className="font-heading text-lg font-black tracking-wide" data-testid="order-number">
+          <span
+            className="font-heading text-lg font-black tracking-wide"
+            data-testid="order-number"
+          >
             {confirmation.orderNumber}
           </span>
         </div>
@@ -63,8 +66,8 @@ export function PaymentSuccess({
       {confirmation.rentalCount > 0 && (
         <p className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
           <Package size={13} aria-hidden="true" />
-          Includes {confirmation.rentalCount} rental reservation{confirmation.rentalCount === 1 ? "" : "s"}.
-          Return dates are in your rentals.
+          Includes {confirmation.rentalCount} rental reservation
+          {confirmation.rentalCount === 1 ? "" : "s"}. Return dates are in your rentals.
         </p>
       )}
 

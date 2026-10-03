@@ -14,6 +14,7 @@
     "db:push": "drizzle-kit push",
     "db:seed": "tsx server/seed.ts",
     "db:seed:history": "tsx server/seed-history.ts",
+    "db:repair-demo-images": "tsx server/repair-demo-images.ts",
     "db:harvest-images": "node scripts/harvest-unsplash.mjs",
     "db:seed:products": "tsx server/seed-products.ts",
     "db:studio": "drizzle-kit studio",
@@ -25,7 +26,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@hono/node-server": "^2.1.1",
     "@radix-ui/react-avatar": "^1.2.6",
     "@radix-ui/react-checkbox": "^1.3.11",
     "@radix-ui/react-dialog": "^1.1.23",
@@ -51,7 +51,6 @@
     "drizzle-orm": "^0.44.2",
     "express": "^5.1.0",
     "framer-motion": "^13.4.4",
-    "hono": "^4.13.9",
     "lucide-react": "^0.468.0",
     "mysql2": "^3.14.1",
     "react": "^19.1.0",

@@ -113,10 +113,10 @@ export function ReviewImages({
           {images.map((url) => (
             <li key={url} className="relative">
               <ProductImage
-              src={url}
-              alt=""
-              className="size-20 rounded-xl border border-border/60"
-            />
+                src={url}
+                alt=""
+                className="size-20 rounded-xl border border-border/60"
+              />
               {!disabled && (
                 <button
                   type="button"

@@ -3,11 +3,7 @@ import { MessageSquareQuote } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReviewList } from "./ReviewList";
 import { ReviewForm } from "./ReviewForm";
-import {
-  MyReviewsEmptyState,
-  ReviewsErrorState,
-  ReviewsSkeleton,
-} from "./ReviewStates";
+import { MyReviewsEmptyState, ReviewsErrorState, ReviewsSkeleton } from "./ReviewStates";
 import { useMyReviews } from "../query";
 import type { Review, ReviewStatus } from "../types";
 
@@ -37,7 +33,10 @@ export function MyReviewsSection() {
   return (
     <section aria-labelledby="my-reviews-heading" className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 id="my-reviews-heading" className="flex items-center gap-2 font-heading text-lg font-extrabold">
+        <h2
+          id="my-reviews-heading"
+          className="flex items-center gap-2 font-heading text-lg font-extrabold"
+        >
           <MessageSquareQuote size={17} aria-hidden className="text-primary" />
           My Reviews
         </h2>

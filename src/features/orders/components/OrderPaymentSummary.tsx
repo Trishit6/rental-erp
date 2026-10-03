@@ -26,7 +26,10 @@ export function OrderPaymentSummary({
   if (!payment) {
     return (
       <section className="raised-surface p-5" aria-labelledby="order-payment-heading">
-        <h2 id="order-payment-heading" className="flex items-center gap-2 font-heading text-lg font-extrabold">
+        <h2
+          id="order-payment-heading"
+          className="flex items-center gap-2 font-heading text-lg font-extrabold"
+        >
           <CreditCard size={16} aria-hidden="true" />
           Payment
         </h2>
@@ -50,7 +53,10 @@ export function OrderPaymentSummary({
       </h2>
 
       <dl className="mt-3 space-y-2.5 text-sm" data-testid="order-payment">
-        <Row label="Method" value={payment.paymentMethod ? prettyMethod(payment.paymentMethod) : "—"} />
+        <Row
+          label="Method"
+          value={payment.paymentMethod ? prettyMethod(payment.paymentMethod) : "—"}
+        />
         <div className="flex items-baseline justify-between gap-3">
           <dt className="text-muted-foreground">Status</dt>
           <dd>

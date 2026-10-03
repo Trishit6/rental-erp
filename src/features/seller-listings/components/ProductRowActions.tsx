@@ -218,7 +218,9 @@ export function StatusBadge({ status }: { status: string }) {
             : "bg-muted text-muted-foreground";
 
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${tone}`}>
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${tone}`}
+    >
       {STATUS_LABELS[status] ?? status}
     </span>
   );
@@ -274,7 +276,8 @@ export function PerformanceSummary({ product }: { product: SellerProductRow }) {
   const parts: string[] = [];
   if (product.soldUnits > 0) parts.push(`${product.soldUnits} sold`);
   if (product.rentalCount > 0) parts.push(`${product.rentalCount} rented`);
-  if (product.ratingCount > 0) parts.push(`${product.ratingAverage.toFixed(1)}★ (${product.ratingCount})`);
+  if (product.ratingCount > 0)
+    parts.push(`${product.ratingAverage.toFixed(1)}★ (${product.ratingCount})`);
   if (parts.length === 0) {
     return <span className="text-xs text-muted-foreground">No sales yet</span>;
   }

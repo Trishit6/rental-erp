@@ -86,8 +86,8 @@ export function SellerAnalyticsPage({
         <p className="eyebrow">How your shop is doing</p>
         <h1 className="section-title mt-1 text-3xl sm:text-4xl">Analytics</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          Revenue, orders and your best-performing listings. Everything below is calculated from your
-          own orders — nothing is estimated.
+          Revenue, orders and your best-performing listings. Everything below is calculated from
+          your own orders — nothing is estimated.
         </p>
       </header>
 

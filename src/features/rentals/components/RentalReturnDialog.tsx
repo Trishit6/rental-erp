@@ -49,11 +49,7 @@ export function RentalReturnDialog({
           >
             Cancel
           </Button>
-          <Button
-            onClick={onSubmit}
-            className="flex-1"
-            disabled={isSubmitting || !acknowledged}
-          >
+          <Button onClick={onSubmit} className="flex-1" disabled={isSubmitting || !acknowledged}>
             {isSubmitting ? (
               <>
                 <Loader2 size={14} className="animate-spin" aria-hidden="true" />
@@ -69,8 +65,8 @@ export function RentalReturnDialog({
       <div className="space-y-4 pb-2">
         <p className="inset-surface rounded-2xl p-4 text-sm text-muted-foreground">
           This marks the rental as <strong className="text-foreground">return requested</strong> and
-          notifies the owner. It doesn&apos;t close the rental — the seller confirms once the item is
-          physically back.
+          notifies the owner. It doesn&apos;t close the rental — the seller confirms once the item
+          is physically back.
         </p>
 
         <ul className="space-y-2 text-xs leading-relaxed text-muted-foreground">
@@ -92,9 +88,7 @@ export function RentalReturnDialog({
             onChange={(event) => setAcknowledged(event.target.checked)}
             className="mt-0.5 size-4 shrink-0 accent-[var(--color-primary)]"
           />
-          <span>
-            I understand this only starts the return, and no refund is issued yet.
-          </span>
+          <span>I understand this only starts the return, and no refund is issued yet.</span>
         </label>
 
         <p className="flex items-start gap-2 text-[11px] leading-relaxed text-muted-foreground">

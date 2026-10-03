@@ -79,11 +79,7 @@ export function CartItemCard({
       aria-label={`Cart item: ${title}`}
     >
       <div className="flex gap-3.5 sm:gap-4">
-        <CartItemImage
-          src={product?.primaryImage ?? null}
-          alt={title}
-          slug={product?.slug}
-        />
+        <CartItemImage src={product?.primaryImage ?? null} alt={title} slug={product?.slug} />
 
         <div className="min-w-0 flex-1">
           <CartItemDetails item={item} />
@@ -102,11 +98,7 @@ export function CartItemCard({
 
           {item.mode === "RENT" && !unavailable && (
             <div className="mt-2.5 flex flex-wrap items-center gap-3">
-              <RentalDurationControl
-                item={item}
-                onUpdate={update}
-                disabled={isPending}
-              />
+              <RentalDurationControl item={item} onUpdate={update} disabled={isPending} />
               <CartItemQuantity
                 value={item.quantity}
                 availableQuantity={product?.availableQuantity ?? 1}
@@ -161,9 +153,7 @@ export function CartItemCard({
         {/* The price column: a purchase is a flat price, a rental shows the
             multiplication so the arithmetic is never hidden. */}
         <div className="hidden shrink-0 text-right sm:block">
-          <p className="text-[11px] font-semibold text-muted-foreground">
-            {unitPriceLabel(item)}
-          </p>
+          <p className="text-[11px] font-semibold text-muted-foreground">{unitPriceLabel(item)}</p>
           {item.quantity > 1 && (
             <p className="text-[11px] text-muted-foreground">× {item.quantity}</p>
           )}
@@ -181,9 +171,7 @@ export function CartItemCard({
       {/* On mobile the price moves below the controls, where there is room. */}
       <div className="mt-3 flex items-center justify-between gap-3 border-t border-[var(--divider)] pt-3 sm:hidden">
         <p className="text-[11px] font-semibold text-muted-foreground">{unitPriceLabel(item)}</p>
-        <p className="font-heading text-base font-extrabold">
-          {formatInr(item.pricing.lineTotal)}
-        </p>
+        <p className="font-heading text-base font-extrabold">{formatInr(item.pricing.lineTotal)}</p>
       </div>
     </motion.article>
   );

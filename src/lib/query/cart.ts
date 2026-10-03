@@ -97,7 +97,8 @@ export function withoutCartItem(cart: Cart, itemId: number): Cart {
     items,
     totals: {
       ...cart.totals,
-      subtotal: cart.totals.subtotal - (wasActive ? line.pricing.lineTotal - line.pricing.depositTotal : 0),
+      subtotal:
+        cart.totals.subtotal - (wasActive ? line.pricing.lineTotal - line.pricing.depositTotal : 0),
       rentalCharges: cart.totals.rentalCharges - (wasActive ? line.pricing.rentalCharge : 0),
       securityDeposits: cart.totals.securityDeposits - (wasActive ? line.pricing.depositTotal : 0),
       estimatedTotal: cart.totals.estimatedTotal - (wasActive ? line.pricing.lineTotal : 0),
@@ -111,7 +112,10 @@ export function withoutCartItem(cart: Cart, itemId: number): Cart {
 
 /** The cart with a line moved between the cart and "saved for later". */
 export function withSavedForLater(cart: Cart, itemId: number, savedForLater: boolean): Cart {
-  return { ...cart, items: cart.items.map((item) => (item.id === itemId ? { ...item, savedForLater } : item)) };
+  return {
+    ...cart,
+    items: cart.items.map((item) => (item.id === itemId ? { ...item, savedForLater } : item)),
+  };
 }
 
 /** An empty cart, so the UI has a real shape before the first response. */
@@ -183,7 +187,10 @@ export function useCartQuery(): {
  */
 export function useCartCount(): number {
   const { user } = useAuth();
-  const { data } = useQuery({ ...cartQueryOptions(!!user), select: (cart: Cart) => cart.totals.quantityCount });
+  const { data } = useQuery({
+    ...cartQueryOptions(!!user),
+    select: (cart: Cart) => cart.totals.quantityCount,
+  });
   return data ?? 0;
 }
 
@@ -245,11 +252,7 @@ export function useUpdateCartItem(): UseMutationResult<
  * snapshotted and restored verbatim on failure, and the removed line is still
  * in the user's cart, not deleted from the marketplace.
  */
-export function useRemoveCartItem(): UseMutationResult<
-  void,
-  Error,
-  number
-> {
+export function useRemoveCartItem(): UseMutationResult<void, Error, number> {
   const queryClient = useQueryClient();
   const refresh = useRefreshCart();
 

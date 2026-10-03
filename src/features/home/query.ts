@@ -1,11 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useCategoryDirectory } from "@/lib/categories";
-import {
-  getFeaturedProducts,
-  getPreLovedProducts,
-  getRentalProducts,
-  getStats,
-} from "./api";
+import { getFeaturedProducts, getPreLovedProducts, getRentalProducts, getStats } from "./api";
 
 /** Stable home-scoped query keys (public data — long cache, survives navigation). */
 export const homeKeys = {

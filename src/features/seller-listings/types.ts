@@ -84,12 +84,7 @@ export type SellerProductDetail = Omit<
   references: ProductReferences;
 };
 
-export type SellerProductStatus =
-  | "DRAFT"
-  | "PUBLISHED"
-  | "OUT_OF_STOCK"
-  | "PAUSED"
-  | "ARCHIVED";
+export type SellerProductStatus = "DRAFT" | "PUBLISHED" | "OUT_OF_STOCK" | "PAUSED" | "ARCHIVED";
 
 /** `SALE | RENT | BOTH` — the existing listing-type vocabulary. */
 export type ListingMode = "SALE" | "RENT" | "BOTH";

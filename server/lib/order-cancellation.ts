@@ -20,17 +20,10 @@ import { HttpError } from "./api";
  */
 
 /** States from which the customer may cancel. Goods have not left yet. */
-export const CUSTOMER_CANCELLABLE_FROM = new Set([
-  "PENDING_PAYMENT",
-  "CONFIRMED",
-  "PROCESSING",
-]);
+export const CUSTOMER_CANCELLABLE_FROM = new Set(["PENDING_PAYMENT", "CONFIRMED", "PROCESSING"]);
 
 export type CancellationRefusal =
-  | "ALREADY_SHIPPED"
-  | "ALREADY_CANCELLED"
-  | "ALREADY_COMPLETED"
-  | "PAYMENT_NOT_SETTLED";
+  "ALREADY_SHIPPED" | "ALREADY_CANCELLED" | "ALREADY_COMPLETED" | "PAYMENT_NOT_SETTLED";
 
 export type CancellationCheck =
   | { allowed: true }
@@ -73,7 +66,8 @@ export function checkCustomerCancellation(input: {
       allowed: false,
       refusal: "ALREADY_SHIPPED",
       status: 409,
-      message: "This order has already been handed over for delivery, so it can no longer be cancelled.",
+      message:
+        "This order has already been handed over for delivery, so it can no longer be cancelled.",
     };
   }
   if (hasActiveRental) {
@@ -121,13 +115,12 @@ export const CANCELLATION_REASONS = [
 export type CancellationReason = (typeof CANCELLATION_REASONS)[number];
 
 export function isCancellationReason(value: unknown): value is CancellationReason {
-  return (
-    typeof value === "string" &&
-    (CANCELLATION_REASONS as readonly string[]).includes(value)
-  );
+  return typeof value === "string" && (CANCELLATION_REASONS as readonly string[]).includes(value);
 }
 
 /** Refusal → the error the API contract carries. */
-export function cancellationRefusalError(check: Extract<CancellationCheck, { allowed: false }>): HttpError {
+export function cancellationRefusalError(
+  check: Extract<CancellationCheck, { allowed: false }>,
+): HttpError {
   return new HttpError(check.status, check.refusal, check.message);
 }

@@ -48,7 +48,13 @@ export function RentalsFilter({
           )}
         </h2>
         {hasActiveRentalFilters(search) && (
-          <Button type="button" variant="ghost" size="sm" onClick={onClear} className="text-muted-foreground">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onClear}
+            className="text-muted-foreground"
+          >
             <X size={13} aria-hidden="true" />
             Clear
           </Button>
@@ -128,7 +134,9 @@ function Chip({
       className={cn(
         "shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
-        selected ? "primary-button text-primary-foreground" : "inset-surface text-muted-foreground hover:text-foreground",
+        selected
+          ? "primary-button text-primary-foreground"
+          : "inset-surface text-muted-foreground hover:text-foreground",
       )}
     >
       {children}

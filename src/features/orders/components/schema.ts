@@ -39,7 +39,11 @@ export const ORDER_SORT_OPTIONS: { value: OrderSort; label: string }[] = [
  * actually looks for. Each maps to the same `status`/`type` URL params the
  * sidebar filters write, so the two can never disagree about what a pill means.
  */
-export const ORDER_QUICK_FILTERS: { id: string; label: string; patch: Partial<OrdersSearchShape> }[] = [
+export const ORDER_QUICK_FILTERS: {
+  id: string;
+  label: string;
+  patch: Partial<OrdersSearchShape>;
+}[] = [
   { id: "all", label: "All", patch: {} },
   { id: "buying", label: "Buying", patch: { type: "PURCHASE" } },
   { id: "rentals", label: "Rentals", patch: { type: "RENTAL" } },
@@ -365,7 +369,11 @@ const PAYMENT_SETTLED = new Set(["PAID", "SUCCEEDED"]);
  * The component consuming this takes an array, so when a real event table
  * arrives the same component renders it — only this function changes.
  */
-export function buildOrderTimeline({ order, payment, rentals }: TimelineInput): OrderTimelineEvent[] {
+export function buildOrderTimeline({
+  order,
+  payment,
+  rentals,
+}: TimelineInput): OrderTimelineEvent[] {
   const events: OrderTimelineEvent[] = [];
 
   const cancelled = order.status === "CANCELLED";

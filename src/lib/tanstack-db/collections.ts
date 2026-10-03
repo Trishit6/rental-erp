@@ -1,5 +1,15 @@
 import { createCollection, localOnlyCollectionOptions } from "@tanstack/db";
-import { categoryCollectionSchema, orderCollectionSchema, orderItemCollectionSchema, productCollectionSchema, rentalCollectionSchema, reviewCollectionSchema, sellerProductCollectionSchema } from "./schemas";
+import {
+  categoryCollectionSchema,
+  orderCollectionSchema,
+  orderItemCollectionSchema,
+  productCollectionSchema,
+  rentalCollectionSchema,
+  reviewCollectionSchema,
+  sellerProductCollectionSchema,
+  walletPayoutCollectionSchema,
+  walletTransactionCollectionSchema,
+} from "./schemas";
 
 /**
  * The client-side reactive store.
@@ -24,6 +34,8 @@ export type ProductCollection = ReturnType<typeof createProductsCollection>;
 export type CategoryCollection = ReturnType<typeof createCategoriesCollection>;
 export type ReviewCollection = ReturnType<typeof createReviewsCollection>;
 export type SellerProductCollection = ReturnType<typeof createSellerProductsCollection>;
+export type WalletTransactionCollection = ReturnType<typeof createWalletTransactionsCollection>;
+export type WalletPayoutCollection = ReturnType<typeof createWalletPayoutsCollection>;
 
 /** Public order history, synced from the `/orders` list responses. */
 export function createOrdersCollection() {
@@ -116,6 +128,42 @@ export function createSellerProductsCollection() {
   );
 }
 
+/**
+ * The signed-in seller's wallet ledger.
+ *
+ * A **private** collection, and the most plainly private one in the file: every row
+ * here is a number of rupees that belongs to exactly one person. It is wiped on
+ * logout with the rest of the private set, and it holds only the projected columns the
+ * ledger list renders — never a seller id (every row is the session seller's by
+ * construction, so the column would be a constant), never an `idempotencyKey`, and
+ * never a payout method beyond its masked label.
+ *
+ * It is a *derived* store, never a financial source of truth. Nothing in the UI may
+ * compute a balance from these rows: the overview card reads the server's `SUM`, and
+ * these rows exist so a ledger entry and the row beside it in the summary strip
+ * cannot be two different fetches that happen to disagree.
+ */
+export function createWalletTransactionsCollection() {
+  return createCollection(
+    localOnlyCollectionOptions({
+      id: "wallet-transactions",
+      getKey: (row) => row.id,
+      schema: walletTransactionCollectionSchema,
+    }),
+  );
+}
+
+/** The seller's own payout requests. Private, for the same reason as above. */
+export function createWalletPayoutsCollection() {
+  return createCollection(
+    localOnlyCollectionOptions({
+      id: "wallet-payouts",
+      getKey: (row) => row.id,
+      schema: walletPayoutCollectionSchema,
+    }),
+  );
+}
+
 export type RevaroCollections = {
   orders: OrderCollection;
   orderItems: OrderItemCollection;
@@ -124,6 +172,8 @@ export type RevaroCollections = {
   categories: CategoryCollection;
   reviews: ReviewCollection;
   sellerProducts: SellerProductCollection;
+  walletTransactions: WalletTransactionCollection;
+  walletPayouts: WalletPayoutCollection;
 };
 
 /**
@@ -145,6 +195,8 @@ export function getCollections(): RevaroCollections {
       categories: createCategoriesCollection(),
       reviews: createReviewsCollection(),
       sellerProducts: createSellerProductsCollection(),
+      walletTransactions: createWalletTransactionsCollection(),
+      walletPayouts: createWalletPayoutsCollection(),
     };
   }
   return collections;

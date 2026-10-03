@@ -43,8 +43,7 @@ export const queryKeys = {
   favorites: ["favorites"] as const,
   favoriteIds: ["favorites", "ids"] as const,
   favoriteStatus: (productId: number) => ["favorites", "status", productId] as const,
-  favoritesList: (filters: Record<string, unknown> = {}) =>
-    ["favorites", "list", filters] as const,
+  favoritesList: (filters: Record<string, unknown> = {}) => ["favorites", "list", filters] as const,
   cart: ["cart"] as const,
   /**
    * Orders. `["orders"]` is the prefix every order-list entry hangs off, and
@@ -57,8 +56,7 @@ export const queryKeys = {
    * cache for the next one to sign in.
    */
   orders: ["orders"] as const,
-  ordersList: (filters: Record<string, unknown> = {}) =>
-    ["orders", "list", filters] as const,
+  ordersList: (filters: Record<string, unknown> = {}) => ["orders", "list", filters] as const,
   orderAll: ["order"] as const,
   order: (ref: string | number) => ["order", String(ref)] as const,
   /** Prefix every payment entry hangs off; also what logout evicts. */
@@ -72,16 +70,14 @@ export const queryKeys = {
     ["payment", "summary", context] as const,
   paymentMethods: ["payment", "methods"] as const,
   paymentIntent: (transactionId: number | "*") => ["payment", "intent", transactionId] as const,
-  paymentStatus: (transactionId: number | "*") =>
-    ["payment", "status", transactionId] as const,
+  paymentStatus: (transactionId: number | "*") => ["payment", "status", transactionId] as const,
   rentals: ["rentals"] as const,
   /**
    * The customer's own rentals. Keyed by the whole filter object so each tab and
    * search combination is its own cache entry. Distinct from `rentals` above,
    * which is the *owner's* view used by the seller dashboard.
    */
-  rentalsList: (filters: Record<string, unknown> = {}) =>
-    ["rentals", "list", filters] as const,
+  rentalsList: (filters: Record<string, unknown> = {}) => ["rentals", "list", filters] as const,
   rental: (id: string | number) => ["rental", String(id)] as const,
   notifications: ["notifications"] as const,
   conversations: ["conversations"] as const,
@@ -107,11 +103,9 @@ export const queryKeys = {
   reviewsList: (productId: number, filters: Record<string, unknown>) =>
     ["reviews", productId, "list", filters] as const,
   reviewsSummary: (productId: number) => ["reviews", productId, "summary"] as const,
-  myReviews: (filters: Record<string, unknown> = {}) =>
-    ["reviews", "mine", filters] as const,
+  myReviews: (filters: Record<string, unknown> = {}) => ["reviews", "mine", filters] as const,
   /** Reviews of the signed-in seller's own listings. Private. */
-  sellerReviews: (filters: Record<string, unknown> = {}) =>
-    ["reviews", "seller", filters] as const,
+  sellerReviews: (filters: Record<string, unknown> = {}) => ["reviews", "seller", filters] as const,
   /** The admin moderation queue. Private. */
   reviewsModeration: (filters: Record<string, unknown> = {}) =>
     ["reviews", "moderation", filters] as const,
@@ -124,8 +118,7 @@ export const queryKeys = {
    * logout. Hanging it off a product id would make that impossible without
    * evicting every product's public reviews as collateral.
    */
-  reviewsEligibility: (productId: number) =>
-    ["reviews-eligibility", productId] as const,
+  reviewsEligibility: (productId: number) => ["reviews-eligibility", productId] as const,
   /**
    * One review by id.
    *
@@ -179,6 +172,34 @@ export const queryKeys = {
     ["seller", "me", "rentals", "list", filters] as const,
   /** The caller's own shopfront (bio, location, response time). */
   sellerProfile: ["seller", "me", "profile"] as const,
+  /**
+   * The seller wallet — balances, the ledger, payouts and saved destinations.
+   *
+   * Nested under `sellerMe` rather than given its own root, for the reason the rest
+   * of this file's private surface is: logout eviction clears the whole
+   * `["seller","me"]` prefix, so **one seller's balance can never be read from the
+   * store by the next one to sign in on a shared machine**. A wallet is not
+   * especially sensitive the way a card number is, but "₹84,200 available" belongs to
+   * exactly one person and no other.
+   *
+   * `walletAll` is the prefix every wallet entry hangs off, including the per-payout
+   * and per-method detail keys — so one invalidate after a payout request reconciles
+   * the balance card, the ledger row, the payout list and the detail panel at once.
+   * There is deliberately no `wallet("*")` shortcut: TanStack matches by prefix, so a
+   * literal `"*"` element only matches keys that literally contain one (the same trap
+   * as `orderAll`).
+   */
+  walletAll: ["seller", "me", "wallet"] as const,
+  walletOverview: (params: Record<string, unknown> = {}) =>
+    ["seller", "me", "wallet", "overview", params] as const,
+  walletTransactions: (filters: Record<string, unknown> = {}) =>
+    ["seller", "me", "wallet", "transactions", filters] as const,
+  walletTransaction: (id: number) =>
+    ["seller", "me", "wallet", "transactions", "detail", id] as const,
+  walletPayouts: (filters: Record<string, unknown> = {}) =>
+    ["seller", "me", "wallet", "payouts", filters] as const,
+  walletPayout: (ref: string) => ["seller", "me", "wallet", "payouts", "detail", ref] as const,
+  walletMethods: ["seller", "me", "wallet", "methods"] as const,
   earnings: ["earnings"] as const,
   transactions: ["transactions"] as const,
   addresses: ["addresses"] as const,
@@ -196,8 +217,14 @@ export const queryKeys = {
   reviewsEligibilityRoot: ["reviews-eligibility"] as const,
   adminStats: ["admin-stats"] as const,
   adminUsers: ["admin-users"] as const,
+  /**
+   * Root of the admin catalogue. The catalogue's own keys are built by
+   * `features/admin/query.ts` from this prefix, because every filter, sort and page
+   * is a distinct cache entry and the filter type belongs to that feature.
+   */
   adminProducts: ["admin-products"] as const,
   adminReports: ["admin-reports"] as const,
+  adminProductFacets: ["admin-products", "facets"] as const,
   profile: ["profile"] as const,
 };
 
@@ -218,6 +245,11 @@ export const privateQueryKeys = [
   queryKeys.conversations,
   queryKeys.conversationAll,
   queryKeys.sellerMe,
+  // `sellerMe` already covers every wallet key, so this is belt-and-braces rather
+  // than load-bearing. It is listed explicitly because the wallet is the surface
+  // where a leak would be most obviously wrong, and a reader should be able to see
+  // that without tracing the `sellerMe` prefix.
+  queryKeys.walletAll,
   queryKeys.earnings,
   queryKeys.transactions,
   queryKeys.addresses,

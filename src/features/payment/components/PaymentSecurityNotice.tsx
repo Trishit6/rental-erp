@@ -22,8 +22,8 @@ export function PaymentSecurityNotice({ className }: { className?: string }) {
         <li className="flex items-start gap-2">
           <ShieldCheck size={12} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" />
           <span>
-            The amount is calculated and confirmed on our servers. If it changes before you pay,
-            we will stop and ask you to review it.
+            The amount is calculated and confirmed on our servers. If it changes before you pay, we
+            will stop and ask you to review it.
           </span>
         </li>
       </ul>

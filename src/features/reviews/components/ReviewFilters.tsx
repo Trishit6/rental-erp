@@ -108,7 +108,9 @@ export function ReviewFilters({
               key={type}
               active={filters.purchaseType === type}
               onClick={() =>
-                onChange({ purchaseType: filters.purchaseType === type ? null : (type as ReviewPurchaseType) })
+                onChange({
+                  purchaseType: filters.purchaseType === type ? null : (type as ReviewPurchaseType),
+                })
               }
               disabled={disabled}
             >

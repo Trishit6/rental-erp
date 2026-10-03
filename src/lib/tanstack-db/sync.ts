@@ -8,6 +8,8 @@ import type {
   RentalRow,
   ReviewRow,
   SellerProductRow,
+  WalletPayoutRow,
+  WalletTransactionRow,
 } from "./schemas";
 
 /**
@@ -169,16 +171,60 @@ export function syncReviewsToCollection(
     product: { id: number };
   }[],
 ): void {
-  syncReviews(reviews.map((review) => ({
-    id: review.id,
-    productId: review.product.id,
-    rating: review.rating,
-    purchaseType: review.purchaseType,
-    isVerifiedPurchase: review.isVerifiedPurchase,
-    isEdited: review.isEdited,
-    helpfulCount: review.helpfulCount,
-    createdAt: review.createdAt,
-  })));
+  syncReviews(
+    reviews.map((review) => ({
+      id: review.id,
+      productId: review.product.id,
+      rating: review.rating,
+      purchaseType: review.purchaseType,
+      isVerifiedPurchase: review.isVerifiedPurchase,
+      isEdited: review.isEdited,
+      helpfulCount: review.helpfulCount,
+      createdAt: review.createdAt,
+    })),
+  );
+}
+
+/**
+ * Mirror one page of the seller's wallet ledger into the private collection.
+ *
+ * **Replace**, for the same reason the seller-products sync does and not the reason
+ * public products do: this list is the only surface that reads the collection, it
+ * filters and pages in SQL, and *the filter is the truth for the screen*. Merging
+ * would leave an entry readable in the store after the seller filtered to "Sales"
+ * and it was not — which reads as the wallet lying.
+ *
+ * The feature's richer `WalletTransaction` rows are **projected** down to the
+ * collection schema rather than written wholesale: the store validates against
+ * `walletTransactionCollectionSchema`, and a row carrying `sellerId`,
+ * `orderItemId` or `idempotencyKey` would be both a validation failure and a leak of
+ * fields this collection has no business holding.
+ */
+export function syncWalletTransactions(rows: WalletTransactionRow[]): void {
+  replaceAll(
+    getCollections().walletTransactions as never,
+    (row) => row.id as number,
+    rows as unknown as Record<string, unknown>[],
+  );
+}
+
+/**
+ * Mirror the seller's payout requests.
+ *
+ * Also **replace**, but for the opposite reason to products: unlike the public
+ * catalogue, this list is *the* truth for its screen, and a payout that dropped out
+ * of the current window is not something the seller should still be able to read out
+ * of the store.
+ *
+ * Projected the same way — the collection keeps the reference, the amount and the
+ * status, and nothing else.
+ */
+export function syncWalletPayouts(rows: WalletPayoutRow[]): void {
+  replaceAll(
+    getCollections().walletPayouts as never,
+    (row) => row.id as number,
+    rows as unknown as Record<string, unknown>[],
+  );
 }
 
 /**
@@ -232,8 +278,12 @@ export function patchOrderStatus(orderId: number, status: string): void {
  * matching how `privateQueryKeys` eviction treats the query cache.
  */
 export function clearPrivateCollections(): void {
-  const { orders, orderItems, rentals, sellerProducts } = getCollections();
-  const wipe = (collection: { keys(): IterableIterator<unknown>; delete(key: unknown): unknown }) => {
+  const { orders, orderItems, rentals, sellerProducts, walletTransactions, walletPayouts } =
+    getCollections();
+  const wipe = (collection: {
+    keys(): IterableIterator<unknown>;
+    delete(key: unknown): unknown;
+  }) => {
     for (const key of [...collection.keys()]) collection.delete(key);
   };
   wipe(orders as never);
@@ -242,9 +292,16 @@ export function clearPrivateCollections(): void {
   // The seller's own stock and earnings are as private as their orders, and a
   // shared machine is the normal case for a marketplace demo.
   wipe(sellerProducts as never);
+  // A wallet balance is the most plainly private number in the app — it belongs to
+  // exactly one person — so it is wiped with the rest rather than being left to
+  // outlive the session that fetched it.
+  wipe(walletTransactions as never);
+  wipe(walletPayouts as never);
 }
 
 /** Test helper: index a change stream by key, the way consumers read it. */
-export function changesByKey(changes: ChangeMessage<Record<string, unknown>>[]): Map<unknown, ChangeMessage<Record<string, unknown>>> {
+export function changesByKey(
+  changes: ChangeMessage<Record<string, unknown>>[],
+): Map<unknown, ChangeMessage<Record<string, unknown>>> {
   return new Map(changes.map((change) => [change.key, change]));
 }

@@ -90,7 +90,9 @@ export function ReviewCard({
               size={13}
               label={`Rated ${review.rating} out of 5`}
             />
-            <time dateTime={review.createdAt}>{format(new Date(review.createdAt), "d MMM yyyy")}</time>
+            <time dateTime={review.createdAt}>
+              {format(new Date(review.createdAt), "d MMM yyyy")}
+            </time>
           </div>
         </div>
       </header>
@@ -103,7 +105,9 @@ export function ReviewCard({
       )}
 
       {review.title && (
-        <h3 className="mt-3 font-heading text-[15px] font-extrabold leading-snug">{review.title}</h3>
+        <h3 className="mt-3 font-heading text-[15px] font-extrabold leading-snug">
+          {review.title}
+        </h3>
       )}
 
       <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-foreground/90">

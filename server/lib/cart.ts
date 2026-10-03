@@ -408,7 +408,9 @@ function isSameConfiguration(line: CartLineLike, target: MergeTarget): boolean {
  * insert. This function and {@link isSameConfiguration} are the only place that
  * decides what "a duplicate" is.
  */
-export async function mergeCartItem(input: MergeTarget & { cartId: number }): Promise<CartWriteResult> {
+export async function mergeCartItem(
+  input: MergeTarget & { cartId: number },
+): Promise<CartWriteResult> {
   const quantity = Math.max(1, Math.floor(input.quantity));
   const { cartId, ...target } = input;
 
@@ -525,9 +527,7 @@ async function mergeInTransaction(
 /** Remove one line. Scoped to the user's own cart. */
 export async function removeCartItem(userId: number, itemId: number): Promise<void> {
   const cartId = await getOrCreateCart(userId);
-  await db
-    .delete(cartItems)
-    .where(and(eq(cartItems.id, itemId), eq(cartItems.cartId, cartId)));
+  await db.delete(cartItems).where(and(eq(cartItems.id, itemId), eq(cartItems.cartId, cartId)));
 }
 
 /** Empty the cart. */

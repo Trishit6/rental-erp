@@ -22,11 +22,27 @@ export function LoginPage({ redirectTo }: { redirectTo?: string }) {
               Create an account
             </Link>
           </p>
-          <p className="mt-3 text-center text-[11px] leading-relaxed text-muted-foreground">
-            Demo accounts: buyer@revaro.local · seller@revaro.local · admin@revaro.local
-            <br />
-            Password: revaro-dev-2026
-          </p>
+          {/*
+           * The password is deliberately absent.
+           *
+           * It used to be printed here, which put a credential in client code and in
+           * every production bundle — and made this hint *wrong* the moment the
+           * admin password was set from the environment. The seeded credentials now
+           * live only in `server/lib/config.ts`; the seed script prints them to the
+           * terminal that ran it, which is the only place a local demo password
+           * needs to be visible.
+           *
+           * `import.meta.env.DEV` is replaced with `false` and this branch is
+           * tree-shaken out of a production build, so a deployed marketplace does
+           * not advertise which local accounts exist either.
+           */}
+          {import.meta.env.DEV ? (
+            <p className="mt-3 text-center text-[11px] leading-relaxed text-muted-foreground">
+              Local demo accounts: buyer@revaro.local · seller@revaro.local · admin@revaro.local
+              <br />
+              The password is printed by <code>pnpm db:seed</code>.
+            </p>
+          ) : null}
         </AuthCard>
       </div>
     </div>

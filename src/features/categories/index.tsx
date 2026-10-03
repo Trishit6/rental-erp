@@ -115,7 +115,6 @@ export function CategoriesPage() {
           }
         />
       </section>
-
     </div>
   );
 }
@@ -332,7 +331,6 @@ export function CategoryPage() {
         isLoadingSubcategories={subcategoriesQuery.isPending}
         onChange={(patch) => applyFilters(patch)}
       />
-
     </div>
   );
 }
@@ -346,4 +344,3 @@ function CategoryPageShell({ children }: { children: ReactNode }) {
     </div>
   );
 }
-

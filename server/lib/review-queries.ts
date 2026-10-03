@@ -38,9 +38,7 @@ export const REVIEW_PURCHASE_TYPES = ["PURCHASE", "RENTAL"] as const;
 export type ReviewPurchaseType = (typeof REVIEW_PURCHASE_TYPES)[number];
 
 export function isReviewPurchaseType(value: unknown): value is ReviewPurchaseType {
-  return (
-    typeof value === "string" && (REVIEW_PURCHASE_TYPES as readonly string[]).includes(value)
-  );
+  return typeof value === "string" && (REVIEW_PURCHASE_TYPES as readonly string[]).includes(value);
 }
 
 /**
@@ -48,13 +46,7 @@ export function isReviewPurchaseType(value: unknown): value is ReviewPurchaseTyp
  * indexable expression, so "Most Relevant" and "Most Helpful" are not two
  * different in-browser sorts of the same rows.
  */
-export const REVIEW_SORTS = [
-  "relevant",
-  "newest",
-  "highest",
-  "lowest",
-  "helpful",
-] as const;
+export const REVIEW_SORTS = ["relevant", "newest", "highest", "lowest", "helpful"] as const;
 export type ReviewSort = (typeof REVIEW_SORTS)[number];
 
 export function isReviewSort(value: unknown): value is ReviewSort {
@@ -273,7 +265,9 @@ export function parseReviewImages(raw: string | null | undefined): string[] {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((value): value is string => typeof value === "string").slice(0, MAX_REVIEW_IMAGES);
+    return parsed
+      .filter((value): value is string => typeof value === "string")
+      .slice(0, MAX_REVIEW_IMAGES);
   } catch {
     return [];
   }
@@ -308,7 +302,10 @@ export function reviewBelongsTo(userId: number, review: { userId: number }): boo
  * Only published reviews count. Including hidden ones would let a moderator's
  * decision silently keep inflating a public average.
  */
-export function ratingSummaryShape(ratingAverage: number, count: number): { average: number; count: number } {
+export function ratingSummaryShape(
+  ratingAverage: number,
+  count: number,
+): { average: number; count: number } {
   return {
     average: count > 0 ? Number(ratingAverage.toFixed(2)) : 0,
     count,

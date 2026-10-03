@@ -59,9 +59,11 @@ export async function updateSellerProduct(id: number, payload: Partial<ProductPa
 }
 
 export async function setSellerProductStatus(id: number, status: SettableStatus) {
-  return (await api.patch<{ id: number; status: string }>(`/seller/products/${id}/status`, {
-    status,
-  })).data;
+  return (
+    await api.patch<{ id: number; status: string }>(`/seller/products/${id}/status`, {
+      status,
+    })
+  ).data;
 }
 
 export type InventoryResponse = {
@@ -76,9 +78,7 @@ export async function setSellerProductInventory(
   id: number,
   edit: { quantity?: number; availableQuantity?: number },
 ): Promise<InventoryResponse> {
-  return (
-    await api.patch<InventoryResponse>(`/seller/products/${id}/inventory`, edit)
-  ).data;
+  return (await api.patch<InventoryResponse>(`/seller/products/${id}/inventory`, edit)).data;
 }
 
 export async function duplicateSellerProduct(id: number) {
@@ -94,9 +94,8 @@ export async function duplicateSellerProduct(id: number) {
  * points at it. This is the action the UI offers for anything that has sold.
  */
 export async function archiveSellerProduct(id: number) {
-  return (
-    await api.post<{ id: number; status: "ARCHIVED" }>(`/seller/products/${id}/archive`)
-  ).data;
+  return (await api.post<{ id: number; status: "ARCHIVED" }>(`/seller/products/${id}/archive`))
+    .data;
 }
 
 /**

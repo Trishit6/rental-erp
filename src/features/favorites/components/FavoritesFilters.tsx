@@ -1,7 +1,12 @@
 import { AvailabilityFilter } from "@/components/shared/product-filters/AvailabilityFilter";
 import { ConditionFilter } from "@/components/shared/product-filters/ConditionFilter";
 import { ListingTypeFilter } from "@/components/shared/product-filters/ListingTypeFilter";
-import type { ConditionFilterValue, FavoriteSearch, ListingMode, ProductAvailability } from "../types";
+import type {
+  ConditionFilterValue,
+  FavoriteSearch,
+  ListingMode,
+  ProductAvailability,
+} from "../types";
 
 /**
  * Wishlist filters.

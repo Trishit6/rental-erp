@@ -114,10 +114,7 @@ export function makeRentalItem(
 export function totalsFor(items: CartItem[]): CartTotals {
   const active = items.filter((item) => !item.savedForLater);
   return {
-    subtotal: active.reduce(
-      (sum, i) => sum + (i.pricing.lineTotal - i.pricing.depositTotal),
-      0,
-    ),
+    subtotal: active.reduce((sum, i) => sum + (i.pricing.lineTotal - i.pricing.depositTotal), 0),
     rentalCharges: active.reduce((sum, i) => sum + i.pricing.rentalCharge, 0),
     securityDeposits: active.reduce((sum, i) => sum + i.pricing.depositTotal, 0),
     estimatedTotal: active.reduce((sum, i) => sum + i.pricing.lineTotal, 0),

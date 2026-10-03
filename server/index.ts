@@ -1,10 +1,8 @@
-import { serve } from "@hono/node-server";
-import { Hono } from "hono";
-import { logger } from "hono/logger";
 import { pool } from "./db";
 import { ok } from "./lib/api";
 import { onErrorHandler } from "./lib/api";
 import { attachUser } from "./lib/auth";
+import { createApp, Router, type Ctx } from "./lib/http";
 import { auth } from "./routes/auth";
 import { productsRoute, categoriesRoute } from "./routes/products";
 import { favoritesRoute, cartRoute, addressesRoute } from "./routes/market";
@@ -16,22 +14,50 @@ import { sellerRoute } from "./routes/seller";
 import { sellersRoute } from "./routes/sellers";
 import { storageRoute } from "./routes/storage";
 import { sellerOrdersRoute } from "./routes/seller-orders";
+import { walletRoute } from "./routes/wallet";
 import { chatRoute } from "./routes/chat";
 import { adminRoute } from "./routes/admin";
 import { and, inArray, sql } from "drizzle-orm";
 import { db } from "./db";
 import { products, users } from "./schema";
 import { PUBLIC_PRODUCT_STATUSES } from "./lib/product-status";
+import type { RequestHandler } from "express";
 
-const app = new Hono();
+/**
+ * The Revaro API.
+ *
+ * Express, with `Router` (`lib/http`) providing the `c.req.param()` /
+ * `c.json()` / `route(prefix, sub)` shape the route files are written against.
+ * The route table below is unchanged from the Hono version it replaces.
+ */
 
-app.use(logger());
-app.onError(onErrorHandler);
-app.use("/api/*", attachUser);
+/** Replaces `hono/logger`. One line per request; nothing is retained. */
+const requestLogger: RequestHandler = (req, res, next) => {
+  const startedAt = process.hrtime.bigint();
+  res.on("finish", () => {
+    const ms = Number(process.hrtime.bigint() - startedAt) / 1e6;
+    console.log(`${req.method} ${req.originalUrl} ${res.statusCode} ${ms.toFixed(1)}ms`);
+  });
+  next();
+};
+
+const { app, router } = createApp({ captureRawBody: true });
+
+/**
+ * Request-scoped middleware, mounted ahead of every API route.
+ *
+ * A `Router` rather than `app.use` so `attachUser` keeps its `(c, next)` shape and
+ * the session it publishes lands in the same `Ctx` state the route guards read.
+ */
+const beforeApi = new Router();
+beforeApi.use(attachUser);
+
+app.use(requestLogger);
+app.use("/api", beforeApi.toExpress());
 
 /* --------------------------------- health ---------------------------------- */
 
-app.get("/api/health", async (c) => {
+router.get("/api/health", async (c: Ctx) => {
   try {
     await db.execute(sql`SELECT 1`);
     return c.json(ok({ status: "ok", database: "connected" }));
@@ -49,7 +75,7 @@ app.get("/api/health", async (c) => {
 
 /* -------------------------------- marketplace ------------------------------- */
 
-app.get("/api/stats", async (c) => {
+router.get("/api/stats", async (c: Ctx) => {
   try {
     // `activeListings` means listings a shopper can actually find, so it counts
     // the publicly visible statuses rather than every row in the table (drafts
@@ -87,39 +113,52 @@ app.get("/api/stats", async (c) => {
 
 /* ---------------------------------- routes ---------------------------------- */
 
-app.route("/api/auth", auth);
-app.route("/api/categories", categoriesRoute);
-app.route("/api/products", productsRoute);
-app.route("/api/products/search", productsRoute);
-app.route("/api/favorites", favoritesRoute);
-app.route("/api/cart", cartRoute);
-app.route("/api/addresses", addressesRoute);
-app.route("/api/orders", ordersRoute);
-app.route("/api/payments", paymentsRoute);
-app.route("/api/rentals", rentalsRoute);
-app.route("/api/reviews", reviewsRoute);
-app.route("/api/users", usersRoute);
-app.route("/api/conversations", messagesRoute);
-app.route("/api/notifications", notificationsRoute);
-app.route("/api/seller/orders", sellerOrdersRoute);
-app.route("/api/seller", sellerRoute);
+router.route("/api/auth", auth);
+router.route("/api/categories", categoriesRoute);
+router.route("/api/products", productsRoute);
+router.route("/api/products/search", productsRoute);
+router.route("/api/favorites", favoritesRoute);
+router.route("/api/cart", cartRoute);
+router.route("/api/addresses", addressesRoute);
+router.route("/api/orders", ordersRoute);
+router.route("/api/payments", paymentsRoute);
+router.route("/api/rentals", rentalsRoute);
+router.route("/api/reviews", reviewsRoute);
+router.route("/api/users", usersRoute);
+router.route("/api/conversations", messagesRoute);
+router.route("/api/notifications", notificationsRoute);
+router.route("/api/seller/orders", sellerOrdersRoute);
+// The wallet sits under `/api/seller/` for the same reason the orders router does:
+// it is the signed-in seller's own money, and keeping the prefix means the guard
+// boundary is visible in the route tree rather than being a flag on one handler.
+router.route("/api/seller/wallet", walletRoute);
+router.route("/api/seller", sellerRoute);
 // The public shopfront, deliberately a *different* prefix: it is mounted where no
 // guard applies, which is the point. See the note at the top of `routes/sellers.ts`.
-app.route("/api/sellers", sellersRoute);
-app.route("/api/storage", storageRoute);
-app.route("/api/chat", chatRoute);
-app.route("/api/admin", adminRoute);
+router.route("/api/sellers", sellersRoute);
+router.route("/api/storage", storageRoute);
+router.route("/api/chat", chatRoute);
+router.route("/api/admin", adminRoute);
 
-app.notFound((c) => {
-  return c.json(
-    { success: false, error: { code: "NOT_FOUND", message: "API route not found." } },
-    404,
-  );
+router.onError(onErrorHandler);
+app.use(router.toExpress());
+
+// Unmatched routes. Mounted after the router so it only sees what fell through,
+// and its shape matches the Hono `notFound` this replaces.
+app.use((_req, res) => {
+  res.status(404).json({
+    success: false,
+    error: { code: "NOT_FOUND", message: "API route not found." },
+  });
 });
 
+// Express identifies itself by default; Revaro's API does not need to advertise
+// its stack, and §"never expose internals" is easier to honour by default.
+app.disable("x-powered-by");
+
 const port = Number(process.env.API_PORT ?? 3001);
-const server = serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`Revaro API listening on http://localhost:${info.port}`);
+const server = app.listen(port, () => {
+  console.log(`Revaro API listening on http://localhost:${port}`);
 });
 
 function closeServer() {
@@ -129,10 +168,10 @@ function closeServer() {
 }
 
 process.once("SIGINT", () => {
-  server.close();
-  closeServer();
+  server.close(closeServer);
 });
 process.once("SIGTERM", () => {
-  server.close();
-  closeServer();
+  server.close(closeServer);
 });
+
+export { app, router, Router };

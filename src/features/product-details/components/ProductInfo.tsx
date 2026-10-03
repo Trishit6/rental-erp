@@ -1,6 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { Eye, MapPin } from "lucide-react";
-import { FavoriteControl, type FavoriteController } from "@/features/favorites/components/FavoriteButton";
+import {
+  FavoriteControl,
+  type FavoriteController,
+} from "@/features/favorites/components/FavoriteButton";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils/cn";
 import { AvailabilityStatus } from "./AvailabilityStatus";

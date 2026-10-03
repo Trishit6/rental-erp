@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "@/lib/api/client";
 import { getOrderByRef, getOrders } from "@/features/orders/api";
-import { makeOrderDetails, makeOrderListResponse, makeOrderSummary } from "./support/order-fixtures";
+import {
+  makeOrderDetails,
+  makeOrderListResponse,
+  makeOrderSummary,
+} from "./support/order-fixtures";
 
 vi.mock("@/lib/api/client", () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -68,7 +72,10 @@ describe("reading the order list", () => {
   });
 
   it("degrades safely when the server sends no pagination block", () => {
-    vi.mocked(api.get).mockResolvedValue({ data: [makeOrderSummary()], pagination: undefined } as never);
+    vi.mocked(api.get).mockResolvedValue({
+      data: [makeOrderSummary()],
+      pagination: undefined,
+    } as never);
 
     return getOrders().then((result) => {
       expect(result.total).toBe(1);

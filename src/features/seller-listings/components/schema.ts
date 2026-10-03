@@ -128,7 +128,11 @@ const wholeNumber = z
 
 export const productFormSchema = z
   .object({
-    title: z.string().trim().min(3, "Give the listing a title of at least 3 characters.").max(TITLE_MAX),
+    title: z
+      .string()
+      .trim()
+      .min(3, "Give the listing a title of at least 3 characters.")
+      .max(TITLE_MAX),
     description: z
       .string()
       .trim()
@@ -376,9 +380,7 @@ export function toFormValues(detail: {
       ? (detail.condition as ProductCondition)
       : "GOOD",
     listingType:
-      detail.listingType === "RENT" || detail.listingType === "BOTH"
-        ? detail.listingType
-        : "SALE",
+      detail.listingType === "RENT" || detail.listingType === "BOTH" ? detail.listingType : "SALE",
     location: detail.location,
     purchasePrice: fromPaise(detail.purchasePrice),
     rentalPricePerDay: fromPaise(detail.rentalPricePerDay),
@@ -467,9 +469,7 @@ export const sellerProductsSearchSchema = z.object({
 });
 
 /** Used as the route's `validateSearch`. */
-export function parseSellerProductsSearch(
-  search: Record<string, unknown>,
-): SellerProductsSearch {
+export function parseSellerProductsSearch(search: Record<string, unknown>): SellerProductsSearch {
   const parsed = sellerProductsSearchSchema.parse(search ?? {});
   return {
     ...(parsed.page !== undefined ? { page: parsed.page } : {}),
@@ -479,19 +479,13 @@ export function parseSellerProductsSearch(
       ? { status: parsed.status }
       : {}),
     ...(parsed.type !== undefined && isListingMode(parsed.type) ? { type: parsed.type } : {}),
-    ...(parsed.stock !== undefined && isStockFilter(parsed.stock)
-      ? { stock: parsed.stock }
-      : {}),
-    ...(parsed.sort !== undefined && isSellerProductSort(parsed.sort)
-      ? { sort: parsed.sort }
-      : {}),
+    ...(parsed.stock !== undefined && isStockFilter(parsed.stock) ? { stock: parsed.stock } : {}),
+    ...(parsed.sort !== undefined && isSellerProductSort(parsed.sort) ? { sort: parsed.sort } : {}),
   };
 }
 
 /** URL state → the total filter object the page and the API use. */
-export function resolveSellerProductFilters(
-  search: SellerProductsSearch,
-): SellerProductFilters {
+export function resolveSellerProductFilters(search: SellerProductsSearch): SellerProductFilters {
   return {
     page: search.page ?? DEFAULT_SELLER_PRODUCT_FILTERS.page,
     pageSize: search.pageSize ?? DEFAULT_SELLER_PRODUCT_FILTERS.pageSize,

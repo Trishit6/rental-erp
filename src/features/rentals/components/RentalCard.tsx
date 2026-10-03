@@ -75,7 +75,11 @@ export function RentalCard({ rental }: { rental: Rental }) {
         />
 
         {!isActive && (
-          <RentalCountdown target={rental.startDate} mode="starts" active={rental.bucket === "upcoming"} />
+          <RentalCountdown
+            target={rental.startDate}
+            mode="starts"
+            active={rental.bucket === "upcoming"}
+          />
         )}
 
         <div className="flex flex-wrap items-end justify-between gap-3">
@@ -104,7 +108,9 @@ export function RentalCard({ rental }: { rental: Rental }) {
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold transition-colors",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
-              isFinished ? "soft-button text-foreground hover:text-primary" : "primary-button text-primary-foreground",
+              isFinished
+                ? "soft-button text-foreground hover:text-primary"
+                : "primary-button text-primary-foreground",
             )}
           >
             {isActive ? "Manage rental" : "View rental"}

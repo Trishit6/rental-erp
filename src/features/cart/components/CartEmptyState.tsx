@@ -27,7 +27,9 @@ export function CartEmptyState() {
               <Link to="/browse">Browse products</Link>
             </Button>
             <Button asChild variant="secondary">
-              <Link to="/browse" search={{ mode: "rent" }}>Browse rentals</Link>
+              <Link to="/browse" search={{ mode: "rent" }}>
+                Browse rentals
+              </Link>
             </Button>
           </div>
         }

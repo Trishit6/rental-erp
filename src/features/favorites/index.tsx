@@ -220,8 +220,6 @@ export function FavoritesPage() {
           setClearOpen(false);
         }}
       />
-
     </div>
   );
 }
-

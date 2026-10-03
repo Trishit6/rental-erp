@@ -201,8 +201,8 @@ export function ProductForm({
         <div>
           <p className="text-sm font-bold">How do you want to offer it?</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            You can change this later — but the prices and dates that don't apply are cleared when you
-            switch, so nothing unusable is sent.
+            You can change this later — but the prices and dates that don't apply are cleared when
+            you switch, so nothing unusable is sent.
           </p>
         </div>
 
@@ -268,7 +268,7 @@ export function ProductForm({
               type="checkbox"
               checked={values.rentToOwnEnabled}
               onChange={(event) => update("rentToOwnEnabled", event.target.checked)}
-              className="mt-0.5 size-4 rounded border-border accent-[var(--primary)]"
+              className="mt-0.5 size-4 rounded border-border accent-[var(--color-primary)]"
             />
             <span>
               Allow rent-to-own
@@ -528,7 +528,7 @@ function Check({
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
-        className="size-4 rounded border-border accent-[var(--primary)]"
+        className="size-4 rounded border-border accent-[var(--color-primary)]"
       />
       {label}
     </label>

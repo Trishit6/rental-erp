@@ -1,5 +1,9 @@
 import type { Pagination } from "@/lib/api/client";
-import type { ConditionFilterValue, ListingMode, ProductAvailability } from "@/lib/product-search/types";
+import type {
+  ConditionFilterValue,
+  ListingMode,
+  ProductAvailability,
+} from "@/lib/product-search/types";
 import type { ProductCardData } from "@/lib/types";
 
 /**

@@ -42,7 +42,9 @@ export function FloatingActions() {
         {...buttonMotion}
         onClick={openCart}
         aria-label={
-          cartCount > 0 ? `Open cart, ${cartCount} ${cartCount === 1 ? "item" : "items"}` : "Open cart"
+          cartCount > 0
+            ? `Open cart, ${cartCount} ${cartCount === 1 ? "item" : "items"}`
+            : "Open cart"
         }
         className="soft-button relative flex size-12 items-center justify-center rounded-full text-foreground transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >

@@ -55,13 +55,25 @@ export function BecomeSellerPage() {
   const [error, setError] = useState<string | null>(null);
 
   const hours = responseRateHours.trim() === "" ? null : Number(responseRateHours);
-  const hoursValid =
-    hours === null || (Number.isInteger(hours) && hours >= 1 && hours <= 168);
+  const hoursValid = hours === null || (Number.isInteger(hours) && hours >= 1 && hours <= 168);
+
+  /**
+   * Reported inline against the field, not only in the form-level alert.
+   *
+   * A seller who types `0` needs to know *which* box is wrong while the cursor is
+   * still in it; a single "something went wrong" banner at the bottom of the card
+   * makes them hunt. Only shown once something has been typed, so an untouched
+   * optional field is never flagged as an error before it has been a field at all.
+   */
+  const hoursError =
+    responseRateHours.trim() !== "" && !hoursValid
+      ? "Use a whole number of hours between 1 and 168 — 6 means about a quarter of a day."
+      : null;
 
   async function submit() {
     setError(null);
-    if (!hoursValid) {
-      setError("Response time should be a whole number of hours between 1 and 168.");
+    if (hoursError) {
+      setError(hoursError);
       return;
     }
     try {
@@ -90,10 +102,10 @@ export function BecomeSellerPage() {
       >
         <header>
           <p className="eyebrow">Sell on Revaro</p>
-          <h1 className="section-title mt-1 text-3xl sm:text-4xl">Open your shop</h1>
+          <h1 className="section-title mt-1 text-3xl sm:text-4xl">Sell your product</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            A couple of details and you're set. You can change any of them later, and your
-            listings stay yours from the first one.
+            A couple of details and you're ready to list your item. You can update them anytime, and
+            your listing remains yours.
           </p>
         </header>
 
@@ -107,12 +119,14 @@ export function BecomeSellerPage() {
           <label className="block space-y-1.5">
             <span className="block text-sm font-bold">Where are you based?</span>
             <Input
+              id="seller-location"
               value={location}
               onChange={(event) => setLocation(event.target.value)}
               placeholder="Koramangala, Bengaluru"
               maxLength={120}
+              aria-describedby="seller-location-hint"
             />
-            <span className="block text-xs text-muted-foreground">
+            <span id="seller-location-hint" className="block text-xs text-muted-foreground">
               Shown on your shopfront so buyers know roughly how far away you are.
             </span>
           </label>
@@ -120,13 +134,15 @@ export function BecomeSellerPage() {
           <label className="block space-y-1.5">
             <span className="block text-sm font-bold">Tell buyers about your shop</span>
             <Textarea
+              id="seller-bio"
               value={bio}
               onChange={(event) => setBio(event.target.value)}
               rows={4}
               maxLength={500}
               placeholder="Furniture and vintage lighting. I pack everything myself and can deliver across the neighbourhood."
+              aria-describedby="seller-bio-hint"
             />
-            <span className="block text-xs text-muted-foreground">
+            <span id="seller-bio-hint" className="block text-xs text-muted-foreground">
               Optional for now — you can write this after your first listing.
             </span>
           </label>
@@ -134,15 +150,27 @@ export function BecomeSellerPage() {
           <label className="block space-y-1.5">
             <span className="block text-sm font-bold">Typical reply time</span>
             <Input
+              id="seller-hours"
               inputMode="numeric"
               value={responseRateHours}
               onChange={(event) => setResponseRateHours(event.target.value)}
               placeholder="6"
               className="max-w-32"
+              aria-invalid={hoursError ? true : undefined}
+              aria-describedby={hoursError ? "seller-hours-error" : "seller-hours-hint"}
             />
-            <span className="block text-xs text-muted-foreground">
-              In hours, 1 to 168 (a week). Leave it blank if you'd rather not say.
-            </span>
+            {hoursError ? (
+              <span
+                id="seller-hours-error"
+                className="block text-xs font-semibold text-destructive"
+              >
+                {hoursError}
+              </span>
+            ) : (
+              <span id="seller-hours-hint" className="block text-xs text-muted-foreground">
+                In hours, 1 to 168 (a week). Leave it blank if you'd rather not say.
+              </span>
+            )}
           </label>
 
           {error && (

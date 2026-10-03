@@ -51,7 +51,8 @@ export function OrderSummary({
     value: amounts.deliveryFee > 0 ? formatInr(amounts.deliveryFee) : "Free pickup",
   });
 
-  if (amounts.discount > 0) rows.push({ label: "Discount", value: `- ${formatInr(amounts.discount)}` });
+  if (amounts.discount > 0)
+    rows.push({ label: "Discount", value: `- ${formatInr(amounts.discount)}` });
   if (amounts.tax > 0) rows.push({ label: "Tax", value: formatInr(amounts.tax) });
 
   return (

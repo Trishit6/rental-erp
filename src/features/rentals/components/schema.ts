@@ -153,11 +153,7 @@ export function parseRentalRouteParam(value: unknown): number | null {
  */
 export const extensionRequestSchema = z
   .object({
-    additionalDays: z
-      .number()
-      .int()
-      .min(1)
-      .max(MAX_EXTENSION_DAYS),
+    additionalDays: z.number().int().min(1).max(MAX_EXTENSION_DAYS),
   })
   .strict();
 
@@ -174,5 +170,6 @@ export function hasActiveRentalFilters(search: RentalsSearch): boolean {
 }
 
 export function activeRentalFilterCount(search: RentalsSearch): number {
-  return [search.search, search.status, search.bucket, search.from, search.to].filter(Boolean).length;
+  return [search.search, search.status, search.bucket, search.from, search.to].filter(Boolean)
+    .length;
 }

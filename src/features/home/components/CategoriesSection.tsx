@@ -24,7 +24,10 @@ export function CategoriesSection({ categories }: { categories?: Category[] }) {
             Browse by category
           </h2>
         </div>
-        <Link to="/categories" className="nav-link hidden items-center gap-1 text-sm font-bold sm:flex">
+        <Link
+          to="/categories"
+          className="nav-link hidden items-center gap-1 text-sm font-bold sm:flex"
+        >
           All categories <ChevronRight size={15} />
         </Link>
       </div>

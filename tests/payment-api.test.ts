@@ -44,7 +44,13 @@ const CONFIRMATION = {
 describe("reading payment state", () => {
   it("reads the provider's available methods rather than assuming any", async () => {
     vi.mocked(api.get).mockResolvedValue({
-      data: { provider: "dev_mock", isProductionReady: false, currency: "INR", methods: [], isDevelopmentMock: true },
+      data: {
+        provider: "dev_mock",
+        isProductionReady: false,
+        currency: "INR",
+        methods: [],
+        isDevelopmentMock: true,
+      },
     } as never);
 
     await getPaymentProviderInfo();
@@ -58,7 +64,9 @@ describe("reading payment state", () => {
     await getPaymentSummary({ deliveryMethod: "DELIVERY", deliveryAddressId: 4 });
 
     // The key name is the server's schema, not the URL's `addressId`.
-    expect(api.get).toHaveBeenCalledWith("/payments/summary?deliveryMethod=DELIVERY&deliveryAddressId=4");
+    expect(api.get).toHaveBeenCalledWith(
+      "/payments/summary?deliveryMethod=DELIVERY&deliveryAddressId=4",
+    );
   });
 
   it("omits the address entirely for pickup", async () => {
@@ -153,7 +161,9 @@ describe("confirming a payment", () => {
 
 describe("cancelling a payment", () => {
   it("asks the server to cancel and sends nothing else", async () => {
-    vi.mocked(api.post).mockResolvedValue({ data: { transactionId: 7, status: "CANCELLED" } } as never);
+    vi.mocked(api.post).mockResolvedValue({
+      data: { transactionId: 7, status: "CANCELLED" },
+    } as never);
 
     await cancelPayment(7);
 

@@ -63,12 +63,10 @@ export function deriveProductStatus(status: string, availableQuantity: number): 
  * something to sell.
  */
 export type InventoryEdit =
-  | { quantity: number; availableQuantity?: number }
-  | { availableQuantity: number };
+  { quantity: number; availableQuantity?: number } | { availableQuantity: number };
 
 export type InventoryValidation =
-  | { ok: true; quantity: number; availableQuantity: number }
-  | { ok: false; message: string };
+  { ok: true; quantity: number; availableQuantity: number } | { ok: false; message: string };
 
 export function validateInventoryEdit(
   current: { quantity: number; availableQuantity: number },
@@ -136,10 +134,7 @@ export async function adjustProductInventory(
     .limit(1);
   if (!row) return;
 
-  const availableQuantity = Math.min(
-    row.quantity,
-    Math.max(0, row.availableQuantity + delta),
-  );
+  const availableQuantity = Math.min(row.quantity, Math.max(0, row.availableQuantity + delta));
 
   await executor
     .update(products)

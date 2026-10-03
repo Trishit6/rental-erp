@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ImagePlaceholder, ProductImage } from "@/components/shared/product-image";
 import { Avatar } from "@/components/shared/avatar";
+import { MobileActionBar } from "@/lib/floating/mobile-action-bar";
 import { FloatingRail, FloatingRailProvider, FloatingSlotContent } from "@/lib/floating/rail";
 
 /**
@@ -143,6 +144,29 @@ describe("ProductImage", () => {
     // eye reads, and the `<img>`'s `alt` already carries the meaning.
     expect(container.firstElementChild).toHaveAttribute("aria-hidden", "true");
     expect(screen.getByText("Image unavailable")).toBeInTheDocument();
+  });
+
+  it("reports the failing url to a caller that has to react to it", () => {
+    // The gallery needs this: its "open full-size" button must disappear when
+    // there is no full-size image to open. Without the callback each caller has to
+    // keep its own copy of the failure state, which is the duplication the shared
+    // component exists to remove.
+    const onFailure = vi.fn();
+    render(<ProductImage src="https://cdn.test/gone.jpg" alt="A sofa" onFailure={onFailure} />);
+
+    fireEvent.error(screen.getByAltText("A sofa"));
+    expect(onFailure).toHaveBeenCalledWith("https://cdn.test/gone.jpg");
+  });
+
+  it("reports a failure once, not on every render of a broken card", () => {
+    const onFailure = vi.fn();
+    const { rerender } = render(
+      <ProductImage src="https://cdn.test/gone.jpg" alt="A sofa" onFailure={onFailure} />,
+    );
+    fireEvent.error(screen.getByAltText("A sofa"));
+    rerender(<ProductImage src="https://cdn.test/gone.jpg" alt="A sofa" onFailure={onFailure} />);
+
+    expect(onFailure).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -319,6 +343,45 @@ describe("FloatingRail", () => {
 
     unmount();
     expect(document.querySelector(".floating-rail")).toBeNull();
+  });
+});
+
+describe("MobileActionBar", () => {
+  it("publishes its height so the floating corners can step above it", () => {
+    // A full-width bar at the bottom of the viewport covers the rail's resting
+    // position. Both corners add this height to their bottom offset, so without
+    // it the cart, go-to-top and assistant sit on top of an opaque bar on mobile.
+    render(
+      <MobileActionBar visible>
+        <button type="button">Checkout</button>
+      </MobileActionBar>,
+    );
+    expect(document.documentElement.style.getPropertyValue("--mobile-action-bar-height")).toMatch(
+      /px$/,
+    );
+  });
+
+  it("reserves nothing while it is hidden", () => {
+    render(
+      <MobileActionBar visible={false}>
+        <button type="button">Checkout</button>
+      </MobileActionBar>,
+    );
+    // Go-to-top and the assistant are present from page load; a value left behind
+    // by an exited bar would keep the whole rail permanently lifted.
+    expect(document.documentElement.style.getPropertyValue("--mobile-action-bar-height")).toBe("");
+  });
+
+  it("releases the reservation when it unmounts", () => {
+    const { unmount } = render(
+      <MobileActionBar visible>
+        <button type="button">Checkout</button>
+      </MobileActionBar>,
+    );
+    expect(document.documentElement.style.getPropertyValue("--mobile-action-bar-height")).not.toBe("");
+
+    unmount();
+    expect(document.documentElement.style.getPropertyValue("--mobile-action-bar-height")).toBe("");
   });
 });
 

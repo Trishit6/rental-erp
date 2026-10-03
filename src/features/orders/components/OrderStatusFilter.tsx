@@ -48,7 +48,11 @@ export function OrderStatusFilter({
           <Chip
             key={option.value}
             selected={value === option.value}
-            onClick={() => onChange(value === option.value ? undefined : (option.value as OrdersSearch["status"]))}
+            onClick={() =>
+              onChange(
+                value === option.value ? undefined : (option.value as OrdersSearch["status"]),
+              )
+            }
           >
             {option.label ?? statusLabel(option.value)}
           </Chip>

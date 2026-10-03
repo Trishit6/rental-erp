@@ -34,10 +34,7 @@ export function imageUrlError(url: string, allowedHosts: readonly string[]): str
 }
 
 /** Every problem with a set of image URLs, in submission order. */
-export function imageUrlErrors(
-  urls: readonly string[],
-  allowedHosts: readonly string[],
-): string[] {
+export function imageUrlErrors(urls: readonly string[], allowedHosts: readonly string[]): string[] {
   return urls
     .map((url) => imageUrlError(url, allowedHosts))
     .filter((problem): problem is string => problem !== null);

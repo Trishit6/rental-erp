@@ -78,7 +78,9 @@ describe("writing the cart", () => {
   /* The client never proposes a price. If it did, the server would ignore it —
      and a future implementation might not, so the field must never be sent. */
   it("never sends a price, total or deposit", async () => {
-    vi.mocked(api.post).mockResolvedValue({ data: { itemId: 1, quantity: 1, merged: false } } as never);
+    vi.mocked(api.post).mockResolvedValue({
+      data: { itemId: 1, quantity: 1, merged: false },
+    } as never);
 
     await addToCart({ productId: 7, mode: "BUY", quantity: 1 });
 
@@ -119,9 +121,13 @@ describe("writing the cart", () => {
 
 describe("ownership", () => {
   it("never sends a user id — the server reads it from the session", async () => {
-    vi.mocked(api.post).mockResolvedValue({ data: { itemId: 1, quantity: 1, merged: false } } as never);
+    vi.mocked(api.post).mockResolvedValue({
+      data: { itemId: 1, quantity: 1, merged: false },
+    } as never);
     vi.mocked(api.delete).mockResolvedValue({ data: { removed: true } } as never);
-    vi.mocked(api.patch).mockResolvedValue({ data: { itemId: 1, quantity: 1, merged: false } } as never);
+    vi.mocked(api.patch).mockResolvedValue({
+      data: { itemId: 1, quantity: 1, merged: false },
+    } as never);
 
     await addToCart({ productId: 1, mode: "BUY", quantity: 1 });
     await updateCartItem(1, { quantity: 2 });

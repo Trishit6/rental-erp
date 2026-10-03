@@ -58,9 +58,7 @@ export function makeRentalLine(
   });
 }
 
-export function makePaymentSummary(
-  overrides: Partial<PaymentSummary> = {},
-): PaymentSummary {
+export function makePaymentSummary(overrides: Partial<PaymentSummary> = {}): PaymentSummary {
   const lines = overrides.lines ?? [makePaymentLine()];
   const subtotal = lines.reduce((sum, l) => sum + l.pricing.lineTotal - l.pricing.depositTotal, 0);
   const rentalAmount = lines.reduce((sum, l) => sum + l.pricing.rentalCharge, 0);
@@ -117,9 +115,7 @@ export function makePaymentProviderInfo(
   };
 }
 
-export function makePaymentIntent(
-  overrides: Partial<PaymentIntent> = {},
-): PaymentIntent {
+export function makePaymentIntent(overrides: Partial<PaymentIntent> = {}): PaymentIntent {
   return {
     transactionId: 7,
     provider: "dev_mock",

@@ -14,7 +14,8 @@ const buttonVariants = cva(
         inset: "inset-surface text-foreground",
         // Destructive actions (cancelling an order) keep the warm Revaro
         // surfaces and signal through the palette's own red, not a foreign hue.
-        destructive: "border border-destructive/40 bg-destructive/12 text-destructive hover:bg-destructive/18",
+        destructive:
+          "border border-destructive/40 bg-destructive/12 text-destructive hover:bg-destructive/18",
       },
       size: {
         default: "h-11 px-5 text-sm",
