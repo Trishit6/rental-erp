@@ -1,0 +1,25 @@
+name: Rental_erp ci cd
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  Rental-erp-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+
+      - name: install node_modules
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: install npm dependencies
+        run: npm ci
+
+      - name: build project
+        run: npm run build
