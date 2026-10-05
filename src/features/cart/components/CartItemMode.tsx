@@ -86,7 +86,7 @@ export function CartItemMode({
       )}
     >
       {pending ? (
-        <RefreshCw size={11} aria-hidden className="animate-spin" />
+        <RefreshCw size={12} aria-hidden className="animate-spin" />
       ) : (
         <span>Switch to {alternative === "RENT" ? "rent" : "buy"}</span>
       )}

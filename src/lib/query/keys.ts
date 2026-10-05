@@ -79,11 +79,66 @@ export const queryKeys = {
    */
   rentalsList: (filters: Record<string, unknown> = {}) => ["rentals", "list", filters] as const,
   rental: (id: string | number) => ["rental", String(id)] as const,
+  /**
+   * Notifications — the bell, the feed page and the preferences form.
+   *
+   * `["notifications"]` is the prefix everything hangs off, so one `invalidateQueries`
+   * after any notification write reconciles the badge, the dropdown and the page at
+   * once (and logout eviction clears all three, which is why it is a prefix rather
+   * than three unrelated keys).
+   *
+   * `notificationsRoot` is spelled out separately from the function below for the
+   * same reason as `myReviewsRoot`: the *shape* of a list key includes the filters,
+   * and eviction needs a fixed prefix to match against.
+   */
   notifications: ["notifications"] as const,
+  /**
+   * Prefix every page of the feed hangs off, filters and page included.
+   *
+   * Separate from `notifications` so an optimistic write can patch *every cached page*
+   * at once (`setQueriesData`) — a user who marks one read while filtered to "Orders"
+   * and then clears the filter must not find it unread again.
+   */
+  notificationsListRoot: ["notifications", "list"] as const,
+  /** The unread badge's own number — never derived from a page of the feed. */
+  notificationUnreadCount: ["notifications", "unread-count"] as const,
+  /** One page of the feed. Filters are part of the key so pages never collide. */
+  notificationsList: (filters: Record<string, unknown> = {}) =>
+    ["notifications", "list", filters] as const,
+  /** The signed-in user's channel settings. */
+  notificationPreferences: ["notifications", "preferences"] as const,
   conversations: ["conversations"] as const,
+  /**
+   * The orders and rentals a conversation may be attached to.
+   *
+   * Under `["conversations"]` rather than under `orders`/`rentals` deliberately: this
+   * is not an order or rental, it is a picker of ids the messaging write path has
+   * approved. Evicting the whole orders family to clear it would be wrong.
+   */
+  conversationContext: ["conversations", "context"] as const,
   /** Prefix for every conversation-detail entry. See the `orderAll` note above. */
   conversationAll: ["conversation"] as const,
   conversation: (id: number | string) => ["conversation", id] as const,
+  /**
+   * One conversation's transcript, at `/messages`.
+   *
+   * A separate root from `conversations` because the two pages disagree about what a
+   * key means: the list is "every thread the session user is in" (one entry, refetched
+   * on a poll) while a transcript is a paged read of one thread. Collapsing them would
+   * let the list's invalidation blank a transcript and vice versa.
+   */
+  messages: ["messages"] as const,
+  messageList: (conversationId: number, page: number) =>
+    ["messages", String(conversationId), page] as const,
+  /**
+   * The signed-in user's own history as a timeline.
+   *
+   * Private like everything else here: it is assembled from the user's orders, rentals,
+   * reviews and listings, which is purchase history. It is not an administrative log
+   * and holds no other person's activity.
+   */
+  activity: ["activity"] as const,
+  activityList: (params: Record<string, unknown> = {}) => ["activity", "list", params] as const,
   /**
    * Reviews.
    *
@@ -225,6 +280,22 @@ export const queryKeys = {
   adminProducts: ["admin-products"] as const,
   adminReports: ["admin-reports"] as const,
   adminProductFacets: ["admin-products", "facets"] as const,
+  /**
+   * The rest of the admin workspace: one root per section, each a real prefix so
+   * a write in one section invalidates its own lists and nothing else. All of
+   * them are private (see `privateQueryKeys` below) — an admin table shows other
+   * people's data, and the next person to open the workspace on a shared machine
+   * must not inherit the previous admin's rows.
+   */
+  adminOrders: ["admin-orders"] as const,
+  adminRentals: ["admin-rentals"] as const,
+  adminSellers: ["admin-sellers"] as const,
+  adminFinance: ["admin-finance"] as const,
+  adminTransactions: ["admin-transactions"] as const,
+  adminReviews: ["admin-reviews"] as const,
+  adminCategories: ["admin-categories"] as const,
+  adminProductImages: ["admin-product-images"] as const,
+  adminAuditLog: ["admin-audit-log"] as const,
   profile: ["profile"] as const,
 };
 
@@ -241,9 +312,15 @@ export const privateQueryKeys = [
   queryKeys.orderAll,
   queryKeys.payment,
   queryKeys.rentals,
+  // The bell's badge, the feed page, the preferences form and every conversation
+  // transcript are one person's private correspondence and history. All of them hang
+  // off prefixes here so logout clears them together — a shared machine is the normal
+  // case for a marketplace demo, not the exception.
   queryKeys.notifications,
   queryKeys.conversations,
   queryKeys.conversationAll,
+  queryKeys.messages,
+  queryKeys.activity,
   queryKeys.sellerMe,
   // `sellerMe` already covers every wallet key, so this is belt-and-braces rather
   // than load-bearing. It is listed explicitly because the wallet is the surface
@@ -263,4 +340,13 @@ export const privateQueryKeys = [
   ["admin-users"],
   ["admin-products"],
   ["admin-reports"],
+  ["admin-orders"],
+  ["admin-rentals"],
+  ["admin-sellers"],
+  ["admin-finance"],
+  ["admin-transactions"],
+  ["admin-reviews"],
+  ["admin-categories"],
+  ["admin-product-images"],
+  ["admin-audit-log"],
 ] as const;

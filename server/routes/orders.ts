@@ -3,7 +3,6 @@ import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db";
 import {
-  notifications,
   orderItems,
   orders,
   products,
@@ -48,6 +47,8 @@ import { getOrCreateCart, mergeCartItem } from "../lib/cart";
 import { adjustProductInventory, restoreCancelledOrderStock } from "../lib/product-inventory";
 import { isPurchasable } from "../lib/product-status";
 import { recordEarningReversal, recordRentalEarning } from "../lib/wallet";
+import { notificationEventKey } from "../lib/notification-events";
+import { notify, notifyAdmins, notifyMany } from "../lib/notifications";
 
 /** The input shape `mergeCartItem` accepts for one repeated line. */
 type RepeatCartInput = {
@@ -483,20 +484,62 @@ ordersRoute.post("/:id/cancel", async (c) => {
       await recordEarningReversal(tx, { rentalId: rental.id }, "Order cancelled by the customer");
     }
 
-    const sellerIds = await tx
+    const sellerRows = await tx
       .selectDistinct({ sellerId: orderItems.sellerId })
       .from(orderItems)
       .where(eq(orderItems.orderId, order.id));
-    if (sellerIds.length > 0) {
-      await tx.insert(notifications).values(
-        sellerIds.map((row) => ({
-          userId: row.sellerId,
-          type: "ORDER_CANCELLED",
-          title: "Order cancelled",
-          body: `Order ${order.orderNumber ?? `#${order.id}`} was cancelled by the customer.`,
-          link: "/dashboard/orders",
-        })),
-      );
+    const sellerIds = sellerRows.map((row) => row.sellerId).filter((id) => id !== order.userId);
+
+    // Everyone the cancellation touches hears about it, each with their own copy of the
+    // facts: the customer wants confirmation (and, if they paid, the refund's status),
+    // and each seller needs to know stock and earnings were walked back. One
+    // `notifyMany` so the recipients' preferences are resolved once for the batch.
+    const context = { orderId: order.id, orderNumber: order.orderNumber ?? null };
+    const orderLabel = order.orderNumber ?? `#${order.id}`;
+    await notifyMany(tx, [
+      {
+        userId: order.userId,
+        type: "ORDER_CANCELLED",
+        title: "Order cancelled",
+        body: `Order ${orderLabel} was cancelled.`,
+        context,
+        eventKey: notificationEventKey("ORDER_CANCELLED", order.id, order.userId),
+      },
+      ...sellerIds.map((sellerId) => ({
+        userId: sellerId,
+        type: "ORDER_CANCELLED" as const,
+        title: "Order cancelled",
+        body: `Order ${orderLabel} was cancelled by the customer.`,
+        context,
+        eventKey: notificationEventKey("ORDER_CANCELLED", order.id, sellerId),
+        link: "/dashboard/orders",
+      })),
+    ]);
+
+    // A paid order that is cancelled leaves money in flight. The refund row was just
+    // written as PENDING (or the customer is told to expect one), so the customer is
+    // told what happens next and an administrator owns the follow-up. Keyed on the
+    // cancellation, not on the order, so a second cancellation attempt cannot produce
+    // a second refund request — though the status guard above means it should not
+    // reach here at all.
+    if (order.paymentStatus === "PAID") {
+      await notify(tx, {
+        userId: order.userId,
+        type: "REFUND_REQUESTED",
+        title: "Refund started",
+        body: `A refund for order ${orderLabel} has been started and will return to your original payment method.`,
+        context,
+        eventKey: notificationEventKey("REFUND_REQUESTED", order.id, order.userId),
+      });
+      await notifyAdmins(tx, {
+        type: "ADMIN_REFUND_REQUEST",
+        title: "Refund needs review",
+        body: `Order ${orderLabel} was cancelled after payment and needs a refund review.`,
+        context,
+        relatedEntityType: "ORDER",
+        relatedEntityId: order.id,
+        eventKey: notificationEventKey("ADMIN_REFUND_REQUEST", order.id),
+      });
     }
   });
 
@@ -1103,6 +1146,21 @@ rentalsRoute.post("/:id/return-request", async (c) => {
     // history can never claim a return was requested when the status says
     // otherwise.
     await recordRentalEvent(tx, id, "RETURN_REQUESTED", { requestedAt: now.toISOString() });
+
+    // The owner is the one who has to act on this — they confirm the return via
+    // `POST /rentals/:id/return`, and the deposit release depends on them doing it.
+    // The renter already knows they asked (they just did), so they are not told.
+    if (rental.ownerId !== rental.renterId) {
+      await notify(tx, {
+        userId: rental.ownerId,
+        type: "RENTAL_RETURN_REQUESTED",
+        title: "Return requested",
+        body: "The renter has asked to return an item. Confirm the return to release their deposit.",
+        context: { rentalId: id, orderId: rental.orderId, orderNumber: null },
+        eventKey: notificationEventKey("RENTAL_RETURN_REQUESTED", id, rental.ownerId),
+        link: "/dashboard/rentals",
+      });
+    }
   });
 
   return c.json(ok({ status: "RETURN_PENDING" as const, requestedAt: now }));
@@ -1262,6 +1320,31 @@ rentalsRoute.post("/:id/return", async (c) => {
     // shelf. Recorded `PENDING`: the deposit release and the settlement delay both
     // stand between this and the money being withdrawable.
     await recordRentalEarning(tx, id);
+
+    // Both parties, because both have a reason to want to know: the renter is owed a
+    // deposit release and the owner has their item back. Keyed on the rental, so a
+    // double-submitted return confirms once.
+    const context = { rentalId: id };
+    await notify(tx, {
+      userId: rental.renterId,
+      type: "RENTAL_RETURNED",
+      title: "Return confirmed",
+      body: "Your rental has been returned. Your deposit release follows shortly.",
+      context,
+      eventKey: notificationEventKey("RENTAL_RETURNED", id, rental.renterId),
+    });
+    if (rental.ownerId !== rental.renterId) {
+      await notify(tx, {
+        userId: rental.ownerId,
+        type: "RENTAL_RETURNED",
+        title: "Your item has been returned",
+        body: "A rental of your item has been returned.",
+        context,
+        eventKey: notificationEventKey("RENTAL_RETURNED", id, rental.ownerId),
+        // Owner-side, so it opens the seller's rentals workspace.
+        link: "/dashboard/rentals",
+      });
+    }
   });
   return c.json(ok({ returned: true }));
 });
@@ -1301,13 +1384,39 @@ rentalsRoute.post("/:id/cancel", async (c) => {
       provider: "mock",
       providerTransactionId: `refund_${Date.now()}`,
     });
-    await tx.insert(notifications).values({
-      userId: rental.ownerId,
+    // Both parties: the renter paid and needs the refund confirmed, the owner needs to
+    // know the booking is gone and the item is free again. Keyed on the rental so a
+    // double-submitted cancellation speaks once.
+    const context = { rentalId: id, orderId: rental.orderId, orderNumber: null };
+    await notify(tx, {
+      userId: rental.renterId,
       type: "RENTAL_CANCELLED",
       title: "Rental cancelled",
-      body: `A rental of your item was cancelled.`,
-      link: "/dashboard/rentals",
+      body: "Your rental was cancelled and your refund has been issued.",
+      context,
+      eventKey: notificationEventKey("RENTAL_CANCELLED", id, rental.renterId),
     });
+    await notify(tx, {
+      userId: rental.renterId,
+      type: "REFUND_PROCESSED",
+      title: "Refund processed",
+      body: "The refund for your cancelled rental is on its way to your original payment method.",
+      context,
+      // The refund transaction is written unconditionally above, so this must not
+      // collapse into the RENTAL_CANCELLED key — the discriminator keeps them distinct.
+      eventKey: notificationEventKey("RENTAL_CANCELLED", id, `refund:${rental.renterId}`),
+    });
+    if (rental.ownerId !== rental.renterId) {
+      await notify(tx, {
+        userId: rental.ownerId,
+        type: "RENTAL_CANCELLED",
+        title: "Rental cancelled",
+        body: "A rental of your item was cancelled.",
+        context,
+        eventKey: notificationEventKey("RENTAL_CANCELLED", id, rental.ownerId),
+        link: "/dashboard/rentals",
+      });
+    }
   });
   return c.json(ok({ cancelled: true }));
 });

@@ -44,7 +44,7 @@ export function CartValidationMessage({
               {issue.code === "PRICE_CHANGED" && issue.previousValue && issue.currentValue && (
                 <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
                   <span>Was {issue.previousValue}</span>
-                  <ArrowRight size={11} aria-hidden />
+                  <ArrowRight size={12} aria-hidden />
                   <span className="font-bold text-foreground">Now {issue.currentValue}</span>
                 </span>
               )}

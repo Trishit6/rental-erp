@@ -7,6 +7,9 @@ import {
   rentalCollectionSchema,
   reviewCollectionSchema,
   sellerProductCollectionSchema,
+  conversationCollectionSchema,
+  messageCollectionSchema,
+  notificationCollectionSchema,
   walletPayoutCollectionSchema,
   walletTransactionCollectionSchema,
 } from "./schemas";
@@ -34,6 +37,9 @@ export type ProductCollection = ReturnType<typeof createProductsCollection>;
 export type CategoryCollection = ReturnType<typeof createCategoriesCollection>;
 export type ReviewCollection = ReturnType<typeof createReviewsCollection>;
 export type SellerProductCollection = ReturnType<typeof createSellerProductsCollection>;
+export type NotificationCollection = ReturnType<typeof createNotificationsCollection>;
+export type ConversationCollection = ReturnType<typeof createConversationsCollection>;
+export type MessageCollection = ReturnType<typeof createMessagesCollection>;
 export type WalletTransactionCollection = ReturnType<typeof createWalletTransactionsCollection>;
 export type WalletPayoutCollection = ReturnType<typeof createWalletPayoutsCollection>;
 
@@ -164,6 +170,58 @@ export function createWalletPayoutsCollection() {
   );
 }
 
+/**
+ * The signed-in user's notifications.
+ *
+ * **Private.** A notification feed is a record of what this person bought, booked and
+ * was paid, so it is wiped by `clearPrivateCollections` rather than surviving like the
+ * public catalogue. It exists so the header bell, its dropdown and the full feed page
+ * read one reactive store instead of three independent fetches that could disagree
+ * about the unread count.
+ */
+export function createNotificationsCollection() {
+  return createCollection(
+    localOnlyCollectionOptions({
+      id: "notifications",
+      getKey: (row) => row.id,
+      schema: notificationCollectionSchema,
+    }),
+  );
+}
+
+/**
+ * The signed-in user's conversations.
+ *
+ * **Private** — and the only collection holding another person's name and avatar,
+ * which is exactly why it is wiped on logout.
+ */
+export function createConversationsCollection() {
+  return createCollection(
+    localOnlyCollectionOptions({
+      id: "conversations",
+      getKey: (row) => row.conversationId,
+      schema: conversationCollectionSchema,
+    }),
+  );
+}
+
+/**
+ * Message bodies for the open conversation.
+ *
+ * **Private**, and the most sensitive collection in the app. It is keyed by message id
+ * and replaced rather than merged (see `syncMessages`), so a thread the user navigated
+ * *away* from cannot leave its words readable in the store.
+ */
+export function createMessagesCollection() {
+  return createCollection(
+    localOnlyCollectionOptions({
+      id: "messages",
+      getKey: (row) => row.id,
+      schema: messageCollectionSchema,
+    }),
+  );
+}
+
 export type RevaroCollections = {
   orders: OrderCollection;
   orderItems: OrderItemCollection;
@@ -174,6 +232,9 @@ export type RevaroCollections = {
   sellerProducts: SellerProductCollection;
   walletTransactions: WalletTransactionCollection;
   walletPayouts: WalletPayoutCollection;
+  notifications: NotificationCollection;
+  conversations: ConversationCollection;
+  messages: MessageCollection;
 };
 
 /**
@@ -197,6 +258,9 @@ export function getCollections(): RevaroCollections {
       sellerProducts: createSellerProductsCollection(),
       walletTransactions: createWalletTransactionsCollection(),
       walletPayouts: createWalletPayoutsCollection(),
+      notifications: createNotificationsCollection(),
+      conversations: createConversationsCollection(),
+      messages: createMessagesCollection(),
     };
   }
   return collections;

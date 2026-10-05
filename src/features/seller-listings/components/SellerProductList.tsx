@@ -233,7 +233,7 @@ function ProductCard({
         <p className="flex items-center gap-1 text-xs text-muted-foreground">
           {product.ratingCount > 0 ? (
             <>
-              <Star size={12} aria-hidden className="fill-current text-amber-500" />
+              <Star size={14} aria-hidden className="fill-current text-primary" />
               {product.ratingAverage.toFixed(1)} ({product.ratingCount})
             </>
           ) : (

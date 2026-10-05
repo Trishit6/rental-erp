@@ -58,7 +58,7 @@ export function RentalSecurityDeposit({
             TONE[key] ?? TONE.HELD,
           )}
         >
-          <Icon size={11} aria-hidden="true" />
+          <Icon size={12} aria-hidden="true" />
           {depositStatusLabel(status)}
         </span>
       </div>

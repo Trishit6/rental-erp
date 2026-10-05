@@ -61,7 +61,7 @@ export function RentalCard({ rental }: { rental: Rental }) {
 
         {rental.ownerName && (
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Store size={11} aria-hidden="true" />
+            <Store size={12} aria-hidden="true" />
             Rented from {rental.ownerName}
           </p>
         )}

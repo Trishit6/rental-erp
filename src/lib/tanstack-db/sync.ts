@@ -2,6 +2,9 @@ import type { ChangeMessage } from "@tanstack/db";
 import { getCollections } from "./collections";
 import type {
   CategoryRow,
+  ConversationRow,
+  MessageRow,
+  NotificationRow,
   OrderItemRow,
   OrderRow,
   ProductRow,
@@ -251,6 +254,96 @@ export function syncSellerProducts(rows: SellerProductRow[]): void {
 }
 
 /**
+ * Mirror one page of the signed-in user's notifications.
+ *
+ * **Replace**, like the wallet ledger, and for the same reason: the feed page filters
+ * and pages in SQL, and *the filter is the truth for the screen*. Merging would leave
+ * a notification readable in the store after the user filtered to "Orders only" and it
+ * was not — which would let the bell report a message the page insists is not there.
+ *
+ * It is worth being precise about what this does *not* do: it does not own the unread
+ * count. The badge's number is a `COUNT(*)` over the user's whole table
+ * (`countUnread`), not a sum of the rows in the store, precisely so that it cannot go
+ * stale by being derived from a page. The store mirrors the feed; the server owns the
+ * badge.
+ */
+export function syncNotifications(rows: NotificationRow[]): void {
+  replaceAll(
+    getCollections().notifications as never,
+    (row) => row.id as number,
+    rows as unknown as Record<string, unknown>[],
+  );
+}
+
+/**
+ * Drop one notification from the store immediately, before the refetch.
+ *
+ * For the dismiss control. The delete mutation invalidates the list anyway, but an
+ * invalidation refetches a whole page; removing the row now means a dismissed item
+ * disappears on the click rather than a frame later, and stays gone if the refetch is
+ * slow.
+ */
+export function forgetNotification(id: number): void {
+  getCollections().notifications.delete(id);
+}
+
+/**
+ * Mirror the conversation list.
+ *
+ * **Replace.** This is the whole truth for the messages page and nothing else writes
+ * to this collection, so a thread that dropped out of the response should not survive
+ * in the store as if it were still open.
+ */
+export function syncConversations(rows: ConversationRow[]): void {
+  replaceAll(
+    getCollections().conversations as never,
+    (row) => row.conversationId as number,
+    rows as unknown as Record<string, unknown>[],
+  );
+}
+
+/**
+ * Mirror one conversation's transcript.
+ *
+ * **Replace**, and more aggressively than anywhere else in this file: the `messages`
+ * collection is keyed by message id alone, so a *merge* would leave the previous
+ * thread's words in the store when the user opened a different conversation — the
+ * one thing this collection must never do. Replacing drops every message whose id is
+ * not in the new response, which for a transcript read is the whole previous thread.
+ *
+ * Rows are written for one conversation only, and `forgetConversationMessages` clears
+ * them on navigate-away as well, so the store cannot accumulate transcripts the user
+ * has stopped reading.
+ */
+export function syncMessages(rows: MessageRow[]): void {
+  replaceAll(
+    getCollections().messages as never,
+    (row) => row.id as number,
+    rows as unknown as Record<string, unknown>[],
+  );
+}
+
+/**
+ * Append one message without a refetch.
+ *
+ * The send mutation's optimistic write. Guarded on the message id not already being
+ * present rather than blindly inserting, because TanStack DB throws on an insert of an
+ * existing key and a refetch landing mid-send would otherwise turn a successful send
+ * into a thrown error in the composer.
+ */
+export function pushMessage(row: MessageRow): void {
+  const collection = getCollections().messages as never as SyncTarget;
+  if (collection.has(row.id)) return;
+  collection.insert(row);
+}
+
+/** Drop every cached message body — used when the messages page unmounts. */
+export function forgetConversationMessages(): void {
+  const collection = getCollections().messages as never as SyncTarget;
+  for (const key of [...collection.keys()]) collection.delete(key);
+}
+
+/**
  * Drop a listing from the store after it is deleted outright.
  *
  * Archive leaves the row in place deliberately: the listing still exists, it has
@@ -278,8 +371,17 @@ export function patchOrderStatus(orderId: number, status: string): void {
  * matching how `privateQueryKeys` eviction treats the query cache.
  */
 export function clearPrivateCollections(): void {
-  const { orders, orderItems, rentals, sellerProducts, walletTransactions, walletPayouts } =
-    getCollections();
+  const {
+    orders,
+    orderItems,
+    rentals,
+    sellerProducts,
+    walletTransactions,
+    walletPayouts,
+    notifications,
+    conversations,
+    messages,
+  } = getCollections();
   const wipe = (collection: {
     keys(): IterableIterator<unknown>;
     delete(key: unknown): unknown;
@@ -297,6 +399,14 @@ export function clearPrivateCollections(): void {
   // outlive the session that fetched it.
   wipe(walletTransactions as never);
   wipe(walletPayouts as never);
+  // Notifications, conversations and message bodies are the private correspondence
+  // surface. They are wiped on the same logout path as the query keys above, because
+  // the cache and the store must never disagree about what belongs to the session
+  // that just ended: leaving the rows here would make a signed-out browser's store
+  // the one place a previous user's activity was still readable.
+  wipe(notifications as never);
+  wipe(conversations as never);
+  wipe(messages as never);
 }
 
 /** Test helper: index a change stream by key, the way consumers read it. */

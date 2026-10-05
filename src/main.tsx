@@ -36,8 +36,12 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
                 background: "var(--color-card)",
                 color: "var(--color-foreground)",
                 border: "1px solid var(--raised-border)",
-                boxShadow:
-                  "9px 9px 24px var(--shadow-color-dark), -9px -9px 24px var(--shadow-color-light)",
+                // `--elev-modal-shadow`, not a hand-written pair. This toast
+                // declared a 9px/24px blur — a bigger spread than any rung in the
+                // elevation ladder (the largest is 4px/16px) — so every transient
+                // notification was the most heavily shadowed object on the screen,
+                // which is exactly the "blooming" the stylesheet warns against.
+                boxShadow: "var(--elev-modal-shadow)",
                 borderRadius: "1rem",
                 fontFamily: '"DM Sans", sans-serif',
               },

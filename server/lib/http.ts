@@ -72,8 +72,8 @@ export type Ctx = {
    * Aborts when the client hangs up.
    *
    * Hono handed every handler a WHATWG `Request`, so `c.req.raw.signal` was free.
-   * Express requests have no equivalent, and the chatbot needs one to stop paying
-   * for a provider call nobody is listening to any more.
+   * Express requests have no equivalent, so one is synthesised per request and
+   * aborted on a premature close.
    */
   signal: AbortSignal;
   /** Sends a JSON body. Returns void so `return c.json(...)` stays idiomatic. */
@@ -187,7 +187,7 @@ async function readStream(req: Request): Promise<Buffer> {
  * `createCtx` runs once per router layer and per handler, so without this a
  * request crossing a mounted sub-router would attach a `close` listener each
  * time and eventually trip Node's max-listeners warning. One controller per
- * request also means the chatbot's provider call and the middleware share a
+ * request also means any long-running handler and the middleware share a
  * single signal, rather than each holding their own.
  */
 function abortSignalOf(req: Request, res: Response): AbortSignal {

@@ -1,61 +1,44 @@
-import { useState } from "react";
-import { User } from "lucide-react";
-import { toast } from "sonner";
-import { api } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/auth-context";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { MyReviewsSection } from "@/features/reviews";
+import { AccountCard } from "./components/AccountCard";
 import { AddressSection } from "./components/AddressSection";
+import { AvatarCard } from "./components/AvatarCard";
+import { ProfileDetailsCard } from "./components/ProfileDetailsCard";
+import { SecurityCard } from "./components/SecurityCard";
 
+/**
+ * `/profile` — the signed-in user's own account.
+ *
+ * Guarded by `requireAuth` at the route, so reaching this component at all means the server
+ * resolved a session. `useAuth().user` is therefore non-null, and it is the *same* user the
+ * header is rendering: one query, one cache entry. Two components fetching `/auth/me`
+ * separately would be two chances for the name beside the avatar to disagree with the name
+ * in the navbar.
+ *
+ * ## Why the security card is on the profile page
+ *
+ * A password change has to live behind the session, and `/profile` is the one page every
+ * signed-in role already has. Putting it here means no role can reach it and no role is
+ * excluded from it, which is the correct shape for an account-level action.
+ */
 export function ProfilePage() {
-  const { user, refresh } = useAuth();
-  const [name, setName] = useState(user?.name ?? "");
-  const [phone, setPhone] = useState(user?.phone ?? "");
+  const { user } = useAuth();
 
-  async function saveProfile() {
-    try {
-      await api.patch("/users/me", { name, phone });
-      await refresh();
-      toast("Profile updated");
-    } catch (error) {
-      toast(error instanceof Error ? error.message : "Couldn't update profile.");
-    }
-  }
+  // The route guard has already run; this is the belt-and-braces that keeps the page honest
+  // if it is ever rendered outside the router (a story, a test) with no session at all.
+  if (!user) return null;
 
   return (
     <div className="page-wrap max-w-3xl space-y-6 pb-10 pt-8">
-      <h1 className="section-title text-3xl">Profile</h1>
+      <div>
+        <p className="eyebrow">Your account</p>
+        <h1 className="section-title mt-1 text-3xl">Profile</h1>
+      </div>
 
-      <Card className="space-y-4 p-6">
-        <div className="flex items-center gap-4">
-          <span className="inset-surface flex size-16 items-center justify-center rounded-full font-heading text-xl font-black text-primary">
-            {user?.name.charAt(0) ?? <User size={24} />}
-          </span>
-          <div>
-            <p className="font-heading text-lg font-extrabold">{user?.name}</p>
-            <p className="text-sm text-muted-foreground">{user?.email}</p>
-            <p className="text-xs font-semibold text-accent">{user?.role}</p>
-          </div>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="space-y-2">
-            <span className="text-sm font-bold">Name</span>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
-          </label>
-          <label className="space-y-2">
-            <span className="text-sm font-bold">Phone</span>
-            <Input
-              value={phone ?? ""}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="Optional"
-            />
-          </label>
-        </div>
-        <Button onClick={saveProfile}>Save changes</Button>
-      </Card>
-
+      <AccountCard user={user} />
+      <ProfileDetailsCard user={user} />
+      <AvatarCard user={user} />
+      <SecurityCard />
       <AddressSection />
 
       {/* Reviews live here rather than on their own route because a customer's

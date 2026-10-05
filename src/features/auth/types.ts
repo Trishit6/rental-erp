@@ -23,7 +23,20 @@ export type User = {
   email: string;
   role: AuthRole;
   verified: boolean;
-  avatar: string | null;
+  /**
+   * The profile picture, or `null` for "none — draw the initial".
+   *
+   * ## Why this is `avatarUrl` and not `avatar`
+   *
+   * It was typed `avatar`, which does not exist on the wire. Every other feature in the
+   * app (`lib/types.ts`, `orders`, `reviews`, `messages`, `rentals`) types the same field
+   * as `avatarUrl` because that is what `users.avatar_url` serialises to, so this one type
+   * was the odd spelling out — and because TypeScript believed it, `site-header.tsx` read
+   * `user.avatar` and always got `undefined`. The header therefore showed a fallback
+   * initial for *every* user, including those with a real photo, and nothing failed
+   * visibly: a `string | null` field that is simply always null.
+   */
+  avatarUrl: string | null;
   phone?: string | null;
   createdAt?: string;
 };
@@ -53,4 +66,31 @@ export type AuthResponse = {
 
 export type LogoutResponse = {
   loggedOut: boolean;
+};
+
+/**
+ * The change-password request body.
+ *
+ * `newPassword` only — `confirmNewPassword` is deliberately absent. The confirmation is
+ * checked in the form against what the user typed, and sending it would only give the
+ * illusion of a server-side check that does not exist; `POST /auth/change-password`
+ * rejects unknown keys outright.
+ */
+export type ChangePasswordPayload = {
+  currentPassword: string;
+  newPassword: string;
+};
+
+export type ChangePasswordResponse = {
+  changed: boolean;
+  /** How many *other* sessions the change signed out. */
+  revokedSessions: number;
+};
+
+/** The self-service profile fields, mirroring `selfEditableProfileFields` on the server. */
+export type ProfileUpdatePayload = {
+  name?: string;
+  phone?: string;
+  /** `null` clears the picture — the server's schema allows it, the old one did not. */
+  avatarUrl?: string | null;
 };

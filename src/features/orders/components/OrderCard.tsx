@@ -48,7 +48,7 @@ export function OrderCard({ order }: { order: OrderSummaryType }) {
             {order.orderNumber ? `Order #${order.orderNumber}` : `Order #${order.id}`}
           </h3>
           <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-            <CalendarDays size={11} aria-hidden="true" />
+            <CalendarDays size={12} aria-hidden="true" />
             Placed on {format(new Date(order.createdAt), "d MMM yyyy")}
           </span>
         </div>
@@ -73,7 +73,7 @@ export function OrderCard({ order }: { order: OrderSummaryType }) {
             </p>
             {primarySeller && (
               <p className="flex items-center gap-1.5">
-                <Store size={11} aria-hidden="true" />
+                <Store size={12} aria-hidden="true" />
                 {primarySeller.name}
                 {order.sellers.length > 1 ? ` +${order.sellers.length - 1} more` : ""}
               </p>

@@ -3,7 +3,6 @@ import { db } from "../db";
 import {
   cartItems,
   carts,
-  notifications,
   orderItems,
   orders,
   products,
@@ -16,6 +15,8 @@ import { createOrderNumber } from "./payments/order-number";
 import { readCheckoutContext } from "./payments/checkout-context";
 import { recordRentalEvent } from "./rental-lifecycle";
 import { adjustProductInventory } from "./product-inventory";
+import { notificationEventKey, truncateTitle } from "./notification-events";
+import { notify, notifyAdmins, notifyMany } from "./notifications";
 import type { PaymentMethod, PaymentStatus } from "./payments/types";
 
 /**
@@ -331,19 +332,118 @@ export async function createOrderFromPayment(input: CreateOrderInput): Promise<O
       ),
     );
 
-    /* --- 10. Seller notifications ------------------------------------------ */
+    /* --- 10. Notifications ------------------------------------------------ */
+    // Written *inside* the transaction, so a notification about an order can never
+    // outlive a rollback. `notify()` swallows its own failures — a quiet bell is a
+    // cosmetic loss, a failed order is not — and swallowing them here leaves the
+    // insert uncommitted rather than poisoning the transaction: MariaDB does not
+    // abort a transaction on a duplicate-key error, which is what makes the
+    // `event_key` dedupe safe to use in-transaction at all.
+    const [placedOrder] = await tx
+      .select({ id: orders.id, orderNumber: orders.orderNumber })
+      .from(orders)
+      .where(eq(orders.id, orderId))
+      .limit(1);
+    const orderReference = placedOrder?.orderNumber ?? `#${orderId}`;
+    const orderContext = { orderId, orderNumber: placedOrder?.orderNumber ?? null };
+    // One key per (event, order). Two calls into this function for the same order — a
+    // double-clicked Pay button and the webhook arriving afterwards — resolve to the
+    // same key, so the customer is told once and the second insert is a no-op.
+    const orderKey = (event: string) => notificationEventKey(event, orderId);
+
+    await notify(tx, {
+      userId: input.userId,
+      type: "ORDER_PLACED",
+      title: "Order placed",
+      body: `Thanks for your order ${orderReference}. We'll keep you posted as it moves.`,
+      context: orderContext,
+      eventKey: orderKey("ORDER_PLACED"),
+    });
+
+    await notify(tx, {
+      userId: input.userId,
+      type: "PAYMENT_SUCCESSFUL",
+      title: "Payment received",
+      body: `We received your payment for order ${orderReference}.`,
+      context: orderContext,
+      eventKey: orderKey("PAYMENT_SUCCESSFUL"),
+    });
+
     const sellerIds = [...new Set(lines.map((l) => l.sellerId))];
     if (sellerIds.length > 0) {
-      await tx.insert(notifications).values(
+      await notifyMany(
+        tx,
         sellerIds.map((sellerId) => ({
           userId: sellerId,
           type: "ORDER_NEW",
           title: "New order received",
-          body: `A customer just bought from your listings on Revaro.`,
+          body: "A customer just bought from your listings on Revaro.",
+          context: orderContext,
+          // The seller id is the discriminator, not part of the type: `event_key` is
+          // globally unique, so a key shared across sellers would notify the first
+          // seller and silently suppress the rest.
+          eventKey: notificationEventKey("ORDER_NEW", orderId, sellerId),
+          // The seller works from their orders list, the customer from the receipt.
+          // Same entity, different next action — which is the only reason a
+          // destination override exists on this path.
           link: "/dashboard/orders",
         })),
       );
     }
+
+    // One "your listing sold" per *distinct (seller, listing)* pair, not per line and
+    // not per seller.
+    //
+    // `ORDER_NEW` above is per seller and says "something happened"; this is per listing
+    // and names the thing that sold, because a seller with three cameras in one order
+    // wants three notifications they can act on separately — while two of the same
+    // camera still produce one.
+    //
+    // Only purchase lines. A rental line's seller already hears about it as
+    // `RENTAL_BOOKED` in `notifyRentalsForOrder`, and "sold" would be a lie: the item
+    // is coming back on a date.
+    const soldListings = new Map<string, { sellerId: number; productId: number; title: string }>();
+    for (const line of lines) {
+      if (line.mode !== "BUY") continue;
+      // Keyed on the pair because a single seller legitimately has several distinct
+      // listings in one order, and keying on the seller alone would keep only the last.
+      soldListings.set(`${line.sellerId}:${line.productId}`, {
+        sellerId: line.sellerId,
+        productId: line.productId,
+        title: line.title,
+      });
+    }
+    if (soldListings.size > 0) {
+      await notifyMany(
+        tx,
+        [...soldListings.values()].map(({ sellerId, productId, title }) => ({
+          userId: sellerId,
+          type: "PRODUCT_SOLD",
+          title: `“${truncateTitle(title)}” sold`,
+          body: `Order ${orderReference} includes “${truncateTitle(title)}”.`,
+          context: { ...orderContext, productId },
+          // The seller is the discriminator: `event_key` is globally unique, so the
+          // same listing reaching two sellers — or one seller's listing twice — would
+          // otherwise notify the first and silently suppress the rest.
+          eventKey: notificationEventKey("PRODUCT_SOLD", productId, sellerId),
+        })),
+      );
+    }
+
+    await notifyRentalsForOrder(tx, {
+      orderId,
+      orderReference,
+      orderContext,
+      customerId: input.userId,
+    });
+
+    await notifyAdmins(tx, {
+      type: "ADMIN_NEW_ORDER",
+      title: "New order placed",
+      body: `Order ${orderReference} was placed on Revaro.`,
+      context: orderContext,
+      eventKey: orderKey("ADMIN_NEW_ORDER"),
+    });
 
     const [created] = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1);
 
@@ -358,6 +458,67 @@ export async function createOrderFromPayment(input: CreateOrderInput): Promise<O
       created: true,
     };
   });
+}
+
+/**
+ * Announce the rentals created on a freshly-placed order.
+ *
+ * ## Why this is a separate function
+ *
+ * Each rental is a *separate booking with a separate owner*, so it gets its own
+ * confirmation to the customer and its own "you have a booking" to that owner. Two
+ * rentals on one order are two events, not one — which is why they are keyed on
+ * `rental.id` rather than the order, and why this is not a loop inside the
+ * transaction body where it would have had to borrow four locals.
+ *
+ * The owner is skipped when they are also the customer: buying your own listing is
+ * possible (a seller restocking from a colleague), and "your item has been booked"
+ * addressed to the person who booked it is noise, not news.
+ */
+async function notifyRentalsForOrder(
+  tx: Pick<typeof db, "insert" | "select">,
+  params: {
+    orderId: number;
+    orderReference: string;
+    orderContext: { orderId: number; orderNumber: string | null };
+    customerId: number;
+  },
+): Promise<void> {
+  const booked = await tx
+    .select({ id: rentals.id, ownerId: rentals.ownerId, productId: rentals.productId })
+    .from(rentals)
+    .where(eq(rentals.orderId, params.orderId));
+
+  for (const rental of booked) {
+    const context = {
+      ...params.orderContext,
+      rentalId: rental.id,
+      productId: rental.productId,
+    };
+
+    await notify(tx, {
+      userId: params.customerId,
+      type: "RENTAL_CONFIRMED",
+      title: "Rental confirmed",
+      body: `Your rental on order ${params.orderReference} is confirmed.`,
+      context,
+      eventKey: notificationEventKey("RENTAL_CONFIRMED", rental.id),
+    });
+
+    if (rental.ownerId !== params.customerId) {
+      await notify(tx, {
+        userId: rental.ownerId,
+        type: "RENTAL_BOOKED",
+        title: "Your item has been booked",
+        body: "A customer just booked your item on Revaro.",
+        context,
+        eventKey: notificationEventKey("RENTAL_BOOKED", rental.id, rental.ownerId),
+        // Owner-side, so the seller's rentals workspace rather than the buyer's
+        // customer-facing rental page.
+        link: "/dashboard/rentals",
+      });
+    }
+  }
 }
 
 /**

@@ -35,6 +35,7 @@ export const TRUNCATED_TABLES = [
   "wallet_transactions",
   "seller_payout_methods",
   "payouts",
+  "notification_preferences",
   "notifications",
   "messages",
   "conversation_participants",
@@ -58,6 +59,12 @@ export const TRUNCATED_TABLES = [
   "product_images",
   "products",
   "reports",
+  // Before `users`. An audit row is the only record of what an administrator did, so
+  // leaving it behind would point `admin_id` at an id the next run hands to a different
+  // person — a surviving row would then read as *their* action. `admin_id` is
+  // `onDelete: "restrict"` precisely so it cannot be deleted by accident; the wipe has
+  // to name it.
+  "admin_audit_log",
   "seller_profiles",
   "addresses",
   "sessions",

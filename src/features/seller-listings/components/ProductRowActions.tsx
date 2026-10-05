@@ -206,13 +206,16 @@ function MenuItem({
 
 /** The status pill, coloured by what the status means rather than by its name. */
 export function StatusBadge({ status }: { status: string }) {
+  // Semantic scale, so a `PUBLISHED` pill here is the same colour as the one in
+  // the admin catalogue (`AdminProductsTable`) and the wallet ledger — it used to
+  // be raw emerald, which matched nothing else in the app.
   const tone =
     status === "PUBLISHED"
-      ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300"
+      ? "bg-success/15 text-success"
       : status === "OUT_OF_STOCK"
-        ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+        ? "bg-warning/15 text-warning"
         : status === "PAUSED"
-          ? "bg-sky-500/12 text-sky-700 dark:text-sky-300"
+          ? "bg-info/15 text-info"
           : status === "ARCHIVED"
             ? "bg-muted text-muted-foreground"
             : "bg-muted text-muted-foreground";
@@ -271,13 +274,17 @@ export function StockSummary({ product }: { product: SellerProductRow }) {
   );
 }
 
-/** A "1 sold · 2 rented · 4★" line. Empty when there is nothing to report. */
+/** A "1 sold · 2 rented · 4.5 rated (12)" line. Empty when there is nothing to report. */
 export function PerformanceSummary({ product }: { product: SellerProductRow }) {
   const parts: string[] = [];
   if (product.soldUnits > 0) parts.push(`${product.soldUnits} sold`);
   if (product.rentalCount > 0) parts.push(`${product.rentalCount} rented`);
+  // Spelled out rather than "4.5★": U+2605 renders as a coloured emoji star on
+  // several platforms, which is the one place this string was styled differently
+  // from every `<Star>` in the app — and it is announced as "black star" by a
+  // screen reader. The number and the count say the same thing without either.
   if (product.ratingCount > 0)
-    parts.push(`${product.ratingAverage.toFixed(1)}★ (${product.ratingCount})`);
+    parts.push(`${product.ratingAverage.toFixed(1)} rated (${product.ratingCount})`);
   if (parts.length === 0) {
     return <span className="text-xs text-muted-foreground">No sales yet</span>;
   }

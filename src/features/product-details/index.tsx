@@ -212,7 +212,7 @@ export function ProductPage() {
             />
           </div>
 
-          {product.seller && <SellerCard seller={product.seller} />}
+          {product.seller && <SellerCard seller={product.seller} productId={product.id} />}
         </div>
       </div>
 

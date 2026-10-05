@@ -37,10 +37,6 @@ with sessions, transactions and a rental availability engine.
 - **Seller dashboard** — earnings breakdown, product management table (pause/activate/archive/delete),
   transactions.
 - **Admin** — marketplace stats, user suspension, product status, report resolution.
-- **Assistant** — **Loop**, a floating in-app chatbot. Answers questions about renting, deposits,
-  delivery, returns and selling, and surfaces real listings inline (respecting "rent" vs "buy").
-  Powered by any OpenAI-compatible LLM when `CHATBOT_API_KEY` is set (Groq by default) and falls
-  back to a built-in knowledge base with no key — so it always answers.
 - **Design** — original Revaro neumorphic design preserved: warm beige palette, soft raised/inset
   surfaces, DM Sans + Nunito, INR pricing, Framer Motion micro-interactions, skeletons, empty states.
 

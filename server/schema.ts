@@ -655,12 +655,46 @@ export const reviewHelpfulVotes = mysqlTable(
 
 /* --------------------------------- messages -------------------------------- */
 
-export const conversations = mysqlTable("conversations", {
-  id: int("id").autoincrement().primaryKey(),
-  productId: int("product_id").references(() => products.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  lastMessageAt: timestamp("last_message_at").notNull().defaultNow(),
-});
+/**
+ * One business conversation between a customer and a seller.
+ *
+ * ## Why it is anchored to something, not a pair of user ids
+ *
+ * There is no `customer_id`/`seller_id` pair here. Participants live in
+ * `conversation_participants`, so this table can never disagree with itself about
+ * who is in the room, and "who is the other person" is a join rather than a column
+ * that can be half-filled.
+ *
+ * What it *is* anchored to is the business context: a listing, and optionally the
+ * order or rental the exchange is about. That is the whole reason Revaro allows
+ * customer↔seller messaging at all — a conversation is a question about a
+ * specific product, order or rental, never an open line to a stranger. Both links
+ * are nullable with `set null`, because an archived listing or a deleted order
+ * must not delete a transcript that may be the only record of what was agreed.
+ */
+export const conversations = mysqlTable(
+  "conversations",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** The listing this thread is about. The usual anchor. */
+    productId: int("product_id").references(() => products.id, { onDelete: "set null" }),
+    /**
+     * Set when the thread continued past the purchase — "does it fit my model?",
+     * "when will it ship?" — so the conversation pane can show the receipt the
+     * exchange belongs to instead of only the product photo.
+     */
+    orderId: int("order_id").references(() => orders.id, { onDelete: "set null" }),
+    /** The rental equivalent of `orderId`, for a thread about a live rental. */
+    rentalId: int("rental_id").references(() => rentals.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    lastMessageAt: timestamp("last_message_at").notNull().defaultNow(),
+  },
+  (table) => [
+    // "My conversations, most recently active first" — the only read this table
+    // ever serves, and it sorts on this column every time.
+    index("conversations_last_message_at_idx").on(table.lastMessageAt),
+  ],
+);
 
 export const conversationParticipants = mysqlTable(
   "conversation_participants",
@@ -692,11 +726,43 @@ export const messages = mysqlTable(
     body: varchar("body", { length: 2000 }).notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (table) => [index("messages_conversation_id_idx").on(table.conversationId)],
+  (table) => [
+    // The transcript, in order — the one read this table serves.
+    index("messages_conversation_id_idx").on(table.conversationId),
+    // The unread badge's correlated subquery, which filters on the *pair*
+    // (`conversation_id` + `created_at`) rather than the conversation alone. Without
+    // this the badge forces a scan of every message ever sent in the thread just to
+    // discard the ones the reader has already seen.
+    index("messages_conversation_created_idx").on(table.conversationId, table.createdAt),
+  ],
 );
 
 /* ------------------------------ notifications ------------------------------ */
 
+/**
+ * One in-app notification for one user.
+ *
+ * ## The idempotency rule is the load-bearing part
+ *
+ * `eventKey` is a caller-supplied, deterministic key for *the thing that happened*
+ * — `"ORDER_SHIPPED:1048"`, `"RENTAL_RETURN_DUE:207:2026-10-05"`. It carries a
+ * unique index, and that index is what makes a notification fire **once**.
+ *
+ * Without it, every notification site has to defend itself, and none of them
+ * defend themselves completely: an order that moves `PROCESSING → SHIPPED` twice
+ * (a retried seller request, a webhook redelivery, a double-clicked button) tells
+ * the customer it shipped twice; a rental reminder that runs on two overlapping
+ * reads sends two emails. Checking "have I already notified about this?" before
+ * inserting is a race — two concurrent requests both read "no" and both write.
+ * A unique index removes the race entirely: the loser gets a duplicate-key error
+ * and is treated as "already sent", which is what it means.
+ *
+ * Nullable on purpose, and that is safe in MySQL specifically: `NULL` never
+ * collides in a unique index, so genuinely user-authored rows (which have no
+ * originating event) coexist freely while every event-driven row is constrained
+ * to exactly one per key. The same reasoning is documented on
+ * `transactions.idempotencyKey`.
+ */
 export const notifications = mysqlTable(
   "notifications",
   {
@@ -704,15 +770,101 @@ export const notifications = mysqlTable(
     userId: int("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    type: varchar("type", { length: 32 }).notNull(),
+    /**
+     * A token from `NOTIFICATION_TYPES` (`server/lib/notification-events.ts`), which
+     * owns the vocabulary and the category each type belongs to. The column stays a
+     * plain `varchar` rather than a MySQL `ENUM`, because the existing rows carry
+     * types written before that module existed and a migration that rewrites them
+     * would be more dangerous than tolerating them.
+     */
+    type: varchar("type", { length: 40 }).notNull(),
     title: varchar("title", { length: 120 }).notNull(),
     body: varchar("body", { length: 300 }),
+    /**
+     * Where the bell's dropdown navigates to.
+     *
+     * This is a *resolved destination*, not a raw entity id: it is what
+     * `notificationDestination()` produced at write time, so the client can push a
+     * `navigate({ to: link })` without knowing a single route. `relatedEntity*` below
+     * is what that destination was derived from, and is kept alongside it so the
+     * feed can group by kind and render a type-specific icon even if a link is absent.
+     */
     link: varchar("link", { length: 200 }),
+    /**
+     * What the notification is *about*, denormalised rather than a polymorphic FK.
+     *
+     * `ORDER | RENTAL | PRODUCT | LISTING | CONVERSATION | PAYMENT | ACCOUNT`.
+     * There is no foreign key, and deliberately so: one column pair has to span five
+     * different tables, and a "polymorphic reference" enforced by nothing is a lie.
+     * The rows are only ever written by `notify()`, which resolves the id from the
+     * event that produced it — never by the client.
+     */
+    relatedEntityType: varchar("related_entity_type", { length: 16 }),
+    relatedEntityId: int("related_entity_id"),
+    /** Safe extra context as a JSON object. Never addresses, card data or secrets. */
+    metadata: text("metadata"),
+    /** The once-and-only-once key. `null` for rows not produced by an event. */
+    eventKey: varchar("event_key", { length: 190 }),
     readAt: timestamp("read_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (table) => [index("notifications_user_id_idx").on(table.userId)],
+  (table) => [
+    // The feed itself: "this user's notifications, newest first".
+    index("notifications_user_id_idx").on(table.userId),
+    // The bell's badge. Counting *unread* rows is the single most frequent read in
+    // the app (every header render on every page), and without the `read_at` column
+    // in the index it degrades to "every notification this user has ever had".
+    index("notifications_user_read_idx").on(table.userId, table.readAt),
+    // "Mark all as read" and the unread tab filter.
+    index("notifications_user_created_idx").on(table.userId, table.createdAt),
+    // Resolving what a notification pointed at (the activity timeline deep-links, and
+    // support needs to answer "what was this about?").
+    index("notifications_entity_idx").on(table.relatedEntityType, table.relatedEntityId),
+    uniqueIndex("notifications_event_key_unique").on(table.eventKey),
+  ],
 );
+
+/**
+ * Per-user notification preferences.
+ *
+ * One row per user, created on first read or write — so "no preferences" and
+ * "opted out of everything" are different states, and only the second is ever the
+ * result of an explicit choice. The absence of a row therefore means *everything
+ * on*, which is both the useful default and the one that cannot silently silence a
+ * user who never visited the settings page.
+ *
+ * The channel columns are booleans rather than a JSON blob because they are queried,
+ * not iterated: the send path reads exactly two of them (`in_app` for whether to
+ * insert the row, `email` for whether to hand off to the email provider), and a
+ * JSON column would make that a parse on every notification in the app.
+ *
+ * The categories are exactly the ones Revaro can honour. There is deliberately no
+ * `sms` or `push` column: a setting with no implementation behind it is worse than
+ * no setting, because it teaches a user that a toggle works.
+ */
+export const notificationPreferences = mysqlTable("notification_preferences", {
+  userId: int("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  /** Orders and purchases. */
+  ordersInApp: boolean("orders_in_app").notNull().default(true),
+  ordersEmail: boolean("orders_email").notNull().default(true),
+  /** Rentals, reminders and overdue notices. */
+  rentalsInApp: boolean("rentals_in_app").notNull().default(true),
+  rentalsEmail: boolean("rentals_email").notNull().default(true),
+  /** Payments, refunds and failed attempts. */
+  paymentsInApp: boolean("payments_in_app").notNull().default(true),
+  paymentsEmail: boolean("payments_email").notNull().default(true),
+  /** Seller-side events: new orders, listing decisions, customer messages. */
+  sellerInApp: boolean("seller_in_app").notNull().default(true),
+  sellerEmail: boolean("seller_email").notNull().default(false),
+  /** Wishlist price and stock changes. In-app only — no email is generated for these. */
+  wishlistInApp: boolean("wishlist_in_app").notNull().default(true),
+  /** Admin queue events. In-app only, and only admins hold a row that turns this off. */
+  adminInApp: boolean("admin_in_app").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
 
 /* ---------------------------------- reports -------------------------------- */
 
@@ -817,6 +969,59 @@ export const transactions = mysqlTable(
     uniqueIndex("transactions_idempotency_key_unique").on(table.idempotencyKey),
     uniqueIndex("transactions_provider_idempotency_key_unique").on(table.providerIdempotencyKey),
     index("transactions_provider_transaction_id_idx").on(table.providerTransactionId),
+  ],
+);
+
+/* --------------------------------- audit log ------------------------------- */
+
+/**
+ * What an administrator did, and when.
+ *
+ * Admin surfaces change state that customers and sellers depend on: a listing can
+ * vanish from Browse, a user can lose their account, money can be marked as paid
+ * out. When one of those turns out to be wrong, "who did this, and when" must be
+ * answerable from the database rather than from memory — which is what this table is
+ * for (spec §58).
+ *
+ * ## Append-only
+ *
+ * No UI writes anything but an insert, and no admin endpoint can update or delete a
+ * row. An audit trail that participants can edit is a story, not a record. (The
+ * schema itself is the only thing that can remove rows — a migration, deliberately
+ * not part of any feature.)
+ *
+ * ## What is deliberately absent
+ *
+ * Request bodies are never stored wholesale — they can carry passwords, tokens and
+ * provider secrets, and an audit log is exactly the kind of long-lived table people
+ * forget to re-check when a form gains a field. `details` is a short human sentence
+ * written by the caller. No IP addresses either: the rate limiter already keys off
+ * `x-forwarded-for`, which behind a local proxy is a shared bucket, and storing a
+ * value that is wrong most of the time is worse than storing none.
+ */
+export const adminAuditLog = mysqlTable(
+  "admin_audit_log",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** The administrator who performed the action. Never the acted-on user. */
+    adminId: int("admin_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    /** A stable action name, e.g. PRODUCT_STATUS_SET, USER_SUSPENDED, PAYOUT_STATUS_SET. */
+    action: varchar("action", { length: 40 }).notNull(),
+    /** Coarse entity kind: product | user | order | rental | payout | review | report | category | image | setting. */
+    entityType: varchar("entity_type", { length: 20 }).notNull(),
+    /** The row the action was about. Kept even when the entity is later deleted. */
+    entityId: int("entity_id"),
+    /** One short, safe sentence. Never request bodies, credentials or stack traces. */
+    details: varchar("details", { length: 300 }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    // The two questions the table exists to answer: what did this admin do, and
+    // what happened to this entity.
+    index("admin_audit_log_admin_created_idx").on(table.adminId, table.createdAt),
+    index("admin_audit_log_entity_idx").on(table.entityType, table.entityId),
   ],
 );
 

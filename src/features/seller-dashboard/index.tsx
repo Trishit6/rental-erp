@@ -80,7 +80,10 @@ export function DashboardPage() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="eyebrow">Your neighbourhood business</p>
-          <h1 className="section-title mt-1 text-3xl">Hi {firstName} 👋</h1>
+          {/* No waving-hand emoji. It was the only emoji in the app, and in an
+              <h1> it became the page's accessible name — announced as
+              "Hi Priya waving hand" by a screen reader. */}
+          <h1 className="section-title mt-1 text-3xl">Hi {firstName}</h1>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="secondary">
@@ -192,11 +195,11 @@ export function DashboardPage() {
                 </div>
                 <p className="mt-3 font-heading text-3xl font-black">
                   {(data?.reviews.average ?? 0).toFixed(1)}
-                  <Star
-                    size={18}
-                    aria-hidden
-                    className="mb-1 ml-1 inline fill-amber-400 text-amber-400"
-                  />
+                  {/* Filled rating stars are `primary` everywhere in this app
+                      (`product-card`, `SellerCard`, `HeroSection`). These two were
+                      raw amber, so the same 4.5★ read as gold on the seller
+                      dashboard and terracotta on a product card. */}
+                  <Star size={18} aria-hidden className="mb-1 ml-1 inline fill-primary text-primary" />
                 </p>
                 <p className="text-sm text-muted-foreground">
                   {data?.reviews.count ?? 0} review{(data?.reviews.count ?? 0) === 1 ? "" : "s"}
@@ -293,9 +296,9 @@ function ListingBreakdown({
       key: "outOfStock",
       label: "Out of stock",
       value: products.outOfStock,
-      className: "bg-amber-500",
+      className: "bg-warning",
     },
-    { key: "paused", label: "Paused", value: products.paused, className: "bg-sky-500" },
+    { key: "paused", label: "Paused", value: products.paused, className: "bg-info" },
     { key: "draft", label: "Draft", value: products.draft, className: "bg-muted-foreground/50" },
     {
       key: "archived",

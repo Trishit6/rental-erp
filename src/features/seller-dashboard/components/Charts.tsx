@@ -179,8 +179,14 @@ export function SplitBarChart({
               >
                 <title>{`${row.label} ${leftLabel}: ${formatValue(row.left)}`}</title>
               </div>
+              {/* The second series. This was `bg-accent-foreground/40` against a
+                  token that was never declared in `@theme`, so the class resolved
+                  to no fill at all: the right-hand half of every bar rendered
+                  invisible in both themes and the legend swatch beside it was
+                  blank. `bg-accent/80` is the sage already used for "live" states,
+                  and is distinguishable from `primary` without introducing a hue. */}
               <div
-                className="w-1/2 rounded-t-sm bg-accent-foreground/40"
+                className="w-1/2 rounded-t-sm bg-accent/80"
                 style={{ height: `${(row.right / max) * 100}%` }}
               >
                 <title>{`${row.label} ${rightLabel}: ${formatValue(row.right)}`}</title>
@@ -200,7 +206,7 @@ export function SplitBarChart({
             {leftLabel}
           </li>
           <li className="flex items-center gap-1.5">
-            <span className="size-2 rounded-sm bg-accent-foreground/40" aria-hidden />
+            <span className="size-2 rounded-sm bg-accent/80" aria-hidden />
             {rightLabel}
           </li>
         </ul>

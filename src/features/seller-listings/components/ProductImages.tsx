@@ -138,7 +138,7 @@ export function ProductImages({
               />
               {index === 0 && (
                 <span className="absolute bottom-1 left-1 inline-flex items-center gap-0.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
-                  <Star size={9} aria-hidden />
+                  <Star size={12} aria-hidden />
                   Cover
                 </span>
               )}

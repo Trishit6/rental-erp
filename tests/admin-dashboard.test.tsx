@@ -195,7 +195,6 @@ describe("the sidebar's navigation tree", () => {
       "Catalog",
       "Orders",
       "Users",
-      "Marketplace",
       "Finance",
       "Reviews",
       "System",
@@ -218,22 +217,14 @@ describe("the sidebar's navigation tree", () => {
       "Orders/Purchases",
       "Orders/Rentals",
       "Orders/Returns",
-      "Orders/Refunds",
       "Users/Customers",
       "Users/Sellers",
-      "Marketplace/Listings",
-      "Marketplace/Pre-loved",
-      "Marketplace/Rent-to-own",
-      "Finance/Revenue",
-      "Finance/Transactions",
-      "Finance/Payouts",
+      "Finance/Payments",
       "Finance/Refunds",
       "Reviews/Product reviews",
-      "Reviews/Seller reviews",
+      "Reviews/Seller engagement",
       "System/Moderation",
-      "System/Analytics",
-      "System/Admin profile",
-      "System/Settings",
+      "System/Audit log",
     ]) {
       expect(entries, `sidebar is missing "${expected}"`).toContain(expected);
     }
@@ -248,53 +239,36 @@ describe("the sidebar's navigation tree", () => {
   });
 
   /** The sidebar row for one labelled item, scoped to its section. */
-  function navRow(sectionTitle: string, label: string): HTMLElement {
-    const section = screen.getByRole("heading", { name: sectionTitle }).parentElement!;
-    const item = within(section)
-      .getAllByText(label, { selector: "span" })
-      .find((node) => node.textContent === label)!;
-    return item.closest("li")!;
-  }
+  // function navRow(sectionTitle: string, label: string): HTMLElement {
+  //   const section = screen.getByRole("heading", { name: sectionTitle }).parentElement!;
+  //   const item = within(section)
+  //     .getAllByText(label, { selector: "span" })
+  //     .find((node) => node.textContent === label)!;
+  //   return item.closest("li")!;
+  // }
 
-  it("links the built pages and marks the rest as not built yet", () => {
+  it("links the built pages", () => {
     render(<AdminSidebar />, { wrapper: ({ children }) => <>{children}</> });
 
     // Products is built, so it must be a real link.
     const products = screen.getByRole("link", { name: /Products/ });
     expect(products).toHaveAttribute("href", "/admin/products");
-
-    // Orders → Refunds is not built. Two things matter: it must not be a link (it
-    // would 404), and it must be visibly marked (a greyed-out row with no
-    // explanation reads as a rendering bug rather than a decision).
-    // Scoped by section because "Refunds" appears under both Orders and Finance.
-    const ordersRefunds = navRow("Orders", "Refunds");
-    expect(within(ordersRefunds).queryByRole("link")).not.toBeInTheDocument();
-    expect(within(ordersRefunds).getByText("Soon")).toBeInTheDocument();
   });
 
-  it("makes an unbuilt entry inert rather than clickable", () => {
+  it("makes navigation entries clickable", () => {
     render(<AdminSidebar />, { wrapper: ({ children }) => <>{children}</> });
 
-    const row = navRow("System", "Analytics");
-    const button = row.firstElementChild!;
-    // `aria-disabled` keeps it announced as unavailable; the absence of a link is
-    // what actually stops the navigation.
-    expect(button).toHaveAttribute("aria-disabled", "true");
-    expect(button.tagName).toBe("SPAN");
+    const row = screen.getByRole("link", { name: /All orders/ });
+    expect(row.tagName).toBe("A");
   });
 
-  it("marks every unbuilt entry, so no section looks finished when it is not", () => {
+  it("links every section in the admin workspace", () => {
     render(<AdminSidebar />, { wrapper: ({ children }) => <>{children}</> });
 
     const unbuilt = ADMIN_NAV.flatMap((section) =>
       section.items.filter((item) => !item.to).map((item) => `${section.title}/${item.label}`),
     );
-    const soonTags = screen.getAllByText("Soon");
-
-    // Every unbuilt entry carries a "Soon", and there are no extra ones — so a
-    // built page cannot be marked as missing by mistake.
-    expect(soonTags).toHaveLength(unbuilt.length);
-    expect(unbuilt.length).toBeGreaterThan(10);
+    expect(unbuilt.length).toBe(0);
   });
 
   it("keeps every sidebar destination inside the admin area", () => {

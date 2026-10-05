@@ -14,6 +14,8 @@ import {
 import { readCheckoutContext, serializeCheckoutMetadata } from "../lib/payments/checkout-context";
 import { getPaymentProvider, readPaymentConfig } from "../lib/payments";
 import { isPaymentMethod, type PaymentMethod, type PaymentStatus } from "../lib/payments/types";
+import { notificationEventKey } from "../lib/notification-events";
+import { notify } from "../lib/notifications";
 
 /**
  * Payment API.
@@ -316,6 +318,23 @@ paymentsRoute.post("/:id/verify", async (c) => {
           updatedAt: new Date(),
         })
         .where(eq(transactions.id, row.id));
+
+      // A terminal decline is the one payment event the customer genuinely needs to be
+      // told about outside the tab they are already looking at — they may have walked
+      // away from the checkout page by the time it settles. Keyed on the transaction, so
+      // re-verifying the same dead attempt cannot spam them.
+      await notify(db, {
+        userId: user.id,
+        type: "PAYMENT_FAILED",
+        title: "Payment failed",
+        body: reason,
+        // There is no order yet — a failed payment is precisely the case where one was
+        // never created — so the destination is checkout rather than a derived route.
+        link: "/checkout",
+        context: { orderId: row.orderId },
+        eventKey: notificationEventKey("PAYMENT_FAILED", row.id),
+        metadata: { transactionId: row.id, amount: row.amount },
+      });
     }
     throw new HttpError(409, "PAYMENT_FAILED", reason);
   }

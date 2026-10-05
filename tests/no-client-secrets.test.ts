@@ -100,4 +100,24 @@ describe("client code holds no credentials", () => {
 
     expect(offenders).toEqual([]);
   });
+
+  it("does not import anything from the server at all", () => {
+    /*
+     * Broader than the config/auth case above, and deliberately so.
+     *
+     * The notifications feature has a *server* vocabulary module
+     * (`server/lib/notification-events.ts`) and a client twin
+     * (`src/features/notifications/types.ts`), and `tests/notification-events.test.ts`
+     * asserts the two agree. Importing the server one is the obvious way to make them
+     * "agree" — by shipping the writer's table, its destinations and its email policy into
+     * the browser bundle. The two halves are compiled by separate tsconfigs
+     * (`tsconfig.app.json` / `tsconfig.server.json`); this keeps them separate in source
+     * as well, and it would catch a `type`-only import that a bundler tree-shakes today
+     * and does not tomorrow.
+     */
+    const importsServer = /from\s+["'][^"']*\/?server\/[^"']*["']/;
+    const offenders = FILES.filter((f) => importsServer.test(f.contents)).map((f) => f.path);
+
+    expect(offenders).toEqual([]);
+  });
 });

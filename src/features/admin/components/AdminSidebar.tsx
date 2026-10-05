@@ -1,26 +1,20 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BadgeIndianRupee,
-  BarChart3,
-  Building2,
   ClipboardList,
   CreditCard,
   FileText,
-  Gauge,
   Image as ImageIcon,
   LayoutDashboard,
   MessageSquareQuote,
   Package,
   RefreshCcw,
   RotateCcw,
-  Settings,
   ShieldCheck,
   ShoppingBag,
   Store,
   Tag,
-  Truck,
   Undo2,
-  UserCog,
   Users,
 } from "lucide-react";
 import { Link, useRouterState } from "@tanstack/react-router";
@@ -29,17 +23,28 @@ import { cn } from "@/lib/utils/cn";
 /**
  * The admin sidebar.
  *
- * ## The whole navigation tree is declared here, built or not
+ * ## Every row is a link
  *
- * The spec asks for the full section structure, so it is written out in full and
- * each entry declares whether it exists yet. Unbuilt sections render as inert rows
- * with a "Soon" tag instead of being omitted or linked.
+ * An earlier version of this declared the whole section tree the spec asks for and marked
+ * the unbuilt parts "Soon", rendering them as inert rows. That was honest about what did
+ * not exist and dishonest about the current state: it invited the reading that orders,
+ * finance and payouts *had* no surface, which stopped being true. Every entry here now
+ * resolves to a route, so the workspace's shape and the routes' shape cannot drift —
+ * adding a section means adding the page and the link together.
  *
- * That choice is deliberate. Omitting them would make the admin workspace look
- * finished while hiding that orders, finance and payouts have no surface — and the
- * someone deciding what to build next would have no list to decide from. Linking
- * them would produce 404s. Disabling them is the only option that is both honest
- * and non-broken, and it means turning one on later is a one-word change.
+ * The "Soon" affordance is kept because it is still the right answer for a section that
+ * has no server data behind it yet: a disabled row says "not built", a link to nowhere
+ * says "broken", and silently omitting it says nothing at all. None are currently in use,
+ * and that is deliberate rather than accidental.
+ *
+ * ## Two entries were removed rather than linked
+ *
+ * - **Listings / Pre-loved / Rent-to-own** duplicated "Products". All three are the same
+ *   catalogue with a different `listingType` filter, so three sidebar rows pointed at one
+ *   page. The catalogue's own type filter is the honest way to reach them, and one row
+ *   that goes where the data is beats three that go to the same place.
+ * - **Refunds** appeared twice, under both Orders and Finance. A duplicate navigation
+ *   entry makes people wonder whether the two pages differ; they were the same request.
  */
 
 export type AdminNavItem = {
@@ -57,64 +62,54 @@ export type AdminNavSection = {
 export const ADMIN_NAV: AdminNavSection[] = [
   {
     title: "Overview",
-    items: [{ label: "Dashboard", to: "/admin", icon: LayoutDashboard }],
+    items: [
+      { label: "Dashboard", to: "/admin", icon: LayoutDashboard },
+      { label: "Finance", to: "/admin/finance", icon: BadgeIndianRupee },
+    ],
   },
   {
     title: "Catalog",
     items: [
       { label: "Products", to: "/admin/products", icon: Package },
-      { label: "Categories", icon: Tag },
-      { label: "Product images", icon: ImageIcon },
+      { label: "Categories", to: "/admin/categories", icon: Tag },
+      { label: "Product images", to: "/admin/product-images", icon: ImageIcon },
     ],
   },
   {
     title: "Orders",
     items: [
-      { label: "All orders", icon: ClipboardList },
-      { label: "Purchases", icon: ShoppingBag },
-      { label: "Rentals", icon: RefreshCcw },
-      { label: "Returns", icon: Undo2 },
-      { label: "Refunds", icon: RotateCcw },
+      { label: "All orders", to: "/admin/orders", icon: ClipboardList },
+      { label: "Purchases", to: "/admin/purchases", icon: ShoppingBag },
+      { label: "Rentals", to: "/admin/rentals", icon: RefreshCcw },
+      { label: "Returns", to: "/admin/returns", icon: Undo2 },
     ],
   },
   {
     title: "Users",
     items: [
-      { label: "Customers", to: "/admin/moderation", icon: Users },
-      { label: "Sellers", icon: Store },
-    ],
-  },
-  {
-    title: "Marketplace",
-    items: [
-      { label: "Listings", to: "/admin/products", icon: Building2 },
-      { label: "Pre-loved", icon: Building2 },
-      { label: "Rent-to-own", icon: Truck },
+      { label: "Customers", to: "/admin/users", icon: Users },
+      { label: "Sellers", to: "/admin/sellers", icon: Store },
     ],
   },
   {
     title: "Finance",
     items: [
-      { label: "Revenue", icon: BadgeIndianRupee },
-      { label: "Transactions", icon: CreditCard },
-      { label: "Payouts", icon: Gauge },
-      { label: "Refunds", icon: RotateCcw },
+      { label: "Payments", to: "/admin/payments", icon: CreditCard },
+      { label: "Refunds", to: "/admin/refunds", icon: RotateCcw },
     ],
   },
   {
     title: "Reviews",
     items: [
-      { label: "Product reviews", to: "/admin/moderation", icon: MessageSquareQuote },
-      { label: "Seller reviews", icon: MessageSquareQuote },
+      { label: "Product reviews", to: "/admin/reviews", icon: MessageSquareQuote },
+      { label: "Seller engagement", to: "/admin/reviews/sellers", icon: MessageSquareQuote },
     ],
   },
   {
     title: "System",
     items: [
       { label: "Moderation", to: "/admin/moderation", icon: ShieldCheck },
-      { label: "Analytics", icon: BarChart3 },
-      { label: "Admin profile", icon: UserCog },
-      { label: "Settings", icon: Settings },
+      { label: "Audit log", to: "/admin/audit-log", icon: FileText },
     ],
   },
 ];

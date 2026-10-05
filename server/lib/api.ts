@@ -73,8 +73,25 @@ export async function onErrorHandler(error: unknown, c: Ctx) {
   return c.json(fail("INTERNAL_ERROR", "Something went wrong. Please try again."), 500);
 }
 
-/** Naive in-memory rate limiter (per-IP, per-bucket). */
+/**
+ * Naive in-memory rate limiter (per-IP, per-limiter).
+ *
+ * ## Why the bucket key carries a limiter id
+ *
+ * `buckets` was keyed by IP alone, so every limiter in the app shared one counter. The
+ * consequence is not "a shared budget" — it is that each route then applied *its own*
+ * threshold to that shared count. `/auth/register` allows 5, so the sixth request of any
+ * kind — a login, a cart add, an unrelated public read — pushed the counter past 5, and
+ * every subsequent registration answered `429` for everyone behind that address. Because
+ * `clientKey` falls back to `"unknown"` whenever `x-forwarded-for` is absent, that is the
+ * default case rather than an edge case.
+ *
+ * Each `rateLimit()` call site therefore gets its own id, allocated here rather than passed
+ * in: a limit is independent by construction, and adding a limiter cannot accidentally
+ * tighten a different one.
+ */
 const buckets = new Map<string, { count: number; resetAt: number }>();
+let nextLimiterId = 0;
 
 function clientKey(c: Ctx): string {
   const forwarded = c.req.header("x-forwarded-for");
@@ -83,8 +100,9 @@ function clientKey(c: Ctx): string {
 }
 
 export function rateLimit(limit: number, windowMs: number) {
+  const limiterId = `l${nextLimiterId++}`;
   return async (c: Ctx, next: Next) => {
-    const key = clientKey(c);
+    const key = `${limiterId}:${clientKey(c)}`;
     const now = Date.now();
     const bucket = buckets.get(key);
     if (!bucket || bucket.resetAt < now) {

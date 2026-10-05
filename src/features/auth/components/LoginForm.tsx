@@ -1,20 +1,31 @@
 import { useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Loader2, LogIn } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { homeFor } from "@/lib/auth/guards";
 import { useLoginMutation } from "../query";
 import { AuthError } from "./AuthError";
 import { PasswordField } from "./PasswordField";
 import { loginSchema, type LoginFormValues } from "./schema";
 
+/**
+ * Turn a failed request into something a person can act on.
+ *
+ * The `ApiError` message is already user-facing by construction — the server sends a
+ * written message like "Email or password is incorrect", never a driver or stack string —
+ * so it is used as-is. The `instanceof` guard is the part that matters: an error thrown
+ * from anywhere *else* (a router, a component) can be an `Error` whose `message` is
+ * something like "Cannot read properties of undefined", and pasting that into a form is
+ * how internal detail reaches a user.
+ */
 function serverMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong. Please try again.";
 }
 
-export function LoginForm({ redirectTo = "/dashboard" }: { redirectTo?: string }) {
+export function LoginForm({ redirectTo }: { redirectTo?: string }) {
   const navigate = useNavigate();
   const loginMutation = useLoginMutation();
   const [serverError, setServerError] = useState<string | null>(null);
@@ -24,10 +35,16 @@ export function LoginForm({ redirectTo = "/dashboard" }: { redirectTo?: string }
     onSubmit: async ({ value }) => {
       setServerError(null);
       try {
-        await loginMutation.mutateAsync({ email: value.email, password: value.password });
+        const user = await loginMutation.mutateAsync({
+          email: value.email,
+          password: value.password,
+        });
         toast("Welcome back!");
-        // Navigate without a full reload — router context re-runs guards.
-        void navigate({ to: redirectTo });
+        // `redirectTo` is the page the visitor was originally refused, already sanitised
+        // at the route boundary. Without one, the destination is decided by the role the
+        // server just told us about — a seller lands in their workspace, a customer on
+        // their profile — rather than everyone being sent to the same page.
+        void navigate({ to: redirectTo ?? homeFor(user) });
       } catch (error) {
         setServerError(serverMessage(error));
       }
@@ -109,11 +126,28 @@ export function LoginForm({ redirectTo = "/dashboard" }: { redirectTo?: string }
         )}
       </form.Field>
 
+      {/*
+        `isSubmitting` is TanStack Form's own in-flight flag, and the mutation is only
+        awaited inside `onSubmit`, so the two agree: the button disables for exactly as
+        long as the request is outstanding. That is what makes a double-submit impossible —
+        a second click finds the button disabled and a second Enter press finds
+        `canSubmit` false.
+      */}
       <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
         {([canSubmit, isSubmitting]) => (
           <Button type="submit" size="lg" className="w-full" disabled={!canSubmit || isSubmitting}>
-            {isSubmitting ? "Loading..." : "Sign in"}
-            {!isSubmitting && <ArrowRight size={15} />}
+            {isSubmitting ? (
+              <>
+                <Loader2 size={15} className="animate-spin" aria-hidden />
+                Signing in…
+              </>
+            ) : (
+              <>
+                <LogIn size={15} aria-hidden />
+                Sign in
+                <ArrowRight size={15} aria-hidden />
+              </>
+            )}
           </Button>
         )}
       </form.Subscribe>

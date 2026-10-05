@@ -128,7 +128,7 @@ function Marker({ state }: { state: RentalTimelineEvent["state"] }) {
   }
   return (
     <span className={cn(base, "inset-surface text-muted-foreground")} aria-hidden="true">
-      <Circle size={8} />
+      <Circle size={12} />
     </span>
   );
 }

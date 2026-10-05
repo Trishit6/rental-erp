@@ -111,6 +111,7 @@ describe("the catalogue's columns", () => {
     // The header row only — a body cell can share text with a filter label.
     const headers = screen.getAllByRole("columnheader").map((cell) => cell.textContent?.trim());
     expect(headers).toEqual([
+      "",
       "Image",
       "Product",
       "Category",

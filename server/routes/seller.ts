@@ -4,6 +4,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   categories,
+  favorites,
   orders,
   productImages,
   products,
@@ -35,6 +36,8 @@ import { listSellerProducts, resolveSellerProductFilters } from "../lib/seller-p
 import { allowedImageHosts } from "../lib/storage";
 import { slugify } from "../../src/lib/pricing";
 import { productInputSchema, type ProductInput } from "./products";
+import { notificationEventKey } from "../lib/notification-events";
+import { notify, notifyAdmins, notifyMany } from "../lib/notifications";
 
 /**
  * The seller management API.
@@ -130,12 +133,28 @@ sellerRoute.post("/onboarding", async (c) => {
           updatedAt: new Date(),
         })
         .where(eq(sellerProfiles.userId, user.id));
+      // Already a seller: this is an edit to an existing shopfront, not a new
+      // registration, so admins are not paged about it.
     } else {
       await tx.insert(sellerProfiles).values({
         userId: user.id,
         bio: input.bio ?? null,
         location: input.location ?? null,
         responseRateHours: input.responseRateHours ?? null,
+      });
+
+      // A first-time seller is the one registration event the moderation queue
+      // actually cares about — it is the start of a storefront. Keyed on the user,
+      // so completing onboarding twice cannot produce two "new seller" alerts, and
+      // so the second call (an edit) is silent by construction.
+      await notifyAdmins(tx, {
+        type: "ADMIN_NEW_SELLER",
+        title: "New seller",
+        body: `${user.name} has set up a seller profile and can now list items.`,
+        relatedEntityType: "ACCOUNT",
+        relatedEntityId: user.id,
+        eventKey: notificationEventKey("ADMIN_NEW_SELLER", user.id),
+        metadata: { sellerId: user.id },
       });
     }
   });
@@ -333,7 +352,33 @@ sellerRoute.post("/products", async (c) => {
   });
   assertImageHosts(input.images);
 
-  return c.json(ok(await createSellerProduct(user.id, input)), 201);
+  const created = await createSellerProduct(user.id, input);
+
+  // Creating a listing does not publish it — the row lands as `DRAFT` — so both
+  // notices are about *where it now is*, not about it being live: the seller is told
+  // their draft exists, and the moderation queue is told there is something to look
+  // at. Keyed on the product, which is unique per listing, so a retried create (which
+  // makes a second product, and is a real bug elsewhere) cannot silently double-notify
+  // the same row.
+  await notify(db, {
+    userId: user.id,
+    type: "LISTING_SUBMITTED",
+    title: "Listing created",
+    body: `“${input.title}” was saved as a draft. Publish it when you are ready.`,
+    context: { productId: created.id, productSlug: created.slug },
+    eventKey: notificationEventKey("LISTING_SUBMITTED", created.id),
+  });
+  await notifyAdmins(db, {
+    type: "ADMIN_PRODUCT_PENDING",
+    title: "Listing pending review",
+    body: `${user.name} created the draft listing “${input.title}”.`,
+    relatedEntityType: "LISTING",
+    relatedEntityId: created.id,
+    eventKey: notificationEventKey("ADMIN_PRODUCT_PENDING", created.id),
+    metadata: { sellerId: user.id },
+  });
+
+  return c.json(ok(created), 201);
 });
 
 function assertImageHosts(images: readonly string[]): void {
@@ -549,8 +594,64 @@ sellerRoute.patch("/products/:id{[0-9]+}", async (c) => {
     }
   });
 
+  // After the transaction, not inside it. A rolled-back edit must not leave people
+  // told a price they are not getting.
+  await announcePriceChange(id, existing, fields);
+
   return c.json(ok({ id, updated: true }));
 });
+
+/**
+ * Tell this listing's watchers it just got cheaper.
+ *
+ * Gated on the price genuinely *falling*, on either the sale price or the daily rental
+ * rate, and only when both the old and the new price are real numbers. Three exclusions,
+ * each of which would otherwise produce a notification that is simply untrue:
+ *
+ *  - a **rise** is not a price drop, and "your saved item just got cheaper" for an item
+ *    that got dearer is the kind of thing that gets wishlist email switched off;
+ *  - `null → number` is a seller *adding* a price to a listing that had none, which is
+ *    a first price rather than a reduction;
+ *  - `number → null` is removing the price, which is a different event entirely.
+ *
+ * Keyed on the product *and* the new price, so a seller who drops, re-raises and drops
+ * back to the same figure notifies once for that figure rather than twice — while a drop
+ * to a genuinely new, lower price always gets through.
+ */
+async function announcePriceChange(
+  productId: number,
+  before: { title: string; slug: string; purchasePrice: number | null; rentalPricePerDay: number | null },
+  fields: { purchasePrice?: number | null; rentalPricePerDay?: number | null },
+): Promise<void> {
+  const dropped = (from: number | null, to: number | null | undefined): number | null => {
+    if (to === undefined) return null;
+    if (from === null || to === null) return null;
+    return to < from ? to : null;
+  };
+
+  const newSale = dropped(before.purchasePrice, fields.purchasePrice);
+  const newRental = dropped(before.rentalPricePerDay, fields.rentalPricePerDay);
+  const newPrice = newSale ?? newRental;
+  if (newPrice === null) return;
+
+  const watchers = await db
+    .select({ userId: favorites.userId })
+    .from(favorites)
+    .where(eq(favorites.productId, productId));
+  if (watchers.length === 0) return;
+
+  await notifyMany(
+    db,
+    watchers.map(({ userId }) => ({
+      userId,
+      type: "WISHLIST_PRICE_CHANGE" as const,
+      title: "Price drop",
+      body: `“${before.title}” is now cheaper.`,
+      context: { productId, productSlug: before.slug },
+      eventKey: notificationEventKey("WISHLIST_PRICE_CHANGE", productId, newPrice),
+    })),
+  );
+}
 
 /* ------------------------------- inventory --------------------------------- */
 
@@ -660,8 +761,46 @@ sellerRoute.patch("/products/:id{[0-9]+}/status", async (c) => {
     .set({ status: nextStatus, updatedAt: new Date() })
     .where(and(eq(products.id, id), eq(products.sellerId, user.id)));
 
+  // Everyone who saved this listing while it was unavailable is told it is buyable
+  // again. Gated on the *transition* rather than on the target status, so a seller
+  // re-publishing an already-published listing does not re-notify — which is exactly
+  // the status a double-clicked button produces.
+  if (nextStatus === "PUBLISHED" && existing.status !== "PUBLISHED") {
+    await announceBackInStock(id, existing);
+  }
+
   return c.json(ok({ id, status: nextStatus }));
 });
+
+/**
+ * Tell this listing's watchers it is available again.
+ *
+ * Keyed on the product, so the notice happens once per listing rather than once per
+ * save — re-publish, re-publish, re-publish reaches each watcher exactly once, which
+ * is the only acceptable behaviour for a "your saved item is back" email.
+ */
+async function announceBackInStock(
+  productId: number,
+  product: { title: string; slug: string },
+): Promise<void> {
+  const watchers = await db
+    .select({ userId: favorites.userId })
+    .from(favorites)
+    .where(eq(favorites.productId, productId));
+  if (watchers.length === 0) return;
+
+  await notifyMany(
+    db,
+    watchers.map(({ userId }) => ({
+      userId,
+      type: "WISHLIST_BACK_IN_STOCK" as const,
+      title: "Back in stock",
+      body: `“${product.title}” is available again.`,
+      context: { productId, productSlug: product.slug },
+      eventKey: notificationEventKey("WISHLIST_BACK_IN_STOCK", productId),
+    })),
+  );
+}
 
 /* ------------------------------- duplicate --------------------------------- */
 
@@ -982,7 +1121,22 @@ sellerRoute.post("/reports", async (c) => {
     .insert(reports)
     .values({ ...input, reporterId: user.id })
     .$returningId();
-  return c.json(ok({ id: Number(created.id) }), 201);
+  const reportId = Number(created.id);
+
+  // A report is only useful to a moderator who knows one exists, and nothing in the
+  // product page surfaces it to them. Keyed on the report row, which is unique per
+  // submission, so the notice is exactly one per report however the request is retried.
+  await notifyAdmins(db, {
+    type: "ADMIN_SUSPICIOUS_ACTIVITY",
+    title: "New report",
+    body: `${user.name} reported ${input.reportedUserId ? "a user" : input.productId ? "a listing" : "content"}: ${input.reason}.`,
+    relatedEntityType: input.productId ? "LISTING" : "ACCOUNT",
+    relatedEntityId: input.productId ?? input.reportedUserId ?? null,
+    eventKey: notificationEventKey("ADMIN_SUSPICIOUS_ACTIVITY", reportId),
+    metadata: { reportId, productId: input.productId ?? null },
+  });
+
+  return c.json(ok({ id: reportId }), 201);
 });
 
 /* --------------------------------- helpers --------------------------------- */
@@ -998,6 +1152,10 @@ async function loadOwnedProduct(sellerId: number, productId: number) {
   const [row] = await db
     .select({
       id: products.id,
+      // Carried so a caller can compose a notification about this listing without a
+      // second read — the two fields any such message needs.
+      title: products.title,
+      slug: products.slug,
       status: products.status,
       listingType: products.listingType,
       purchasePrice: products.purchasePrice,

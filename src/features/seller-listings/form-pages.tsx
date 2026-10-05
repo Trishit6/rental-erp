@@ -204,7 +204,7 @@ export function EditProductPage() {
       </header>
 
       {product.status === "ARCHIVED" && (
-        <Card className="border-amber-500/30 bg-amber-500/8 p-4">
+        <Card className="border-warning/30 bg-warning/8 p-4">
           <p className="text-sm font-semibold">This listing is archived.</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Its history is intact, but it can't be edited while archived — the server refuses, so

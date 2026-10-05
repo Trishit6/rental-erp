@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import * as Dialog from "@radix-ui/react-dialog";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ArrowRight, Trash2, X } from "lucide-react";
+import { ArrowRight, Minus, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { formatInr } from "@/lib/pricing";
 import { isPurchasable } from "@/lib/types";
@@ -229,9 +229,9 @@ function CartDrawerItem({ item }: { item: CartItem }) {
               aria-label={`Decrease quantity of ${title}`}
               disabled={item.quantity <= 1 || update.isPending}
               onClick={() => handleUpdate({ quantity: item.quantity - 1 })}
-              className="flex size-6 items-center justify-center rounded-full text-muted-foreground transition hover:bg-primary/10 disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition hover:bg-primary/10 disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              −
+              <Minus size={14} aria-hidden />
             </button>
             <span className="min-w-5 text-center text-xs font-bold tabular-nums">
               {item.quantity}
@@ -241,9 +241,9 @@ function CartDrawerItem({ item }: { item: CartItem }) {
               aria-label={`Increase quantity of ${title}`}
               disabled={update.isPending}
               onClick={() => handleUpdate({ quantity: item.quantity + 1 })}
-              className="flex size-6 items-center justify-center rounded-full text-muted-foreground transition hover:bg-primary/10 disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition hover:bg-primary/10 disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              +
+              <Plus size={14} aria-hidden />
             </button>
 
             <button
@@ -257,7 +257,7 @@ function CartDrawerItem({ item }: { item: CartItem }) {
               }
               className="ml-1 flex size-6 items-center justify-center rounded-full text-destructive transition hover:bg-destructive/10 disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60"
             >
-              <Trash2 size={12} />
+              <Trash2 size={14} aria-hidden />
             </button>
           </div>
         </div>

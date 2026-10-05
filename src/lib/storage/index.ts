@@ -111,18 +111,43 @@ function putWithProgress(
   });
 }
 
+/**
+ * Which kind of object an upload is for. Mirrors `STORAGE_SCOPES` on the server, which is
+ * the closed list the key pattern is built from — a value outside it is a 400, so the two
+ * cannot drift into "the client asks for a scope the server will not mint".
+ */
+export type StorageScope = "products" | "avatars";
+
 /** Mint a target, upload the bytes, and hand back the key and public URL. */
-export async function uploadProductImage(
+export async function uploadImage(
+  scope: StorageScope,
   file: File,
   onProgress?: (percent: number) => void,
 ): Promise<UploadedImage> {
   const { data: target } = await api.post<UploadTarget>("/storage/upload-target", {
     contentType: file.type,
     byteSize: file.size,
+    scope,
   });
 
   await putWithProgress(target, file, onProgress);
   return { key: target.key, publicUrl: target.publicUrl };
+}
+
+/** Seller listing photography. The original call site, unchanged in behaviour. */
+export async function uploadProductImage(
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<UploadedImage> {
+  return uploadImage("products", file, onProgress);
+}
+
+/** A user's own profile picture. */
+export async function uploadAvatarImage(
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<UploadedImage> {
+  return uploadImage("avatars", file, onProgress);
 }
 
 /** Remove an object the caller owns. Best-effort: a listing edit is not blocked by it. */
@@ -130,9 +155,15 @@ export async function deleteProductImage(key: string): Promise<void> {
   await api.delete("/storage/object", { key });
 }
 
-/** The object key inside a stored public URL, or null when it is not ours. */
+/**
+ * The object key inside a stored public URL, or null when it is not ours.
+ *
+ * Mirrors `OBJECT_KEY_PATTERN` on the server: same scope alternation, same extension list.
+ * A copy that recognised only `products/` would return `null` for every avatar, so
+ * replacing a profile picture would silently orphan the old file instead of removing it.
+ */
 export function objectKeyFromUrl(url: string): string | null {
   const decoded = decodeURIComponent(url);
-  const match = /products\/\d+\/[a-z0-9]{8,32}\.(?:jpg|png|webp|avif)/.exec(decoded);
+  const match = /(?:products|avatars)\/\d+\/[a-z0-9]{8,32}\.(?:jpg|png|webp|avif)/.exec(decoded);
   return match ? match[0] : null;
 }

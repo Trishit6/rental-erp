@@ -33,8 +33,16 @@ export function AdminDashboardPage() {
         <h2 className="text-sm font-bold">Where to next</h2>
         <ul className="mt-2 space-y-1.5 text-sm text-muted-foreground">
           <li>
-            <span className="font-semibold text-foreground">Products</span> — search, filter, sort
-            and change any listing's status.
+            <span className="font-semibold text-foreground">Products</span> — search, filter, sort,
+            edit any listing, archive or delete it, and change several at once.
+          </li>
+          <li>
+            <span className="font-semibold text-foreground">Orders and rentals</span> — every
+            purchase, every rental booking, and the items that have come back.
+          </li>
+          <li>
+            <span className="font-semibold text-foreground">Finance</span> — revenue, seller
+            earnings, fees and payouts, plus the per-transaction ledger.
           </li>
           <li>
             <span className="font-semibold text-foreground">Moderation</span> — reported content,
@@ -42,8 +50,8 @@ export function AdminDashboardPage() {
           </li>
         </ul>
         <p className="mt-3 text-xs text-muted-foreground/80">
-          Orders, rentals, finance and payouts are listed in the sidebar but have no surface yet.
-          They are marked so rather than hidden.
+          Every section in the sidebar is a live page backed by the database. Financial history is
+          read-only — it is written by the checkout, rental and payout flows, never edited here.
         </p>
       </Card>
     </div>

@@ -76,6 +76,16 @@ describe("the demo seed truncates every table", () => {
       ["product_images", "products"],
       ["product_tags", "products"],
       ["favorites", "users"],
+      // Messaging. `messages` points at both the conversation and its sender, so it
+      // has to lead the participants too, not just the conversation.
+      ["messages", "users"],
+      ["conversation_participants", "users"],
+      ["notifications", "users"],
+      // One preferences row per user, so it dies with them.
+      ["notification_preferences", "users"],
+      // The audit log records who did what; a surviving row would attribute this run's
+      // history to whoever the next run gives that id.
+      ["admin_audit_log", "users"],
     ];
 
     for (const [child, parent] of childrenFirst) {

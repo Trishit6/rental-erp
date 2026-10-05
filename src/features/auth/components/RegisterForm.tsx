@@ -1,10 +1,11 @@
 import { useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Loader2, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { homeFor } from "@/lib/auth/guards";
 import { useRegisterMutation } from "../query";
 import { AuthError } from "./AuthError";
 import { PasswordField } from "./PasswordField";
@@ -30,14 +31,18 @@ export function RegisterForm() {
         return;
       }
       try {
-        await registerMutation.mutateAsync({
+        const user = await registerMutation.mutateAsync({
           name: parsed.data.name,
           email: parsed.data.email,
           password: parsed.data.password,
         });
         toast("Welcome to Revaro!");
-        // Registration signs the user in — go straight to the dashboard.
-        void navigate({ to: "/dashboard" });
+        // Registration signs the user in. The destination comes from `homeFor` rather
+        // than a hardcoded `/dashboard`: registration always creates a plain USER, and
+        // `/dashboard` is the *seller* workspace — so a new customer used to be dropped
+        // onto a page whose every request answers `403 SELLER_REQUIRED`. The role the
+        // server assigned is what decides, not an assumption about who is signing up.
+        void navigate({ to: homeFor(user) });
       } catch (error) {
         setServerError(serverMessage(error));
       }
@@ -191,8 +196,18 @@ export function RegisterForm() {
       <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
         {([canSubmit, isSubmitting]) => (
           <Button type="submit" size="lg" className="w-full" disabled={!canSubmit || isSubmitting}>
-            {isSubmitting ? "Loading..." : "Create account"}
-            {!isSubmitting && <ArrowRight size={15} />}
+            {isSubmitting ? (
+              <>
+                <Loader2 size={15} className="animate-spin" aria-hidden />
+                Creating your account…
+              </>
+            ) : (
+              <>
+                <UserPlus size={15} aria-hidden />
+                Create account
+                <ArrowRight size={15} aria-hidden />
+              </>
+            )}
           </Button>
         )}
       </form.Subscribe>

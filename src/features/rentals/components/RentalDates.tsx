@@ -31,7 +31,7 @@ export function RentalDates({
   if (compact) {
     return (
       <p className={cn("text-xs text-muted-foreground", className)}>
-        {start} <ArrowRight size={11} className="inline" aria-hidden="true" /> {end} · {days} day
+        {start} <ArrowRight size={12} className="inline" aria-hidden="true" /> {end} · {days} day
         {days === 1 ? "" : "s"}
       </p>
     );

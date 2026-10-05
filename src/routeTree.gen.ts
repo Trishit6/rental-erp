@@ -19,6 +19,8 @@ import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as HowItWorksRouteImport } from './routes/how-it-works'
 import { Route as ListRouteImport } from './routes/list'
+import { Route as MessagesRouteImport } from './routes/messages'
+import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as PaymentRouteImport } from './routes/payment'
 import { Route as PreLovedRouteImport } from './routes/pre-loved'
@@ -27,8 +29,21 @@ import { Route as RentalsRouteImport } from './routes/rentals'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
 import { Route as AuthRegisterRouteImport } from './routes/_auth/register'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as AdminAuditLogRouteImport } from './routes/admin/audit-log'
+import { Route as AdminCategoriesRouteImport } from './routes/admin/categories'
+import { Route as AdminFinanceRouteImport } from './routes/admin/finance'
 import { Route as AdminModerationRouteImport } from './routes/admin/moderation'
+import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
+import { Route as AdminPaymentsRouteImport } from './routes/admin/payments'
+import { Route as AdminProductImagesRouteImport } from './routes/admin/product-images'
 import { Route as AdminProductsRouteImport } from './routes/admin/products'
+import { Route as AdminPurchasesRouteImport } from './routes/admin/purchases'
+import { Route as AdminRefundsRouteImport } from './routes/admin/refunds'
+import { Route as AdminRentalsRouteImport } from './routes/admin/rentals'
+import { Route as AdminReturnsRouteImport } from './routes/admin/returns'
+import { Route as AdminReviewsRouteImport } from './routes/admin/reviews'
+import { Route as AdminSellersRouteImport } from './routes/admin/sellers'
+import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as CategoriesIndexRouteImport } from './routes/categories/index'
 import { Route as CategoriesCategorySlugRouteImport } from './routes/categories/$categorySlug'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
@@ -44,8 +59,13 @@ import { Route as DashboardSettingsRouteImport } from './routes/dashboard/settin
 import { Route as DashboardWalletRouteImport } from './routes/dashboard/wallet'
 import { Route as OrdersOrderIdRouteImport } from './routes/orders.$orderId'
 import { Route as ProductSlugRouteImport } from './routes/product.$slug'
+import { Route as ProfileActivityRouteImport } from './routes/profile.activity'
+import { Route as ProfileOrdersRouteImport } from './routes/profile.orders'
+import { Route as ProfileRentalsRouteImport } from './routes/profile.rentals'
+import { Route as ProfileWishlistRouteImport } from './routes/profile.wishlist'
 import { Route as RentalsRentalIdRouteImport } from './routes/rentals.$rentalId'
 import { Route as SellerIdRouteImport } from './routes/seller.$id'
+import { Route as AdminReviewsSellersRouteImport } from './routes/admin/reviews.sellers'
 import { Route as DashboardProductsNewRouteImport } from './routes/dashboard/products.new'
 import { Route as DashboardProductsProductIdEditRouteImport } from './routes/dashboard/products.$productId.edit'
 
@@ -98,6 +118,16 @@ const ListRoute = ListRouteImport.update({
   path: '/list',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MessagesRoute = MessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotificationsRoute = NotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OrdersRoute = OrdersRouteImport.update({
   id: '/orders',
   path: '/orders',
@@ -138,14 +168,79 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminAuditLogRoute = AdminAuditLogRouteImport.update({
+  id: '/audit-log',
+  path: '/audit-log',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminCategoriesRoute = AdminCategoriesRouteImport.update({
+  id: '/categories',
+  path: '/categories',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminFinanceRoute = AdminFinanceRouteImport.update({
+  id: '/finance',
+  path: '/finance',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminModerationRoute = AdminModerationRouteImport.update({
   id: '/moderation',
   path: '/moderation',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminOrdersRoute = AdminOrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPaymentsRoute = AdminPaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminProductImagesRoute = AdminProductImagesRouteImport.update({
+  id: '/product-images',
+  path: '/product-images',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminProductsRoute = AdminProductsRouteImport.update({
   id: '/products',
   path: '/products',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPurchasesRoute = AdminPurchasesRouteImport.update({
+  id: '/purchases',
+  path: '/purchases',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminRefundsRoute = AdminRefundsRouteImport.update({
+  id: '/refunds',
+  path: '/refunds',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminRentalsRoute = AdminRentalsRouteImport.update({
+  id: '/rentals',
+  path: '/rentals',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminReturnsRoute = AdminReturnsRouteImport.update({
+  id: '/returns',
+  path: '/returns',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminReviewsRoute = AdminReviewsRouteImport.update({
+  id: '/reviews',
+  path: '/reviews',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminSellersRoute = AdminSellersRouteImport.update({
+  id: '/sellers',
+  path: '/sellers',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
   getParentRoute: () => AdminRoute,
 } as any)
 const CategoriesIndexRoute = CategoriesIndexRouteImport.update({
@@ -223,6 +318,26 @@ const ProductSlugRoute = ProductSlugRouteImport.update({
   path: '/product/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProfileActivityRoute = ProfileActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
+  getParentRoute: () => ProfileRoute,
+} as any)
+const ProfileOrdersRoute = ProfileOrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
+  getParentRoute: () => ProfileRoute,
+} as any)
+const ProfileRentalsRoute = ProfileRentalsRouteImport.update({
+  id: '/rentals',
+  path: '/rentals',
+  getParentRoute: () => ProfileRoute,
+} as any)
+const ProfileWishlistRoute = ProfileWishlistRouteImport.update({
+  id: '/wishlist',
+  path: '/wishlist',
+  getParentRoute: () => ProfileRoute,
+} as any)
 const RentalsRentalIdRoute = RentalsRentalIdRouteImport.update({
   id: '/$rentalId',
   path: '/$rentalId',
@@ -232,6 +347,11 @@ const SellerIdRoute = SellerIdRouteImport.update({
   id: '/seller/$id',
   path: '/seller/$id',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AdminReviewsSellersRoute = AdminReviewsSellersRouteImport.update({
+  id: '/sellers',
+  path: '/sellers',
+  getParentRoute: () => AdminReviewsRoute,
 } as any)
 const DashboardProductsNewRoute = DashboardProductsNewRouteImport.update({
   id: '/new',
@@ -255,15 +375,30 @@ export interface FileRoutesByFullPath {
   '/favorites': typeof FavoritesRoute
   '/how-it-works': typeof HowItWorksRoute
   '/list': typeof ListRoute
+  '/messages': typeof MessagesRoute
+  '/notifications': typeof NotificationsRoute
   '/orders': typeof OrdersRouteWithChildren
   '/payment': typeof PaymentRoute
   '/pre-loved': typeof PreLovedRoute
-  '/profile': typeof ProfileRoute
+  '/profile': typeof ProfileRouteWithChildren
   '/rentals': typeof RentalsRouteWithChildren
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
+  '/admin/audit-log': typeof AdminAuditLogRoute
+  '/admin/categories': typeof AdminCategoriesRoute
+  '/admin/finance': typeof AdminFinanceRoute
   '/admin/moderation': typeof AdminModerationRoute
+  '/admin/orders': typeof AdminOrdersRoute
+  '/admin/payments': typeof AdminPaymentsRoute
+  '/admin/product-images': typeof AdminProductImagesRoute
   '/admin/products': typeof AdminProductsRoute
+  '/admin/purchases': typeof AdminPurchasesRoute
+  '/admin/refunds': typeof AdminRefundsRoute
+  '/admin/rentals': typeof AdminRentalsRoute
+  '/admin/returns': typeof AdminReturnsRoute
+  '/admin/reviews': typeof AdminReviewsRouteWithChildren
+  '/admin/sellers': typeof AdminSellersRoute
+  '/admin/users': typeof AdminUsersRoute
   '/categories/$categorySlug': typeof CategoriesCategorySlugRoute
   '/dashboard/analytics': typeof DashboardAnalyticsRoute
   '/dashboard/become-a-seller': typeof DashboardBecomeASellerRoute
@@ -277,11 +412,16 @@ export interface FileRoutesByFullPath {
   '/dashboard/wallet': typeof DashboardWalletRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
   '/product/$slug': typeof ProductSlugRoute
+  '/profile/activity': typeof ProfileActivityRoute
+  '/profile/orders': typeof ProfileOrdersRoute
+  '/profile/rentals': typeof ProfileRentalsRoute
+  '/profile/wishlist': typeof ProfileWishlistRoute
   '/rentals/$rentalId': typeof RentalsRentalIdRoute
   '/seller/$id': typeof SellerIdRoute
   '/admin/': typeof AdminIndexRoute
   '/categories/': typeof CategoriesIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/admin/reviews/sellers': typeof AdminReviewsSellersRoute
   '/dashboard/products/new': typeof DashboardProductsNewRoute
   '/dashboard/products/$productId/edit': typeof DashboardProductsProductIdEditRoute
 }
@@ -294,15 +434,30 @@ export interface FileRoutesByTo {
   '/favorites': typeof FavoritesRoute
   '/how-it-works': typeof HowItWorksRoute
   '/list': typeof ListRoute
+  '/messages': typeof MessagesRoute
+  '/notifications': typeof NotificationsRoute
   '/orders': typeof OrdersRouteWithChildren
   '/payment': typeof PaymentRoute
   '/pre-loved': typeof PreLovedRoute
-  '/profile': typeof ProfileRoute
+  '/profile': typeof ProfileRouteWithChildren
   '/rentals': typeof RentalsRouteWithChildren
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
+  '/admin/audit-log': typeof AdminAuditLogRoute
+  '/admin/categories': typeof AdminCategoriesRoute
+  '/admin/finance': typeof AdminFinanceRoute
   '/admin/moderation': typeof AdminModerationRoute
+  '/admin/orders': typeof AdminOrdersRoute
+  '/admin/payments': typeof AdminPaymentsRoute
+  '/admin/product-images': typeof AdminProductImagesRoute
   '/admin/products': typeof AdminProductsRoute
+  '/admin/purchases': typeof AdminPurchasesRoute
+  '/admin/refunds': typeof AdminRefundsRoute
+  '/admin/rentals': typeof AdminRentalsRoute
+  '/admin/returns': typeof AdminReturnsRoute
+  '/admin/reviews': typeof AdminReviewsRouteWithChildren
+  '/admin/sellers': typeof AdminSellersRoute
+  '/admin/users': typeof AdminUsersRoute
   '/categories/$categorySlug': typeof CategoriesCategorySlugRoute
   '/dashboard/analytics': typeof DashboardAnalyticsRoute
   '/dashboard/become-a-seller': typeof DashboardBecomeASellerRoute
@@ -316,11 +471,16 @@ export interface FileRoutesByTo {
   '/dashboard/wallet': typeof DashboardWalletRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
   '/product/$slug': typeof ProductSlugRoute
+  '/profile/activity': typeof ProfileActivityRoute
+  '/profile/orders': typeof ProfileOrdersRoute
+  '/profile/rentals': typeof ProfileRentalsRoute
+  '/profile/wishlist': typeof ProfileWishlistRoute
   '/rentals/$rentalId': typeof RentalsRentalIdRoute
   '/seller/$id': typeof SellerIdRoute
   '/admin': typeof AdminIndexRoute
   '/categories': typeof CategoriesIndexRoute
   '/dashboard': typeof DashboardIndexRoute
+  '/admin/reviews/sellers': typeof AdminReviewsSellersRoute
   '/dashboard/products/new': typeof DashboardProductsNewRoute
   '/dashboard/products/$productId/edit': typeof DashboardProductsProductIdEditRoute
 }
@@ -336,15 +496,30 @@ export interface FileRoutesById {
   '/favorites': typeof FavoritesRoute
   '/how-it-works': typeof HowItWorksRoute
   '/list': typeof ListRoute
+  '/messages': typeof MessagesRoute
+  '/notifications': typeof NotificationsRoute
   '/orders': typeof OrdersRouteWithChildren
   '/payment': typeof PaymentRoute
   '/pre-loved': typeof PreLovedRoute
-  '/profile': typeof ProfileRoute
+  '/profile': typeof ProfileRouteWithChildren
   '/rentals': typeof RentalsRouteWithChildren
   '/_auth/login': typeof AuthLoginRoute
   '/_auth/register': typeof AuthRegisterRoute
+  '/admin/audit-log': typeof AdminAuditLogRoute
+  '/admin/categories': typeof AdminCategoriesRoute
+  '/admin/finance': typeof AdminFinanceRoute
   '/admin/moderation': typeof AdminModerationRoute
+  '/admin/orders': typeof AdminOrdersRoute
+  '/admin/payments': typeof AdminPaymentsRoute
+  '/admin/product-images': typeof AdminProductImagesRoute
   '/admin/products': typeof AdminProductsRoute
+  '/admin/purchases': typeof AdminPurchasesRoute
+  '/admin/refunds': typeof AdminRefundsRoute
+  '/admin/rentals': typeof AdminRentalsRoute
+  '/admin/returns': typeof AdminReturnsRoute
+  '/admin/reviews': typeof AdminReviewsRouteWithChildren
+  '/admin/sellers': typeof AdminSellersRoute
+  '/admin/users': typeof AdminUsersRoute
   '/categories/$categorySlug': typeof CategoriesCategorySlugRoute
   '/dashboard/analytics': typeof DashboardAnalyticsRoute
   '/dashboard/become-a-seller': typeof DashboardBecomeASellerRoute
@@ -358,11 +533,16 @@ export interface FileRoutesById {
   '/dashboard/wallet': typeof DashboardWalletRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
   '/product/$slug': typeof ProductSlugRoute
+  '/profile/activity': typeof ProfileActivityRoute
+  '/profile/orders': typeof ProfileOrdersRoute
+  '/profile/rentals': typeof ProfileRentalsRoute
+  '/profile/wishlist': typeof ProfileWishlistRoute
   '/rentals/$rentalId': typeof RentalsRentalIdRoute
   '/seller/$id': typeof SellerIdRoute
   '/admin/': typeof AdminIndexRoute
   '/categories/': typeof CategoriesIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/admin/reviews/sellers': typeof AdminReviewsSellersRoute
   '/dashboard/products/new': typeof DashboardProductsNewRoute
   '/dashboard/products/$productId/edit': typeof DashboardProductsProductIdEditRoute
 }
@@ -378,6 +558,8 @@ export interface FileRouteTypes {
     | '/favorites'
     | '/how-it-works'
     | '/list'
+    | '/messages'
+    | '/notifications'
     | '/orders'
     | '/payment'
     | '/pre-loved'
@@ -385,8 +567,21 @@ export interface FileRouteTypes {
     | '/rentals'
     | '/login'
     | '/register'
+    | '/admin/audit-log'
+    | '/admin/categories'
+    | '/admin/finance'
     | '/admin/moderation'
+    | '/admin/orders'
+    | '/admin/payments'
+    | '/admin/product-images'
     | '/admin/products'
+    | '/admin/purchases'
+    | '/admin/refunds'
+    | '/admin/rentals'
+    | '/admin/returns'
+    | '/admin/reviews'
+    | '/admin/sellers'
+    | '/admin/users'
     | '/categories/$categorySlug'
     | '/dashboard/analytics'
     | '/dashboard/become-a-seller'
@@ -400,11 +595,16 @@ export interface FileRouteTypes {
     | '/dashboard/wallet'
     | '/orders/$orderId'
     | '/product/$slug'
+    | '/profile/activity'
+    | '/profile/orders'
+    | '/profile/rentals'
+    | '/profile/wishlist'
     | '/rentals/$rentalId'
     | '/seller/$id'
     | '/admin/'
     | '/categories/'
     | '/dashboard/'
+    | '/admin/reviews/sellers'
     | '/dashboard/products/new'
     | '/dashboard/products/$productId/edit'
   fileRoutesByTo: FileRoutesByTo
@@ -417,6 +617,8 @@ export interface FileRouteTypes {
     | '/favorites'
     | '/how-it-works'
     | '/list'
+    | '/messages'
+    | '/notifications'
     | '/orders'
     | '/payment'
     | '/pre-loved'
@@ -424,8 +626,21 @@ export interface FileRouteTypes {
     | '/rentals'
     | '/login'
     | '/register'
+    | '/admin/audit-log'
+    | '/admin/categories'
+    | '/admin/finance'
     | '/admin/moderation'
+    | '/admin/orders'
+    | '/admin/payments'
+    | '/admin/product-images'
     | '/admin/products'
+    | '/admin/purchases'
+    | '/admin/refunds'
+    | '/admin/rentals'
+    | '/admin/returns'
+    | '/admin/reviews'
+    | '/admin/sellers'
+    | '/admin/users'
     | '/categories/$categorySlug'
     | '/dashboard/analytics'
     | '/dashboard/become-a-seller'
@@ -439,11 +654,16 @@ export interface FileRouteTypes {
     | '/dashboard/wallet'
     | '/orders/$orderId'
     | '/product/$slug'
+    | '/profile/activity'
+    | '/profile/orders'
+    | '/profile/rentals'
+    | '/profile/wishlist'
     | '/rentals/$rentalId'
     | '/seller/$id'
     | '/admin'
     | '/categories'
     | '/dashboard'
+    | '/admin/reviews/sellers'
     | '/dashboard/products/new'
     | '/dashboard/products/$productId/edit'
   id:
@@ -458,6 +678,8 @@ export interface FileRouteTypes {
     | '/favorites'
     | '/how-it-works'
     | '/list'
+    | '/messages'
+    | '/notifications'
     | '/orders'
     | '/payment'
     | '/pre-loved'
@@ -465,8 +687,21 @@ export interface FileRouteTypes {
     | '/rentals'
     | '/_auth/login'
     | '/_auth/register'
+    | '/admin/audit-log'
+    | '/admin/categories'
+    | '/admin/finance'
     | '/admin/moderation'
+    | '/admin/orders'
+    | '/admin/payments'
+    | '/admin/product-images'
     | '/admin/products'
+    | '/admin/purchases'
+    | '/admin/refunds'
+    | '/admin/rentals'
+    | '/admin/returns'
+    | '/admin/reviews'
+    | '/admin/sellers'
+    | '/admin/users'
     | '/categories/$categorySlug'
     | '/dashboard/analytics'
     | '/dashboard/become-a-seller'
@@ -480,11 +715,16 @@ export interface FileRouteTypes {
     | '/dashboard/wallet'
     | '/orders/$orderId'
     | '/product/$slug'
+    | '/profile/activity'
+    | '/profile/orders'
+    | '/profile/rentals'
+    | '/profile/wishlist'
     | '/rentals/$rentalId'
     | '/seller/$id'
     | '/admin/'
     | '/categories/'
     | '/dashboard/'
+    | '/admin/reviews/sellers'
     | '/dashboard/products/new'
     | '/dashboard/products/$productId/edit'
   fileRoutesById: FileRoutesById
@@ -500,10 +740,12 @@ export interface RootRouteChildren {
   FavoritesRoute: typeof FavoritesRoute
   HowItWorksRoute: typeof HowItWorksRoute
   ListRoute: typeof ListRoute
+  MessagesRoute: typeof MessagesRoute
+  NotificationsRoute: typeof NotificationsRoute
   OrdersRoute: typeof OrdersRouteWithChildren
   PaymentRoute: typeof PaymentRoute
   PreLovedRoute: typeof PreLovedRoute
-  ProfileRoute: typeof ProfileRoute
+  ProfileRoute: typeof ProfileRouteWithChildren
   RentalsRoute: typeof RentalsRouteWithChildren
   CategoriesCategorySlugRoute: typeof CategoriesCategorySlugRoute
   DashboardAnalyticsRoute: typeof DashboardAnalyticsRoute
@@ -594,6 +836,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ListRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/messages': {
+      id: '/messages'
+      path: '/messages'
+      fullPath: '/messages'
+      preLoaderRoute: typeof MessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notifications': {
+      id: '/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof NotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/orders': {
       id: '/orders'
       path: '/orders'
@@ -650,6 +906,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/audit-log': {
+      id: '/admin/audit-log'
+      path: '/audit-log'
+      fullPath: '/admin/audit-log'
+      preLoaderRoute: typeof AdminAuditLogRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/categories': {
+      id: '/admin/categories'
+      path: '/categories'
+      fullPath: '/admin/categories'
+      preLoaderRoute: typeof AdminCategoriesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/finance': {
+      id: '/admin/finance'
+      path: '/finance'
+      fullPath: '/admin/finance'
+      preLoaderRoute: typeof AdminFinanceRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/moderation': {
       id: '/admin/moderation'
       path: '/moderation'
@@ -657,11 +934,81 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminModerationRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/orders': {
+      id: '/admin/orders'
+      path: '/orders'
+      fullPath: '/admin/orders'
+      preLoaderRoute: typeof AdminOrdersRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/payments': {
+      id: '/admin/payments'
+      path: '/payments'
+      fullPath: '/admin/payments'
+      preLoaderRoute: typeof AdminPaymentsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/product-images': {
+      id: '/admin/product-images'
+      path: '/product-images'
+      fullPath: '/admin/product-images'
+      preLoaderRoute: typeof AdminProductImagesRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/products': {
       id: '/admin/products'
       path: '/products'
       fullPath: '/admin/products'
       preLoaderRoute: typeof AdminProductsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/purchases': {
+      id: '/admin/purchases'
+      path: '/purchases'
+      fullPath: '/admin/purchases'
+      preLoaderRoute: typeof AdminPurchasesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/refunds': {
+      id: '/admin/refunds'
+      path: '/refunds'
+      fullPath: '/admin/refunds'
+      preLoaderRoute: typeof AdminRefundsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/rentals': {
+      id: '/admin/rentals'
+      path: '/rentals'
+      fullPath: '/admin/rentals'
+      preLoaderRoute: typeof AdminRentalsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/returns': {
+      id: '/admin/returns'
+      path: '/returns'
+      fullPath: '/admin/returns'
+      preLoaderRoute: typeof AdminReturnsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/reviews': {
+      id: '/admin/reviews'
+      path: '/reviews'
+      fullPath: '/admin/reviews'
+      preLoaderRoute: typeof AdminReviewsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/sellers': {
+      id: '/admin/sellers'
+      path: '/sellers'
+      fullPath: '/admin/sellers'
+      preLoaderRoute: typeof AdminSellersRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
       parentRoute: typeof AdminRoute
     }
     '/categories/': {
@@ -769,6 +1116,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/profile/activity': {
+      id: '/profile/activity'
+      path: '/activity'
+      fullPath: '/profile/activity'
+      preLoaderRoute: typeof ProfileActivityRouteImport
+      parentRoute: typeof ProfileRoute
+    }
+    '/profile/orders': {
+      id: '/profile/orders'
+      path: '/orders'
+      fullPath: '/profile/orders'
+      preLoaderRoute: typeof ProfileOrdersRouteImport
+      parentRoute: typeof ProfileRoute
+    }
+    '/profile/rentals': {
+      id: '/profile/rentals'
+      path: '/rentals'
+      fullPath: '/profile/rentals'
+      preLoaderRoute: typeof ProfileRentalsRouteImport
+      parentRoute: typeof ProfileRoute
+    }
+    '/profile/wishlist': {
+      id: '/profile/wishlist'
+      path: '/wishlist'
+      fullPath: '/profile/wishlist'
+      preLoaderRoute: typeof ProfileWishlistRouteImport
+      parentRoute: typeof ProfileRoute
+    }
     '/rentals/$rentalId': {
       id: '/rentals/$rentalId'
       path: '/$rentalId'
@@ -782,6 +1157,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/seller/$id'
       preLoaderRoute: typeof SellerIdRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/admin/reviews/sellers': {
+      id: '/admin/reviews/sellers'
+      path: '/sellers'
+      fullPath: '/admin/reviews/sellers'
+      preLoaderRoute: typeof AdminReviewsSellersRouteImport
+      parentRoute: typeof AdminReviewsRoute
     }
     '/dashboard/products/new': {
       id: '/dashboard/products/new'
@@ -812,15 +1194,53 @@ const AuthRouteChildren: AuthRouteChildren = {
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
+interface AdminReviewsRouteChildren {
+  AdminReviewsSellersRoute: typeof AdminReviewsSellersRoute
+}
+
+const AdminReviewsRouteChildren: AdminReviewsRouteChildren = {
+  AdminReviewsSellersRoute: AdminReviewsSellersRoute,
+}
+
+const AdminReviewsRouteWithChildren = AdminReviewsRoute._addFileChildren(
+  AdminReviewsRouteChildren,
+)
+
 interface AdminRouteChildren {
+  AdminAuditLogRoute: typeof AdminAuditLogRoute
+  AdminCategoriesRoute: typeof AdminCategoriesRoute
+  AdminFinanceRoute: typeof AdminFinanceRoute
   AdminModerationRoute: typeof AdminModerationRoute
+  AdminOrdersRoute: typeof AdminOrdersRoute
+  AdminPaymentsRoute: typeof AdminPaymentsRoute
+  AdminProductImagesRoute: typeof AdminProductImagesRoute
   AdminProductsRoute: typeof AdminProductsRoute
+  AdminPurchasesRoute: typeof AdminPurchasesRoute
+  AdminRefundsRoute: typeof AdminRefundsRoute
+  AdminRentalsRoute: typeof AdminRentalsRoute
+  AdminReturnsRoute: typeof AdminReturnsRoute
+  AdminReviewsRoute: typeof AdminReviewsRouteWithChildren
+  AdminSellersRoute: typeof AdminSellersRoute
+  AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminAuditLogRoute: AdminAuditLogRoute,
+  AdminCategoriesRoute: AdminCategoriesRoute,
+  AdminFinanceRoute: AdminFinanceRoute,
   AdminModerationRoute: AdminModerationRoute,
+  AdminOrdersRoute: AdminOrdersRoute,
+  AdminPaymentsRoute: AdminPaymentsRoute,
+  AdminProductImagesRoute: AdminProductImagesRoute,
   AdminProductsRoute: AdminProductsRoute,
+  AdminPurchasesRoute: AdminPurchasesRoute,
+  AdminRefundsRoute: AdminRefundsRoute,
+  AdminRentalsRoute: AdminRentalsRoute,
+  AdminReturnsRoute: AdminReturnsRoute,
+  AdminReviewsRoute: AdminReviewsRouteWithChildren,
+  AdminSellersRoute: AdminSellersRoute,
+  AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
 
@@ -836,6 +1256,23 @@ const OrdersRouteChildren: OrdersRouteChildren = {
 
 const OrdersRouteWithChildren =
   OrdersRoute._addFileChildren(OrdersRouteChildren)
+
+interface ProfileRouteChildren {
+  ProfileActivityRoute: typeof ProfileActivityRoute
+  ProfileOrdersRoute: typeof ProfileOrdersRoute
+  ProfileRentalsRoute: typeof ProfileRentalsRoute
+  ProfileWishlistRoute: typeof ProfileWishlistRoute
+}
+
+const ProfileRouteChildren: ProfileRouteChildren = {
+  ProfileActivityRoute: ProfileActivityRoute,
+  ProfileOrdersRoute: ProfileOrdersRoute,
+  ProfileRentalsRoute: ProfileRentalsRoute,
+  ProfileWishlistRoute: ProfileWishlistRoute,
+}
+
+const ProfileRouteWithChildren =
+  ProfileRoute._addFileChildren(ProfileRouteChildren)
 
 interface RentalsRouteChildren {
   RentalsRentalIdRoute: typeof RentalsRentalIdRoute
@@ -872,10 +1309,12 @@ const rootRouteChildren: RootRouteChildren = {
   FavoritesRoute: FavoritesRoute,
   HowItWorksRoute: HowItWorksRoute,
   ListRoute: ListRoute,
+  MessagesRoute: MessagesRoute,
+  NotificationsRoute: NotificationsRoute,
   OrdersRoute: OrdersRouteWithChildren,
   PaymentRoute: PaymentRoute,
   PreLovedRoute: PreLovedRoute,
-  ProfileRoute: ProfileRoute,
+  ProfileRoute: ProfileRouteWithChildren,
   RentalsRoute: RentalsRouteWithChildren,
   CategoriesCategorySlugRoute: CategoriesCategorySlugRoute,
   DashboardAnalyticsRoute: DashboardAnalyticsRoute,

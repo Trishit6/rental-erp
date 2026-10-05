@@ -1,305 +1,73 @@
 import { Router } from "../lib/http";
-import { z } from "zod";
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "../db";
-import {
-  conversationParticipants,
-  conversations,
-  messages,
-  notifications,
-  products,
-  users,
-} from "../schema";
-import { ok, HttpError } from "../lib/api";
-import { requireUser } from "../lib/auth";
+import { ok } from "../lib/api";
+import { applyProfileUpdate, requireUser, selfEditableProfileFields } from "../lib/auth";
+import { notify } from "../lib/notifications";
 
-export const messagesRoute = new Router();
-export const notificationsRoute = new Router();
+/**
+ * `GET|PATCH /api/users/me`
+ *
+ * ## What moved out of this file
+ *
+ * Conversations and notifications used to live here alongside this route. They now have
+ * their own files — `server/routes/messages.ts` and `server/routes/notifications.ts` —
+ * because each grew past what a single `me` endpoint can share a file with, and because
+ * the authorization rules they enforce (participant membership on a conversation,
+ * per-user scoping on a notification) are the part of the system most worth being able
+ * to read in isolation.
+ *
+ * No endpoint was renamed or removed in the move. The mounts in `server/index.ts` still
+ * serve `/api/conversations` and `/api/notifications`; only the sub-router's paths
+ * changed, because they were being double-prefixed (see `server/routes/messages.ts`).
+ */
 export const usersRoute = new Router();
-
-/* --------------------------------- messages -------------------------------- */
-
-messagesRoute.use("*", async (c, next) => {
-  requireUser(c);
-  await next();
-});
-
-messagesRoute.get("/conversations", async (c) => {
-  const user = c.get("user")!;
-
-  const rows = await db
-    .select({
-      conversationId: conversations.id,
-      productId: conversations.productId,
-      lastMessageAt: conversations.lastMessageAt,
-      productTitle: products.title,
-      productSlug: products.slug,
-      unread: sql<number>`(
-        SELECT COUNT(*) FROM messages m
-        WHERE m.conversation_id = ${conversations.id}
-          AND m.sender_id <> ${user.id}
-          AND (${conversationParticipants.lastReadAt} IS NULL
-               OR m.created_at > ${conversationParticipants.lastReadAt})
-      )`,
-    })
-    .from(conversationParticipants)
-    .innerJoin(conversations, eq(conversationParticipants.conversationId, conversations.id))
-    .leftJoin(products, eq(conversations.productId, products.id))
-    .where(eq(conversationParticipants.userId, user.id))
-    .orderBy(desc(conversations.lastMessageAt));
-
-  const enriched = await Promise.all(
-    rows.map(async (row) => {
-      const [other] = await db
-        .select({ id: users.id, name: users.name, avatarUrl: users.avatarUrl })
-        .from(conversationParticipants)
-        .innerJoin(users, eq(conversationParticipants.userId, users.id))
-        .where(
-          and(
-            eq(conversationParticipants.conversationId, row.conversationId),
-            ne(conversationParticipants.userId, user.id),
-          ),
-        )
-        .limit(1);
-      return {
-        ...row,
-        unread: Number(row.unread),
-        otherUser: other ?? null,
-      };
-    }),
-  );
-
-  return c.json(ok(enriched));
-});
-
-const startConversationSchema = z.object({
-  sellerId: z.number().int().positive(),
-  productId: z.number().int().positive().optional(),
-  body: z.string().trim().min(1).max(2000),
-});
-
-messagesRoute.post("/conversations", async (c) => {
-  const user = c.get("user")!;
-  const input = startConversationSchema.parse(await c.req.json());
-  if (input.sellerId === user.id) {
-    throw new HttpError(400, "BAD_REQUEST", "You cannot message yourself.");
-  }
-
-  // Reuse existing conversation between these users for the same product
-  const existing = await db
-    .select({ id: conversations.id })
-    .from(conversations)
-    .innerJoin(
-      conversationParticipants,
-      eq(conversations.id, conversationParticipants.conversationId),
-    )
-    .where(
-      and(
-        input.productId
-          ? eq(conversations.productId, input.productId)
-          : sql`${conversations.productId} IS NULL`,
-        inArray(
-          conversations.id,
-          db
-            .select({ id: conversationParticipants.conversationId })
-            .from(conversationParticipants)
-            .where(eq(conversationParticipants.userId, user.id)),
-        ),
-      ),
-    )
-    .limit(1);
-
-  let conversationId: number;
-  if (existing.length) {
-    conversationId = existing[0].id;
-  } else {
-    const [created] = await db
-      .insert(conversations)
-      .values({
-        productId: input.productId ?? null,
-      })
-      .$returningId();
-    conversationId = Number(created.id);
-    await db.insert(conversationParticipants).values([
-      { conversationId, userId: user.id },
-      { conversationId, userId: input.sellerId },
-    ]);
-  }
-
-  await db.insert(messages).values({
-    conversationId,
-    senderId: user.id,
-    body: input.body,
-  });
-  await db
-    .update(conversations)
-    .set({ lastMessageAt: new Date() })
-    .where(eq(conversations.id, conversationId));
-  await db.insert(notifications).values({
-    userId: input.sellerId,
-    type: "MESSAGE_RECEIVED",
-    title: "New message",
-    body: `${user.name} sent you a message.`,
-    link: "/dashboard/messages",
-  });
-
-  return c.json(ok({ conversationId }), 201);
-});
-
-function assertParticipant(userId: number, row: { userId: number } | undefined) {
-  if (!row || row.userId !== userId) {
-    throw new HttpError(403, "FORBIDDEN", "You are not part of this conversation.");
-  }
-}
-
-messagesRoute.get("/conversations/:id/messages", async (c) => {
-  const user = c.get("user")!;
-  const conversationId = Number(c.req.param("id"));
-
-  const [participant] = await db
-    .select({ userId: conversationParticipants.userId })
-    .from(conversationParticipants)
-    .where(
-      and(
-        eq(conversationParticipants.conversationId, conversationId),
-        eq(conversationParticipants.userId, user.id),
-      ),
-    )
-    .limit(1);
-  assertParticipant(user.id, participant);
-
-  const rows = await db
-    .select({
-      id: messages.id,
-      senderId: messages.senderId,
-      body: messages.body,
-      createdAt: messages.createdAt,
-      senderName: users.name,
-    })
-    .from(messages)
-    .innerJoin(users, eq(messages.senderId, users.id))
-    .where(eq(messages.conversationId, conversationId))
-    .orderBy(messages.createdAt);
-
-  await db
-    .update(conversationParticipants)
-    .set({ lastReadAt: new Date() })
-    .where(
-      and(
-        eq(conversationParticipants.conversationId, conversationId),
-        eq(conversationParticipants.userId, user.id),
-      ),
-    );
-
-  return c.json(ok(rows));
-});
-
-messagesRoute.post("/conversations/:id/messages", async (c) => {
-  const user = c.get("user")!;
-  const conversationId = Number(c.req.param("id"));
-  const input = z.object({ body: z.string().trim().min(1).max(2000) }).parse(await c.req.json());
-
-  const [participant] = await db
-    .select({ userId: conversationParticipants.userId })
-    .from(conversationParticipants)
-    .where(
-      and(
-        eq(conversationParticipants.conversationId, conversationId),
-        eq(conversationParticipants.userId, user.id),
-      ),
-    )
-    .limit(1);
-  assertParticipant(user.id, participant);
-
-  await db.insert(messages).values({
-    conversationId,
-    senderId: user.id,
-    body: input.body,
-  });
-  await db
-    .update(conversations)
-    .set({ lastMessageAt: new Date() })
-    .where(eq(conversations.id, conversationId));
-
-  const [other] = await db
-    .select({ userId: conversationParticipants.userId })
-    .from(conversationParticipants)
-    .where(
-      and(
-        eq(conversationParticipants.conversationId, conversationId),
-        ne(conversationParticipants.userId, user.id),
-      ),
-    )
-    .limit(1);
-  if (other) {
-    await db.insert(notifications).values({
-      userId: other.userId,
-      type: "MESSAGE_RECEIVED",
-      title: "New message",
-      body: `${user.name} sent you a message.`,
-      link: "/dashboard/messages",
-    });
-  }
-
-  return c.json(ok({ sent: true }), 201);
-});
-
-/* ------------------------------- notifications ------------------------------ */
-
-notificationsRoute.use("*", async (c, next) => {
-  requireUser(c);
-  await next();
-});
-
-notificationsRoute.get("/", async (c) => {
-  const user = c.get("user")!;
-  const rows = await db
-    .select()
-    .from(notifications)
-    .where(eq(notifications.userId, user.id))
-    .orderBy(desc(notifications.createdAt))
-    .limit(50);
-  const unread = rows.filter((r) => !r.readAt).length;
-  return c.json(ok({ items: rows, unread }));
-});
-
-notificationsRoute.patch("/:id/read", async (c) => {
-  const user = c.get("user")!;
-  const id = Number(c.req.param("id"));
-  await db
-    .update(notifications)
-    .set({ readAt: new Date() })
-    .where(and(eq(notifications.id, id), eq(notifications.userId, user.id)));
-  return c.json(ok({ read: true }));
-});
-
-notificationsRoute.post("/read-all", async (c) => {
-  const user = c.get("user")!;
-  await db
-    .update(notifications)
-    .set({ readAt: new Date() })
-    .where(and(eq(notifications.userId, user.id), sql`${notifications.readAt} IS NULL`));
-  return c.json(ok({ read: true }));
-});
-
-/* ---------------------------------- users ---------------------------------- */
 
 usersRoute.get("/me", (c) => {
   const user = requireUser(c);
   return c.json(ok(user));
 });
 
+/**
+ * `PATCH /api/users/me` — update the session user's own profile.
+ *
+ * ## Why `requireUser` is called again here even though nothing gates this router
+ *
+ * `usersRoute` has no `use("*")` middleware, so the session is only guaranteed to be
+ * populated for handlers that ask for it. Calling `requireUser(c)` per handler is the
+ * convention this file already used, and it means adding a handler here cannot
+ * accidentally ship an unauthenticated endpoint by forgetting a middleware line.
+ *
+ * ## Why the actor is never a parameter
+ *
+ * `db.update(users).set(input).where(eq(users.id, user.id))` — the id comes from the
+ * session, so a client cannot update another account by sending a different one. The
+ * strict schema means `role`, `verified` and `passwordHash` are not reachable through
+ * this endpoint at all, rather than being filtered out after parsing.
+ */
 usersRoute.patch("/me", async (c) => {
   const user = requireUser(c);
-  const input = z
-    .object({
-      name: z.string().trim().min(2).max(80).optional(),
-      phone: z.string().trim().max(20).optional(),
-      avatarUrl: z.string().url().max(500).optional(),
-    })
-    .parse(await c.req.json());
-  await db.update(users).set(input).where(eq(users.id, user.id));
-  const [updated] = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
+  const input = selfEditableProfileFields.strict().parse(await c.req.json());
+
+  // `updatedAt` is written by the helper rather than left to the column default,
+  // because nothing sets it on update automatically and the notification key below
+  // depends on it. A profile row whose `updatedAt` never moved would make every
+  // subsequent edit collide on the same idempotency key and go unannounced.
+  const updated = await applyProfileUpdate(user.id, input);
+
+  // The server's conclusion, not the client's assertion: what actually changed is
+  // echoed back so the profile screen can show it without re-deriving it.
+  await notify(db, {
+    userId: user.id,
+    type: "PROFILE_UPDATED",
+    title: "Profile updated",
+    body: "Your Revaro profile details were changed.",
+    relatedEntityType: "ACCOUNT",
+    relatedEntityId: user.id,
+    // Keyed on the row's own version rather than "now", so a double-submitted save
+    // (which produces one `updatedAt`) cannot yield two "profile updated" rows.
+    eventKey: `PROFILE_UPDATED:${user.id}:${updated.updatedAt.getTime()}`,
+  });
+
   return c.json(
     ok({
       id: updated.id,

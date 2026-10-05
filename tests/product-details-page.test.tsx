@@ -42,6 +42,16 @@ vi.mock("@/features/reviews", async (importOriginal) => ({
 // Favourites live in the shared layer now, so the page test mocks them there.
 vi.mock("@/lib/query/favorites", () => ({ useFavoriteToggle: vi.fn() }));
 
+// Messaging is a separate feature whose button the seller card renders. It answers two
+// questions from the session (`useMessageSellerGate`) and owns a mutation, so it is
+// mocked at the feature's query seam rather than by standing up an `AuthProvider` and a
+// `QueryClient` for a button this page does not test. Answering "guest" keeps the real
+// branch under test: the signed-out case renders a link, not a dialog.
+vi.mock("@/features/messages/query", () => ({
+  useMessageSellerGate: () => ({ isGuest: true, isOwnListing: false }),
+  useStartConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
 /** Configure the page's server state without a network or a real query client. */
 function setDetail(value: Record<string, unknown>) {
   vi.mocked(query.useProductDetail).mockReturnValue(value as never);

@@ -9,13 +9,15 @@ import { favoritesRoute, cartRoute, addressesRoute } from "./routes/market";
 import { ordersRoute, rentalsRoute } from "./routes/orders";
 import { paymentsRoute } from "./routes/payments";
 import { reviewsRoute } from "./routes/reviews";
-import { messagesRoute, notificationsRoute, usersRoute } from "./routes/social";
+import { usersRoute } from "./routes/social";
+import { messagesRoute } from "./routes/messages";
+import { notificationsRoute } from "./routes/notifications";
+import { activityRoute } from "./routes/activity";
 import { sellerRoute } from "./routes/seller";
 import { sellersRoute } from "./routes/sellers";
 import { storageRoute } from "./routes/storage";
 import { sellerOrdersRoute } from "./routes/seller-orders";
 import { walletRoute } from "./routes/wallet";
-import { chatRoute } from "./routes/chat";
 import { adminRoute } from "./routes/admin";
 import { and, inArray, sql } from "drizzle-orm";
 import { db } from "./db";
@@ -127,6 +129,9 @@ router.route("/api/reviews", reviewsRoute);
 router.route("/api/users", usersRoute);
 router.route("/api/conversations", messagesRoute);
 router.route("/api/notifications", notificationsRoute);
+// The session user's own history. Mounted under its own prefix because it takes no
+// user id — see `routes/activity.ts`.
+router.route("/api/activity", activityRoute);
 router.route("/api/seller/orders", sellerOrdersRoute);
 // The wallet sits under `/api/seller/` for the same reason the orders router does:
 // it is the signed-in seller's own money, and keeping the prefix means the guard
@@ -137,7 +142,6 @@ router.route("/api/seller", sellerRoute);
 // guard applies, which is the point. See the note at the top of `routes/sellers.ts`.
 router.route("/api/sellers", sellersRoute);
 router.route("/api/storage", storageRoute);
-router.route("/api/chat", chatRoute);
 router.route("/api/admin", adminRoute);
 
 router.onError(onErrorHandler);

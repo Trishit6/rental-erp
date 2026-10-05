@@ -40,7 +40,7 @@ export function RatingBreakdown({
         const content = (
           <>
             <span className="w-9 shrink-0 text-[11px] font-bold tabular-nums text-muted-foreground">
-              {bucket.stars} <Star size={9} aria-hidden className="inline fill-current" />
+              {bucket.stars} <Star size={12} aria-hidden className="inline fill-current" />
             </span>
             <span
               className="h-1.5 flex-1 overflow-hidden rounded-full bg-black/5 dark:bg-white/5"

@@ -69,16 +69,18 @@ export function RentalReturnDialog({
           is physically back.
         </p>
 
-        <ul className="space-y-2 text-xs leading-relaxed text-muted-foreground">
-          <li>· Arrange to hand the item to the seller, or arrange collection with them.</li>
+        {/* `list-disc` already draws the marker. These items also began with a
+            hand-typed "· ", so every bullet rendered twice. */}
+        <ul className="list-disc space-y-2 pl-4 text-xs leading-relaxed text-muted-foreground">
+          <li>Arrange to hand the item to the seller, or arrange collection with them.</li>
           <li>
-            · Your{" "}
+            Your{" "}
             <strong className="text-foreground">
               {rental.daysRemaining === 0 ? "return" : `${rental.daysRemaining} day remaining`}
             </strong>{" "}
             and rental charge are unaffected by this request.
           </li>
-          <li>· Your deposit is released after the seller confirms the return.</li>
+          <li>Your deposit is released after the seller confirms the return.</li>
         </ul>
 
         <label className="flex cursor-pointer items-start gap-2.5 rounded-2xl bg-accent/10 p-3 text-xs leading-relaxed text-muted-foreground">

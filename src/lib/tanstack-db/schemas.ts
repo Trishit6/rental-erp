@@ -176,3 +176,77 @@ export const sellerProductCollectionSchema = z.object({
 });
 
 export type SellerProductRow = z.infer<typeof sellerProductCollectionSchema>;
+
+/**
+ * The signed-in user's notifications.
+ *
+ * **Private**, like every wallet and seller row here, and the reason is stronger than
+ * the others: a notification feed is a record of what somebody bought, booked, was
+ * told and was paid. It is wiped by `clearPrivateCollections` on logout.
+ *
+ * The projection is the fields the bell's dropdown and the feed page render. The
+ * `category`/`label`/`icon` triple is *derived by the server*
+ * (`server/lib/notification-queries.ts`) rather than resolved here, which is the point:
+ * the client holds no vocabulary table to drift out of step with the writer's, and an
+ * unrecognised `type` from a row seeded before that vocabulary existed renders as a
+ * neutral bell instead of a blank line.
+ */
+export const notificationCollectionSchema = z.object({
+  id: z.number(),
+  type: z.string(),
+  title: z.string(),
+  body: z.string().nullable(),
+  /** A resolved internal route, or `null` when the type has no destination. */
+  link: z.string().nullable(),
+  isRead: z.boolean(),
+  createdAt: z.string(),
+  category: z.string(),
+  label: z.string(),
+  icon: z.string(),
+});
+
+export type NotificationRow = z.infer<typeof notificationCollectionSchema>;
+
+/**
+ * The signed-in user's conversation list.
+ *
+ * **Private**, and the only collection in this file holding another person's name and
+ * avatar: those are the counterparties the user chose to talk to. Wiped on logout with
+ * the rest.
+ *
+ * Note what is *absent* — no preview of the last message's body, no sender id per
+ * message. The list carries a `lastMessageAt` and an unread count, both of which the
+ * server computes, so the store never holds a transcript fragment that outlives the
+ * session that fetched it.
+ */
+export const conversationCollectionSchema = z.object({
+  conversationId: z.number(),
+  productId: z.number().nullable(),
+  productTitle: z.string().nullable(),
+  productSlug: z.string().nullable(),
+  lastMessageAt: z.string(),
+  unread: z.number(),
+  otherUserName: z.string().nullable(),
+  otherUserAvatarUrl: z.string().nullable(),
+});
+
+export type ConversationRow = z.infer<typeof conversationCollectionSchema>;
+
+/**
+ * One conversation's messages.
+ *
+ * **Private**, and the most sensitive collection in the app: this is the literal
+ * content of private correspondence. It is wiped on logout and is never merged from
+ * more than one surface (a thread is read in one place), so there is no path by which
+ * a message fetched for one thread ends up displayed against another.
+ */
+export const messageCollectionSchema = z.object({
+  id: z.number(),
+  conversationId: z.number(),
+  senderId: z.number(),
+  body: z.string(),
+  createdAt: z.string(),
+  isRead: z.boolean(),
+});
+
+export type MessageRow = z.infer<typeof messageCollectionSchema>;

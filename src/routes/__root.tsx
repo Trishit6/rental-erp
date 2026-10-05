@@ -3,7 +3,6 @@ import { SiteFooter } from "@/components/layout/site-footer";
 import { SiteHeader } from "@/components/layout/site-header";
 import { GoToTop } from "@/components/shared/GoToTop";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Chatbot } from "@/features/chatbot";
 import { CartDrawerHost, CartDrawerProvider } from "@/features/cart";
 import type { AuthUser } from "@/lib/auth/auth-context";
 import { FloatingRail, FloatingRailProvider } from "@/lib/floating/rail";
@@ -16,7 +15,7 @@ export function RootLayout() {
   // "completely separate from the normal customer-facing navigation".
   //
   // So `/admin` and everything under it gets *no* site header, footer, floating rail,
-  // go-to-top or chatbot. A cart button has no business in a moderation queue, and a
+  // go-to-top. A cart button has no business in a moderation queue, and a
   // storefront header would offer a way out of a surface that should be deliberate to
   // leave. The providers above stay regardless: they own app-wide state, and the
   // admin pages use neither but removing them would mean two provider trees for no
@@ -56,7 +55,6 @@ export function RootLayout() {
                     into it from wherever they are declared. */}
                 <FloatingRail />
                 <GoToTop />
-                <Chatbot />
                 <CartDrawerHost />
               </>
             )}

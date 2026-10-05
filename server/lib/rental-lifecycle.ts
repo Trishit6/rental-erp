@@ -1,6 +1,8 @@
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import type { db } from "../db";
 import { rentalEvents, rentals } from "../schema";
+import { notificationEventKey } from "./notification-events";
+import { notify } from "./notifications";
 
 /**
  * Rental lifecycle.
@@ -253,6 +255,159 @@ export async function reconcileRentalStatuses(
         ),
       );
   }
+
+  // Announced last, deliberately. The transitions above are the state change; the
+  // notices describe it. Running the announcements afterwards means a rental that has
+  // *just* gone overdue in this same pass is reported as overdue, rather than
+  // producing a "starting soon" and an "overdue" in the same breath.
+  await announceRentalTransitions(executor, options);
+}
+
+/**
+ * Turn the rentals that changed state into notifications.
+ *
+ * ## Why this runs off the same reconciliation pass
+ *
+ * There is no scheduler in this application — no cron, no queue, no worker. The
+ * rental list, the rental detail page and the admin rentals table all already call
+ * `reconcileRentalStatuses`, so the moment a rental *actually* begins or becomes
+ * overdue is the moment one of those pages is read. Attaching the notice there means
+ * there is exactly one place a rental can change state and therefore exactly one
+ * place a notice can come from.
+ *
+ * ## Why the reminders cannot spam
+ *
+ * Every notification below carries a deterministic `eventKey` (`server/lib/
+ * notification-events.ts`). The daily reminders additionally carry the date, so
+ * today's "due tomorrow" and tomorrow's are different rows while a hundred reads
+ * before either are all the same one. The unique index, not a "have I already said
+ * this?" query, is what enforces it — so two people opening the page at the same
+ * moment produce one notice between them rather than two.
+ *
+ * ## Who gets told
+ *
+ * The renter always; the owner only when the item is late. An owner has no action to
+ * take about a rental starting, and a notice with no action is how a bell gets muted.
+ */
+export async function announceRentalTransitions(
+  executor: Pick<typeof db, "insert" | "select">,
+  options: { renterId?: number; ownerId?: number } = {},
+): Promise<void> {
+  const scope = [];
+  if (options.renterId !== undefined) scope.push(eq(rentals.renterId, options.renterId));
+  if (options.ownerId !== undefined) scope.push(eq(rentals.ownerId, options.ownerId));
+  const scoped = scope.length > 0 ? and(...scope) : undefined;
+  const today = new Date().toISOString().slice(0, 10);
+
+  const rows = await executor
+    .select({
+      id: rentals.id,
+      productId: rentals.productId,
+      renterId: rentals.renterId,
+      ownerId: rentals.ownerId,
+      status: rentals.status,
+      startDate: rentals.startDate,
+      endDate: rentals.endDate,
+    })
+    .from(rentals)
+    .where(
+      and(
+        inArray(rentals.status, ["CONFIRMED", "ACTIVE", "RETURN_PENDING", "OVERDUE"]),
+        scoped,
+      ),
+    )
+    .limit(200);
+
+  for (const rental of rows) {
+    const context = { rentalId: rental.id, productId: rental.productId };
+
+    // Starting tomorrow. Keyed on the date so it fires on the evening before, once.
+    if (
+      rental.status === "CONFIRMED" &&
+      rental.startDate.toISOString().slice(0, 10) === addUtcDays(today, 1)
+    ) {
+      await notify(executor, {
+        userId: rental.renterId,
+        type: "RENTAL_STARTING_SOON",
+        title: "Your rental starts tomorrow",
+        body: "Your rental begins tomorrow. Make sure you know where to collect it.",
+        context,
+        eventKey: notificationEventKey("RENTAL_STARTING_SOON", rental.id, rental.startDate.toISOString().slice(0, 10)),
+        emailTemplate: "RENTAL_REMINDER",
+      });
+    }
+
+    if (rental.status === "ACTIVE") {
+      // Just started. Keyed on the rental alone, so it is announced once ever.
+      await notify(executor, {
+        userId: rental.renterId,
+        type: "RENTAL_ACTIVE",
+        title: "Your rental has started",
+        body: "Your rental is now active. The return date is on your rentals page.",
+        context,
+        eventKey: notificationEventKey("RENTAL_ACTIVE", rental.id),
+      });
+
+      // Due today or tomorrow. Keyed on the day, so a rental with a two-day warning
+      // window can say it twice — once when it is "due tomorrow", once when it is
+      // "due today" — and not once per page view.
+      const endDate = rental.endDate.toISOString().slice(0, 10);
+      const daysLeft = (endDate === today || endDate === addUtcDays(today, 1)) ? endDate : null;
+      if (daysLeft) {
+        await notify(executor, {
+          userId: rental.renterId,
+          type: "RENTAL_RETURN_DUE",
+          title: "Your rental return is due soon",
+          body:
+            daysLeft === today
+              ? "Your rental is due back today."
+              : "Your rental is due back tomorrow.",
+          context,
+          eventKey: notificationEventKey("RENTAL_RETURN_DUE", rental.id, daysLeft),
+          emailTemplate: "RENTAL_REMINDER",
+        });
+      }
+    }
+
+    // Late. Both parties, because the owner has a real problem here and the renter
+    // has a real consequence. Keyed on the rental so it is said once, not once a day.
+    if (rental.status === "OVERDUE") {
+      const body = "A rental of your item is past its return date.";
+      await notifyManyRental(executor, [
+        { userId: rental.renterId, body: "One of your rentals is past its return date." },
+        ...(rental.ownerId !== rental.renterId ? [{ userId: rental.ownerId, body }] : []),
+      ], rental, context);
+    }
+  }
+}
+
+/** Fan out one rental's overdue notice to every party who is not the same person. */
+async function notifyManyRental(
+  executor: Pick<typeof db, "insert" | "select">,
+  recipients: { userId: number; body: string }[],
+  rental: { id: number },
+  context: { rentalId: number; productId: number },
+): Promise<void> {
+  for (const recipient of recipients) {
+    await notify(executor, {
+      userId: recipient.userId,
+      type: "RENTAL_OVERDUE",
+      title: "Rental overdue",
+      body: recipient.body,
+      context,
+      // Suffixed with the recipient so the *second* party's notice is not suppressed
+      // by the first party's insert on a shared key.
+      eventKey: notificationEventKey("RENTAL_OVERDUE", rental.id, recipient.userId),
+      emailTemplate: "RENTAL_REMINDER",
+    });
+  }
+}
+
+/** `YYYY-MM-DD` for the day after an ISO date string, without touching the clock. */
+function addUtcDays(isoDate: string, days: number): string {
+  const date = new Date(`${isoDate}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 /* --------------------------------- timeline --------------------------------- */

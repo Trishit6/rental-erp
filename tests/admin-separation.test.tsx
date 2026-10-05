@@ -12,8 +12,8 @@ import { isSellerRole } from "@/features/auth/types";
  *
  * Not "the admin pages look different". The requirement is that `/admin` is not part
  * of the storefront: no site header, no footer, no floating rail, no go-to-top, no
- * chatbot, no cart drawer. Each of those is a way *out* of the workspace, and the
- * header in particular offers navigation into pages an administrator should reach
+ * cart drawer. Each of those is a way *out* of the workspace, and the header in
+ * particular offers navigation into pages an administrator should reach
  * deliberately rather than by accident.
  *
  * ## The bug this guards is a prefix match, not a missing condition
@@ -49,10 +49,10 @@ vi.mock("@tanstack/react-router", () => ({
 /**
  * The chrome is stubbed rather than rendered.
  *
- * Rendering the real ones would drag in the whole cart store, the chatbot's session
- * and the rail's portal container, and a failure in any of those would be reported as
- * a failure of the thing under test. A stub identifies itself by name, which is what
- * these assertions match on.
+ * Rendering the real ones would drag in the whole cart store and the rail's portal
+ * container, and a failure in any of those would be reported as a failure of the
+ * thing under test. A stub identifies itself by name, which is what these assertions
+ * match on.
  *
  * Each `vi.mock` is written out rather than generated in a loop: the calls are
  * hoisted, and a hoisted call inside a loop is not a thing.
@@ -67,10 +67,6 @@ vi.mock("@/components/layout/site-footer", () => ({
 
 vi.mock("@/components/shared/GoToTop", () => ({
   GoToTop: () => <div data-testid="GoToTop" />,
-}));
-
-vi.mock("@/features/chatbot", () => ({
-  Chatbot: () => <div data-testid="Chatbot" />,
 }));
 
 vi.mock("@/features/cart", () => ({
@@ -101,7 +97,6 @@ describe("the root layout's customer chrome", () => {
       "SiteFooter",
       "FloatingRail",
       "GoToTop",
-      "Chatbot",
       "CartDrawerHost",
     ]) {
       expect(screen.getByTestId(name), `${name} is missing from a customer page`).toBeInTheDocument();
@@ -117,7 +112,6 @@ describe("the root layout's customer chrome", () => {
       "SiteFooter",
       "FloatingRail",
       "GoToTop",
-      "Chatbot",
       "CartDrawerHost",
     ]) {
       expect(screen.queryByTestId(name), `${name} leaked into /admin`).not.toBeInTheDocument();

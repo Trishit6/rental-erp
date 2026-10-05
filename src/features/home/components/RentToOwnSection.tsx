@@ -42,7 +42,7 @@ export function RentToOwnSection() {
         Own it
       </motion.span>
 
-      <p className="eyebrow text-primary-foreground/60" style={{ color: "rgb(255 247 237 / 60%)" }}>
+      <p className="eyebrow" style={{ color: "var(--dark-panel-fg-dim)" }}>
         Rent-to-own
       </p>
       <h2
@@ -54,7 +54,7 @@ export function RentToOwnSection() {
       </h2>
       <p
         className="mt-3 max-w-lg text-sm leading-relaxed"
-        style={{ color: "rgb(255 247 237 / 75%)" }}
+        style={{ color: "var(--dark-panel-fg-muted)" }}
       >
         Start with a rental. If it feels like yours, many sellers let you buy it later — with part
         of what you already paid credited toward the purchase.
@@ -67,7 +67,7 @@ export function RentToOwnSection() {
         </Link>
       </Button>
       <Badge
-        className="ml-3 hidden bg-white/10 text-primary-foreground sm:inline-flex"
+        className="ml-3 hidden bg-white/10 sm:inline-flex"
         style={{ color: "var(--dark-panel-fg)" }}
       >
         No commitment

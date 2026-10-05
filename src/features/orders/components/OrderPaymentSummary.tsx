@@ -81,7 +81,7 @@ export function OrderPaymentSummary({
 
       {isDevelopmentProvider && (
         <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
-          <Info size={11} className="mt-0.5 shrink-0 text-primary" aria-hidden="true" />
+          <Info size={12} className="mt-0.5 shrink-0 text-primary" aria-hidden="true" />
           Recorded by the development payment provider. No real money moved.
         </p>
       )}

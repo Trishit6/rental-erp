@@ -3,7 +3,6 @@ import { z } from "zod";
 import { and, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import {
-  notifications,
   orderItems,
   orders,
   products,
@@ -35,6 +34,8 @@ import {
 import { getProductRatingSummary, refreshProductRating } from "../lib/rating-aggregate";
 import { allowedImageHosts } from "../lib/storage";
 import { requireAdmin, requireUser } from "../lib/auth";
+import { notificationEventKey } from "../lib/notification-events";
+import { notify } from "../lib/notifications";
 
 /**
  * Product reviews and ratings.
@@ -433,12 +434,25 @@ reviewsRoute.post("/", async (c) => {
 
     const reviewId = Number(inserted.id);
     await refreshProductRating(line.productId);
-    await db.insert(notifications).values({
+    // Keyed on the review, which the unique index on `order_items`-scoped reviews
+    // guarantees is one-per-purchase — so a retried submission cannot tell the seller
+    // twice about the same words.
+    await notify(db, {
       userId: line.sellerId,
       type: "REVIEW_RECEIVED",
       title: "New review received",
       body: `${user.name} left a ${input.rating}-star ${purchaseType === "RENTAL" ? "rental" : "purchase"} review of ${line.productTitle}.`,
-      link: `/product/${line.productSlug}`,
+      context: {
+        productId: line.productId,
+        productSlug: line.productSlug,
+        orderId: line.orderId,
+        rentalId: line.rentalId,
+        orderNumber: null,
+      },
+      eventKey: notificationEventKey("REVIEW_RECEIVED", reviewId),
+      // Seller-side destination: the seller's own reviews workspace, not the public
+      // product page the customer's review renders on.
+      link: "/dashboard/reviews",
     });
 
     const created = await loadReviewRow(reviewId, user.id);

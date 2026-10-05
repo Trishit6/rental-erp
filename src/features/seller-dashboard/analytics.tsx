@@ -340,7 +340,8 @@ function TopProductsSection({
                 </Link>
                 <p className="text-xs text-muted-foreground">
                   {product.unitsSold} sold · {product.unitsRented} rented
-                  {product.ratingCount > 0 && ` · ${product.ratingAverage.toFixed(1)}★`}
+                  {product.ratingCount > 0 &&
+                    ` · ${product.ratingAverage.toFixed(1)} rated (${product.ratingCount})`}
                 </p>
               </div>
               <p className="shrink-0 text-sm font-bold">{formatInr(product.revenuePaise)}</p>

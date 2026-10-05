@@ -45,14 +45,42 @@ export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 export const MAX_IMAGES_PER_LISTING = 8;
 
 /**
- * Object keys are `products/<sellerId>/<random>.<ext>`.
+ * What a stored object belongs to.
+ *
+ * ## Why this is a closed list
+ *
+ * The scope is the *only* thing that varies between an object's kind, and it is
+ * interpolated straight into a key that is later checked against a regex to decide
+ * whether a caller owns it. An open string would let a caller mint
+ * `products/1/x.jpg` under any scope it liked and rely on the delete check reading a
+ * different prefix than the mint check wrote. `STORAGE_SCOPES` is the closed set both
+ * sides are derived from, so that class of mismatch cannot be expressed.
+ *
+ *  - `products` — seller-uploaded listing photography.
+ *  - `avatars`   — one user's own profile picture.
+ */
+export const STORAGE_SCOPES = ["products", "avatars"] as const;
+export type StorageScope = (typeof STORAGE_SCOPES)[number];
+
+export function isStorageScope(value: unknown): value is StorageScope {
+  return typeof value === "string" && (STORAGE_SCOPES as readonly string[]).includes(value);
+}
+
+/**
+ * Object keys are `<scope>/<ownerId>/<random>.<ext>`.
  *
  * The key shape is a security boundary, not a naming convention: it is
  * validated on both mint and delete, so a key can never contain `..`, a leading
- * slash or another seller's id, and therefore can never escape its prefix or
+ * slash or another user's id, and therefore can never escape its prefix or
  * address a foreign object.
+ *
+ * The scope alternation is anchored and drawn from `STORAGE_SCOPES` rather than
+ * written as `.*`, because the whole point of the pattern is that a key outside
+ * these shapes is refused — a permissive group would accept `../` and defeat it.
  */
-export const OBJECT_KEY_PATTERN = /^products\/\d+\/[a-z0-9]{8,32}\.(jpg|png|webp|avif)$/;
+export const OBJECT_KEY_PATTERN = new RegExp(
+  `^(?:${STORAGE_SCOPES.join("|")})\\/\\d+\\/[a-z0-9]{8,32}\\.(?:jpg|png|webp|avif)$`,
+);
 
 export type UploadTarget = {
   /** Provider-agnostic object key. Persist this, not the public URL. */
@@ -98,11 +126,59 @@ export function isValidObjectKey(key: string): boolean {
 }
 
 /**
+ * The scope a key belongs to, or `null` if it is not a key at all.
+ *
+ * The delete and dev-upload handlers are given an arbitrary client-supplied key and
+ * need the scope *before* they can decide ownership — and they must not derive it from
+ * the caller, because that would let a caller pass `products` and have a check applied
+ * against the wrong prefix. Reading it back out of the validated key means the ownership
+ * check is always evaluated against the key's real shape.
+ */
+export function scopeOfObjectKey(key: string): StorageScope | null {
+  const scope = key.slice(0, key.indexOf("/"));
+  return isStorageScope(scope) ? scope : null;
+}
+
+/**
+ * The prefix a caller must own to touch objects of `scope` — `products/7/` or
+ * `avatars/7/`.
+ *
+ * Ownership is expressed as a *prefix* rather than as a comparison against the key
+ * that was minted, because the delete path never knows which key was minted: it is
+ * handed an arbitrary key by the client and has to decide whether that key belongs to
+ * the caller. Deriving the prefix from the scope keeps mint and check reading the same
+ * rule.
+ */
+export function objectKeyPrefix(scope: StorageScope, ownerId: number): string {
+  return `${scope}/${ownerId}/`;
+}
+
+/**
+ * Whether `key` is a well-formed key belonging to `ownerId` within `scope`.
+ *
+ * Both halves matter and neither implies the other. The pattern alone would accept
+ * `products/8/…` for user 7 — a real, valid key that is not theirs. The prefix alone
+ * would accept `products/7/../../etc/passwd`. A caller must pass both checks, which is
+ * why this is one function rather than two call sites that must remember to call both.
+ */
+export function ownsObjectKey(
+  key: string,
+  scope: StorageScope,
+  ownerId: number,
+): boolean {
+  return isValidObjectKey(key) && key.startsWith(objectKeyPrefix(scope, ownerId));
+}
+
+/**
  * Mint a key for a new object. `<random>` is opaque on purpose: a
  * seller-chosen name would let one seller probe another's objects, and it keeps
  * two uploads of `photo.jpg` from colliding.
  */
-export function buildObjectKey(sellerId: number, contentType: AllowedImageMimeType): string {
+export function buildObjectKey(
+  scope: StorageScope,
+  ownerId: number,
+  contentType: AllowedImageMimeType,
+): string {
   const random = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-6);
-  return `products/${sellerId}/${random}.${IMAGE_EXTENSION_BY_MIME[contentType]}`;
+  return `${objectKeyPrefix(scope, ownerId)}${random}.${IMAGE_EXTENSION_BY_MIME[contentType]}`;
 }

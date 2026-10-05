@@ -70,7 +70,7 @@ export function ReviewCard({
                 className="gap-1 bg-primary/10 text-primary"
                 title={`Verified from a completed ${PURCHASE_TYPE_LABELS[review.purchaseType].toLowerCase()}`}
               >
-                <CheckCircle2 size={11} aria-hidden />
+                <CheckCircle2 size={12} aria-hidden />
                 {PURCHASE_TYPE_LABELS[review.purchaseType]}
               </Badge>
             )}

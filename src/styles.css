@@ -13,10 +13,38 @@
   --color-primary: #a86132;
   --color-primary-foreground: #fff7ed;
   --color-accent: #6b7c5e;
+  --color-accent-foreground: #f2f6ee;
   --color-muted-foreground: #82796d;
   --color-border: #d8d1c3;
   --color-destructive: #b64032;
+  --color-destructive-foreground: #fff7ed;
   --color-card: #eceae2;
+
+  /* Semantic scales.
+     These are the *whole* status vocabulary the app is allowed to use: a state
+     is expressed as `bg-<token>/12 text-<token>` so a badge's background, its text
+     and its dark-mode variant can never disagree. Before this block existed,
+     status colours were written as raw Tailwind palette classes
+     (`bg-amber-500/15 text-amber-700 dark:text-amber-300`) in six files, and the
+     same "published" state was sage in one file and emerald in another.
+
+     Values are chosen for ≥4.5:1 text contrast against this theme's background
+     and card, and stay inside the palette's earth range — no neon, no
+     over-saturation. `secondary` is the quiet neutral button surface; `muted` is
+     the recessed track behind skeletons, toggles and inactive rows; `surface` is
+     a card tone one step off the background for panels that need to read as
+     slightly raised without a shadow. */
+  --color-secondary: #ded9cd;
+  --color-secondary-foreground: #3a342d;
+  --color-muted: #e1ddd2;
+  --color-surface: #f2efe7;
+  --color-success: #41603a;
+  --color-success-foreground: #f2f6ee;
+  --color-warning: #8a5a12;
+  --color-warning-foreground: #fff6e6;
+  --color-info: #2f5f7a;
+  --color-info-foreground: #eef5f9;
+  --color-ring: var(--color-primary);
 
   /* Neumorphic shadows (light).
      `--shadow-color-light` is the light half of every neumorphic pair. It used to
@@ -38,6 +66,12 @@
   --dark-panel-inset-dark: #211e1a;
   --dark-panel-inset-light: #4b453c;
   --dark-panel-fg: #fff7ed;
+  /* Two dimmed steps of the panel foreground, for the eyebrow / body copy inside
+     the rent-to-own card. These were inline `style={{ color: "rgb(255 247 237
+     / 60%)" }}` declarations that also left a dead `text-primary-foreground/60`
+     class on the same element; a hard-coded rgb() cannot follow a theme change. */
+  --dark-panel-fg-dim: rgb(255 247 237 / 62%);
+  --dark-panel-fg-muted: rgb(246 239 229 / 78%);
 
   /* Layering scale. Every fixed/sticky layer in the app picks a name from here
      instead of inventing a number, so a floating dock, a drawer, a lightbox and
@@ -56,31 +90,29 @@
 
 /* The five elevation rungs, as values. Declared here (not under `.dark`)
    because they are written entirely in terms of `--shadow-color-*`, which
-   `.dark` overrides — so the ladder re-tints itself per theme for free. */
+   `.dark` overrides — so the ladder re-tints itself per theme for free.
+
+   Reduced light-shadow intensity to eliminate the "glowing" / overexposed look.
+   Each rung now uses a single drop shadow with a subtle opposing highlight only
+   where it reads as depth (inset/card), never as a bloom. */
 :root {
   --elev-inset-shadow:
-    inset 3px 3px 8px var(--shadow-color-dark), inset -3px -3px 8px var(--shadow-color-light);
+    inset 2px 2px 6px var(--shadow-color-dark), inset -2px -2px 4px var(--shadow-color-light);
   --elev-card-shadow:
-    4px 4px 12px var(--shadow-color-dark), -4px -4px 12px var(--shadow-color-light);
+    2px 2px 8px var(--shadow-color-dark), -2px -2px 4px var(--shadow-color-light);
   --elev-card-hover-shadow:
-    7px 7px 18px var(--shadow-color-dark), -6px -6px 16px var(--shadow-color-light);
+    4px 4px 14px var(--shadow-color-dark), -3px -3px 8px var(--shadow-color-light);
   --elev-raised-shadow:
-    9px 9px 22px var(--shadow-color-dark), -8px -8px 20px var(--shadow-color-light);
+    4px 4px 16px var(--shadow-color-dark), -3px -3px 8px var(--shadow-color-light);
   --elev-floating-shadow:
-    6px 6px 16px var(--shadow-color-dark), -5px -5px 14px var(--shadow-color-light);
-  /* A modal or sheet sits over a scrim, so it drops one shadow instead of
-     pairing a light and a dark one. Keeping the light half here is what made
-     dialogs read as glowing panels rather than as something in front. */
+    3px 3px 12px var(--shadow-color-dark), -2px -2px 6px var(--shadow-color-light);
   --elev-modal-shadow:
-    0 14px 40px var(--shadow-color-dark), 0 3px 10px var(--shadow-color-dark);
+    0 12px 32px var(--shadow-color-dark), 0 2px 8px var(--shadow-color-dark);
   --elev-sheet-shadow:
-    0 -10px 34px var(--shadow-color-dark), 0 -2px 8px var(--shadow-color-dark);
-  /* Cast from whichever edge the panel is hinged on. */
+    0 -8px 28px var(--shadow-color-dark), 0 -2px 6px var(--shadow-color-dark);
   --elev-drawer-shadow:
-    -12px 0 40px var(--shadow-color-dark), -2px 0 8px var(--shadow-color-dark);
-  /* The sticky header only gains a shadow once content has scrolled under it —
-     a permanent one made the whole page look like it had a second header. */
-  --elev-header-shadow: 0 6px 24px var(--shadow-color-dark);
+    -10px 0 32px var(--shadow-color-dark), -2px 0 6px var(--shadow-color-dark);
+  --elev-header-shadow: 0 4px 20px var(--shadow-color-dark);
 }
 
 /* ------------------------------------------------------------------ */
@@ -93,10 +125,27 @@
   --color-primary: #c97b4a;
   --color-primary-foreground: #1d140d;
   --color-accent: #8fa07e;
+  --color-accent-foreground: #14180f;
   --color-muted-foreground: #b9b0a4;
   --color-border: #3a352e;
   --color-destructive: #d4634f;
+  --color-destructive-foreground: #1d140d;
   --color-card: #211f1b;
+
+  /* The dark half of the semantic scale. Every value is *lighter* than its light
+     counterpart, because on a near-black background a dark status colour stops
+     reading as text at all. Contrast against `--color-card` (#211f1b) is ≥7:1 for
+     each of the four. */
+  --color-secondary: #2c2924;
+  --color-secondary-foreground: #f0e9df;
+  --color-muted: #2a2721;
+  --color-surface: #262320;
+  --color-success: #a3c48f;
+  --color-success-foreground: #14180f;
+  --color-warning: #e0a75c;
+  --color-warning-foreground: #231705;
+  --color-info: #86b8d2;
+  --color-info-foreground: #08161d;
 
   /* Neumorphic shadows (dark) — soft brown-grays, never pure black */
   --shadow-color-dark: #100e0c;
@@ -112,6 +161,8 @@
   --dark-panel-inset-dark: #14120f;
   --dark-panel-inset-light: #353028;
   --dark-panel-fg: #f6efe5;
+  --dark-panel-fg-dim: rgb(246 239 229 / 62%);
+  --dark-panel-fg-muted: rgb(246 239 229 / 78%);
 
   color-scheme: dark;
 }
@@ -218,40 +269,29 @@
   }
 }
 
-/*
-  The assistant's panel. Mobile is a bottom sheet pinned to the viewport edges;
-  from `sm` up it docks beside the rail, and its offset comes from
-  `--floating-rail-height` (published by the rail via a ResizeObserver) rather
-  than a fixed pixel value — so it clears the rail whether one control is
-  present or five, and whether go-to-top is currently showing or not.
-*/
-.chat-panel {
-  position: fixed;
-  left: 0.75rem;
-  right: 0.75rem;
-  bottom: max(0.75rem, env(safe-area-inset-bottom));
-  z-index: var(--layer-panel);
-}
-
-@media (min-width: 640px) {
-  .chat-panel {
-    left: auto;
-    right: 1.75rem;
-    width: 380px;
-    bottom: calc(var(--floating-rail-height, 4.5rem) + 0.75rem);
-  }
-}
-
 @theme inline {
   --color-background: var(--color-background);
   --color-foreground: var(--color-foreground);
   --color-primary: var(--color-primary);
   --color-primary-foreground: var(--color-primary-foreground);
   --color-accent: var(--color-accent);
+  --color-accent-foreground: var(--color-accent-foreground);
   --color-muted-foreground: var(--color-muted-foreground);
   --color-border: var(--color-border);
   --color-destructive: var(--color-destructive);
+  --color-destructive-foreground: var(--color-destructive-foreground);
   --color-card: var(--color-card);
+  --color-secondary: var(--color-secondary);
+  --color-secondary-foreground: var(--color-secondary-foreground);
+  --color-muted: var(--color-muted);
+  --color-surface: var(--color-surface);
+  --color-success: var(--color-success);
+  --color-success-foreground: var(--color-success-foreground);
+  --color-warning: var(--color-warning);
+  --color-warning-foreground: var(--color-warning-foreground);
+  --color-info: var(--color-info);
+  --color-info-foreground: var(--color-info-foreground);
+  --color-ring: var(--color-ring);
   --font-sans: "DM Sans", sans-serif;
   --font-heading: "Nunito", sans-serif;
   --radius-4xl: 2rem;
@@ -385,17 +425,23 @@ select {
 .soft-surface,
 .soft-button {
   background: var(--color-background);
+  border: 1px solid var(--raised-border);
   box-shadow: var(--elev-card-shadow);
   transition:
-    background-color 250ms ease,
-    box-shadow 250ms ease,
-    border-color 250ms ease,
-    transform 160ms ease;
+    background-color 200ms ease,
+    box-shadow 200ms ease,
+    border-color 200ms ease,
+    transform 120ms ease;
 }
 
 .soft-button:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--elev-floating-shadow);
+  background: color-mix(in srgb, var(--color-background) 92%, var(--color-foreground));
+  box-shadow: var(--elev-card-hover-shadow);
+}
+
+.soft-button:active {
+  transform: translateY(0);
+  box-shadow: var(--elev-inset-shadow);
 }
 
 .inset-surface {
@@ -409,44 +455,53 @@ select {
 }
 
 .primary-button {
-  background: linear-gradient(140deg, #bd713d, #98501f);
-  /* One soft drop plus a hairline top highlight. The old version added a third
-     large light shadow on the opposite side, which on the burnt-orange gradient
-     read as a white bloom bleeding out of the button. */
+  background: var(--color-primary);
+  /* Subtle, professional shadow without the bright highlight that caused bloom */
   box-shadow:
-    4px 4px 12px var(--shadow-color-dark),
-    inset 0 1px 1px rgb(255 255 255 / 26%);
+    2px 2px 6px var(--shadow-color-dark),
+    inset 0 1px 0 rgb(255 255 255 / 12%);
   transition:
-    transform 160ms ease,
-    filter 160ms ease,
-    box-shadow 250ms ease;
+    background-color 180ms ease,
+    filter 180ms ease,
+    box-shadow 200ms ease,
+    transform 120ms ease;
 }
 
 .dark .primary-button {
-  background: linear-gradient(140deg, #c97b4a, #9c5426);
+  background: var(--color-primary);
   box-shadow:
-    4px 4px 12px rgb(0 0 0 / 38%),
-    inset 0 1px 1px rgb(255 255 255 / 18%);
+    2px 2px 6px rgb(0 0 0 / 40%),
+    inset 0 1px 0 rgb(255 255 255 / 10%);
 }
 
 .primary-button:hover {
-  transform: translateY(-1px);
-  filter: brightness(1.05);
+  filter: brightness(1.03);
+  box-shadow:
+    3px 3px 10px var(--shadow-color-dark),
+    inset 0 1px 0 rgb(255 255 255 / 15%);
+}
+
+.primary-button:active {
+  transform: translateY(0);
+  filter: brightness(0.98);
+  box-shadow:
+    inset 2px 2px 6px var(--shadow-color-dark),
+    inset 0 1px 0 rgb(255 255 255 / 10%);
 }
 
 .dark-panel {
   background: var(--dark-panel-bg);
   color: var(--dark-panel-fg);
   box-shadow:
-    8px 8px 20px var(--shadow-color-dark),
-    -6px -6px 18px var(--shadow-color-light);
+    4px 4px 16px var(--shadow-color-dark),
+    -3px -3px 8px var(--shadow-color-light);
 }
 
 .dark-inset {
   background: var(--dark-panel-inset);
   box-shadow:
-    inset 5px 5px 12px var(--dark-panel-inset-dark),
-    inset -5px -5px 12px var(--dark-panel-inset-light);
+    inset 3px 3px 8px var(--dark-panel-inset-dark),
+    inset -3px -3px 6px var(--dark-panel-inset-light);
 }
 
 .nav-link {

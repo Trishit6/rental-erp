@@ -22,7 +22,7 @@ import { AdminSidebar, AdminSidebarFooter } from "./AdminSidebar";
  * ## Why this chrome is only here
  *
  * `/admin` deliberately does not render the customer `SiteHeader`, `SiteFooter`,
- * floating rail, go-to-top or chatbot; the root layout skips them for this subtree
+ * floating rail, or go-to-top; the root layout skips them for this subtree
  * (§"completely separate from the normal customer-facing navigation"). A seller
  * browsing their own dashboard has no business in the moderation queue's chrome, and
  * an administrator does not need a cart.

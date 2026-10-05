@@ -1,14 +1,18 @@
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
+  Archive,
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  ExternalLink,
+  Eye,
+  Loader2,
   Package,
   PauseCircle,
+  Pencil,
   PlayCircle,
   SlidersHorizontal,
+  Trash2,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -29,11 +33,22 @@ import { Pagination } from "@/components/shared/pagination";
 import { ProductImage } from "@/components/shared/product-image";
 import { SearchBar } from "@/components/shared/product-filters/SearchBar";
 import { formatInr } from "@/lib/pricing";
-import { useAdminProductFacets, useAdminProducts, useSetAdminProductStatus } from "../query";
+import {
+  useAdminProductDetail,
+  useAdminProductFacets,
+  useAdminProducts,
+  useBulkAdminProductStatus,
+  useDeleteAdminProduct,
+  useSetAdminProductStatus,
+  useUpdateAdminProduct,
+} from "../query";
+import { AdminDeleteProductDialog } from "./AdminDeleteProductDialog";
+import { AdminProductEditDialog } from "./AdminProductEditDialog";
 import {
   EMPTY_ADMIN_PRODUCT_FILTERS,
   hasActiveFilters,
   type AdminProductFilters,
+  type AdminProductRow,
   type AdminProductSort,
 } from "../types";
 
@@ -102,6 +117,7 @@ type HeadSpec =
   | { key: null; label: string; className?: string };
 
 const HEADS: HeadSpec[] = [
+  { key: null, label: "", className: "w-10" },
   { key: null, label: "Image", className: "w-14" },
   { key: "title", label: "Product" },
   { key: null, label: "Category" },
@@ -117,9 +133,9 @@ const HEADS: HeadSpec[] = [
 
 const STATUS_BADGE: Record<string, string> = {
   DRAFT: "bg-muted text-muted-foreground",
-  PUBLISHED: "bg-primary/12 text-primary",
-  OUT_OF_STOCK: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
-  PAUSED: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+  PUBLISHED: "bg-success/15 text-success",
+  OUT_OF_STOCK: "bg-warning/15 text-warning",
+  PAUSED: "bg-warning/15 text-warning",
   ARCHIVED: "bg-muted text-muted-foreground",
 };
 
@@ -127,13 +143,38 @@ export function AdminProductsTable() {
   const [filters, setFilters] = useState<AdminProductFilters>(EMPTY_ADMIN_PRODUCT_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  // Row selection, for the bulk status bar. A `Set` rather than an array of ids
+  // because "is this row selected" is asked once per visible row on every render,
+  // and a `Set` answers it without the O(n) scan an `includes` would do.
+  const [selected, setSelected] = useState<ReadonlySet<number>>(() => new Set());
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState<AdminProductRow | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+
   const facets = useAdminProductFacets();
   const products = useAdminProducts(filters);
   const setStatus = useSetAdminProductStatus();
+  const updateProduct = useUpdateAdminProduct();
+  const deleteProduct = useDeleteAdminProduct();
+  const bulkStatus = useBulkAdminProductStatus();
+  // Only fetched for the row whose dialog is open; `enabled` in the hook keeps the
+  // closed dialog from holding a request.
+  const editing = useAdminProductDetail(editingId);
+  const deleteDetail = useAdminProductDetail(deleting?.id ?? null);
 
-  /** Every control patches one field and returns to page 1 — see the note above. */
-  const update = (patch: Partial<AdminProductFilters>) =>
+  /**
+   * Every control patches one field and returns to page 1 — see the note above.
+   *
+   * The selection is dropped at the same time, and that is load-bearing rather than
+   * tidy: the bulk bar acts on ids, and after a filter change the rows those ids
+   * referred to are no longer the rows on screen. Keeping the selection would mean
+   * an admin narrowing to "Paused", selecting two rows and archiving them while
+   * believing they had picked from the narrowed set.
+   */
+  const update = (patch: Partial<AdminProductFilters>) => {
+    clearSelection();
     setFilters((current) => ({ ...current, ...patch, page: 1 }));
+  };
 
   const categoryOptions = useMemo(
     () => [
@@ -158,6 +199,7 @@ export function AdminProductsTable() {
   );
 
   function toggleSort(key: AdminProductSort) {
+    clearSelection();
     setFilters((current) => ({
       ...current,
       sort: key,
@@ -170,6 +212,45 @@ export function AdminProductsTable() {
 
   const rows = products.data?.rows ?? [];
   const isFirstLoad = products.isLoading && !products.data;
+
+  /** Selection is scoped to the page on screen; a filter or page change drops it. */
+  function toggleRow(id: number) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const allOnPageSelected = rows.length > 0 && rows.every((row) => selected.has(row.id));
+  const someOnPageSelected = rows.some((row) => selected.has(row.id));
+
+  function toggleAllOnPage() {
+    setSelected(() => {
+      if (allOnPageSelected) {
+        // Deselecting clears the whole selection, not just this page's rows: a
+        // half-empty "select all" is the ambiguity that leads to acting on rows
+        // the admin cannot see.
+        return new Set<number>();
+      }
+      return new Set(rows.map((row) => row.id));
+    });
+  }
+
+  /** Any filter, sort or page change invalidates the selection. */
+  function clearSelection() {
+    setSelected(new Set<number>());
+  }
+
+  function applyBulk(status: "PUBLISHED" | "PAUSED" | "ARCHIVED") {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    bulkStatus.mutate(
+      { ids, status },
+      { onSettled: clearSelection },
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -284,6 +365,65 @@ export function AdminProductsTable() {
         </div>
       </Card>
 
+      {/* ------------------------------ bulk actions ---------------------------- */}
+      {/* Rendered only when something is selected, so the table keeps its full
+          height in the common case. `role="status"` announces the count to a
+          screen reader as it changes. */}
+      {selected.size > 0 ? (
+        <Card
+          className="flex flex-wrap items-center gap-2 border-primary/25 bg-primary/5 p-3"
+          role="status"
+          aria-live="polite"
+        >
+          <span className="text-sm font-bold">
+            {selected.size} selected
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              disabled={bulkStatus.isPending}
+              onClick={() => applyBulk("PUBLISHED")}
+            >
+              {bulkStatus.isPending ? (
+                <Loader2 size={14} aria-hidden className="animate-spin" />
+              ) : (
+                <PlayCircle size={14} aria-hidden />
+              )}
+              Publish
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={bulkStatus.isPending}
+              onClick={() => applyBulk("PAUSED")}
+            >
+              <PauseCircle size={14} aria-hidden />
+              Pause
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={bulkStatus.isPending}
+              onClick={() => applyBulk("ARCHIVED")}
+            >
+              <Archive size={14} aria-hidden />
+              Archive
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={clearSelection}>
+              <X size={14} aria-hidden />
+              Clear selection
+            </Button>
+          </div>
+          <p className="w-full text-[11px] text-muted-foreground sm:w-auto">
+            Bulk actions change status only. Nothing is deleted — a listing with order history
+            cannot be removed anyway.
+          </p>
+        </Card>
+      ) : null}
+
       {/* --------------------------------- table -------------------------------- */}
       <Card className="overflow-hidden p-0">
         {isFirstLoad ? (
@@ -339,7 +479,7 @@ export function AdminProductsTable() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  {HEADS.map((head) =>
+                  {HEADS.map((head, index) =>
                     head.key ? (
                       <SortableHead
                         key={head.label}
@@ -348,6 +488,27 @@ export function AdminProductsTable() {
                         onSort={toggleSort}
                         className={head.className}
                       />
+                    ) : index === 0 ? (
+                      // The select-all cell. `aria-checked="mixed"` is what tells a
+                      // screen reader that *some* — but not all — of this page is
+                      // selected; a bare boolean would claim "all" or "none" and both
+                      // would be wrong.
+                      <TableHead key="select" className={head.className}>
+                        <input
+                          type="checkbox"
+                          className="size-4 align-middle"
+                          checked={allOnPageSelected}
+                          ref={(node) => {
+                            if (node) node.indeterminate = !allOnPageSelected && someOnPageSelected;
+                          }}
+                          onChange={toggleAllOnPage}
+                          aria-label={
+                            allOnPageSelected
+                              ? "Clear selection on this page"
+                              : "Select every product on this page"
+                          }
+                        />
+                      </TableHead>
                     ) : (
                       <TableHead key={head.label} className={head.className}>
                         {head.label}
@@ -361,6 +522,15 @@ export function AdminProductsTable() {
                   const isLive = row.status === "PUBLISHED" || row.status === "OUT_OF_STOCK";
                   return (
                     <TableRow key={row.id}>
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          className="size-4 align-middle"
+                          checked={selected.has(row.id)}
+                          onChange={() => toggleRow(row.id)}
+                          aria-label={`Select ${row.title}`}
+                        />
+                      </TableCell>
                       <TableCell>
                         <ProductImage
                           src={row.imageUrl}
@@ -415,7 +585,7 @@ export function AdminProductsTable() {
                         <div className="flex items-center justify-end gap-1">
                           <Button asChild variant="ghost" size="sm" className="h-8 px-2">
                             <Link to="/product/$slug" params={{ slug: row.slug }}>
-                              <ExternalLink size={14} aria-hidden />
+                              <Eye size={14} aria-hidden />
                               <span className="sr-only">View {row.title}</span>
                             </Link>
                           </Button>
@@ -439,6 +609,29 @@ export function AdminProductsTable() {
                             )}
                             {isLive ? "Disable" : "Enable"}
                           </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 px-2"
+                            onClick={() => {
+                              setEditError(null);
+                              setEditingId(row.id);
+                            }}
+                          >
+                            <Pencil size={14} aria-hidden />
+                            <span className="sr-only">Edit {row.title}</span>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 px-2 text-destructive hover:bg-destructive/10"
+                            onClick={() => setDeleting(row)}
+                          >
+                            <Trash2 size={14} aria-hidden />
+                            <span className="sr-only">Delete {row.title}</span>
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -450,12 +643,57 @@ export function AdminProductsTable() {
               <Pagination
                 page={filters.page}
                 totalPages={products.data?.totalPages ?? 1}
-                onPageChange={(page) => setFilters((current) => ({ ...current, page }))}
+                onPageChange={(page) => {
+                  // Paging changes the rows on screen, so the selection goes with
+                  // it — same reasoning as a filter change, see `update`.
+                  clearSelection();
+                  setFilters((current) => ({ ...current, page }));
+                }}
               />
             </div>
           </>
         )}
       </Card>
+
+      <AdminProductEditDialog
+        product={editing.data}
+        facets={facets.data}
+        open={editingId !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setEditingId(null);
+            setEditError(null);
+          }
+        }}
+        saving={updateProduct.isPending}
+        serverError={editError}
+        onSubmit={(payload) => {
+          setEditError(null);
+          updateProduct.mutate(
+            { id: editingId!, input: payload },
+            {
+              onSuccess: () => setEditingId(null),
+              onError: (error: Error) => setEditError(error.message),
+            },
+          );
+        }}
+      />
+
+      <AdminDeleteProductDialog
+        product={deleting}
+        // `null` until the detail read lands, which holds the confirm button — see
+        // the dialog for why the count has to be known before the promise is made.
+        orderCount={deleteDetail.data?.orderCount ?? null}
+        open={deleting !== null}
+        onOpenChange={(next) => !next && setDeleting(null)}
+        deleting={deleteProduct.isPending}
+        onConfirm={(id) => {
+          deleteProduct.mutate(
+            { id },
+            { onSettled: () => setDeleting(null) },
+          );
+        }}
+      />
     </div>
   );
 }

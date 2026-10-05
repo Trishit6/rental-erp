@@ -21,8 +21,13 @@ features/<feature-name>/
 
 Features: home, browse, product-details, **categories**, pre-loved, rentals, favorites, cart,
 checkout, **auth** (login+register+session state), sell, profile, seller-dashboard (+ earnings.tsx,
-profile.tsx), seller-listings, seller-orders, seller-rentals, messages, admin, how-it-works,
-**chatbot** (Loop — the global floating assistant).
+profile.tsx), seller-listings, seller-orders, seller-rentals, messages, admin, how-it-works.
+
+The global floating assistant (Loop) was **removed**: its client feature, its `/api/chat`
+route, its knowledge base and its stylesheet block are gone, along with the `/api/chat`
+mount in `server/index.ts`. Nothing else referenced it, so no replacement was written —
+questions that used to reach it are served by `/how-it-works`, `/messages` and the FAQ
+copy in the help sections.
 
 **Shared product-search / filter layer** (added with Feature 06; both Browse and the category
 pages use it, because feature-to-feature imports are forbidden and copying the filter UI would
@@ -84,12 +89,11 @@ pnpm db:harvest-images   # refresh real Unsplash URLs -> server/data/product-ima
 pnpm db:seed:products    # append 20k bulk products (PRODUCT_COUNT / CLEAR_PRODUCTS / SEED env)
 pnpm db:studio      # drizzle studio
 pnpm start:api      # API only, no Vite
-```
-
-Verify in this order — **typecheck → lint → test**. `pnpm build` type-checks both tsconfigs before
-`vite build`, so a type error blocks the build. The suite is 44 files / 777 tests (~2 min); one file is
-`pnpm exec vitest run tests/pricing.test.ts` (add `-t "name"` for a single test). There is no git
-repo and no CI here, so verification is local only.
+```Verify in this order — **typecheck → lint → test**. `pnpm build` type-checks both tsconfigs before
+`vite build`, so a type error blocks the build. The suite is 68 files / 1215 tests (~2.5 min); one
+file is `pnpm exec vitest run tests/pricing.test.ts` (add `-t "name"` for a single test). The repo is
+git-managed (remote: `github.com/Trishit6/rental-erp`) but has **no CI workflow**, so verification
+is local only — never rely on a push to catch a break.
 
 **Branding**: the product is **Revaro** (`Rent. Buy. Sell. Reuse.`). The MariaDB database name is
 still `reloop` — a frozen internal identifier that changing would force a data migration on every
@@ -192,16 +196,6 @@ Schema change flow: edit `server/schema.ts` → `pnpm db:generate` → `pnpm db:
   5–10 min. `FloatingActions` = fixed bottom-right dock (cart badge from real cart query, browse,
   sell/login), `.floating-dock` class provides glassy neumorphic backdrop. Navbar elevates on
   scroll (shadow via `--shadow-color-dark`).
-- **Assistant (Loop)** — `src/features/chatbot/` (mounted once in `__root.tsx`, anchored
-  bottom-LEFT so it never collides with the bottom-right action dock). The transcript is local UI
-  state (`useChatbot`, lifted into the widget so it survives closing the panel); only the reply is
-  fetched, via `POST /api/chat`. The server (`server/routes/chat.ts`) grounds answers in real
-  listings — `recommendProducts` reuses `searchProducts`, honours rent/buy intent, and retries
-  broader/singular terms when a multi-word query finds nothing — and calls any OpenAI-compatible
-  endpoint when `CHATBOT_API_KEY` is set (Groq default, `CHATBOT_BASE_URL`/`CHATBOT_MODEL` override).
-  Without a key, or if the provider call fails, it answers from `server/lib/chatbot-knowledge.ts`
-  (FAQ intents + product intents + optional product cards). The route never 500s on a provider
-  failure and is rate limited to 30/min.
 - **Browse (Feature 04) — the URL is the single source of truth.** Every filter, the sort order and
   the page live in search params, so refresh, back/forward and shared links reproduce the view.
   Canonical params: `search`, `category`, `mode`, `condition`, `availability`, `minPrice`,

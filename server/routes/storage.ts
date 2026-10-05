@@ -7,10 +7,14 @@ import { readDevObject, writeDevObject } from "../lib/storage/dev";
 import {
   ALLOWED_IMAGE_MIME_TYPES,
   buildObjectKey,
+  isStorageScope,
   isValidObjectKey,
+  ownsObjectKey,
+  scopeOfObjectKey,
   isAllowedImageMimeType,
   MAX_IMAGE_BYTES,
   MAX_IMAGES_PER_LISTING,
+  type StorageScope,
 } from "../lib/storage/types";
 
 export const storageRoute = new Router();
@@ -49,19 +53,34 @@ const uploadTargetSchema = z
   .object({
     contentType: z.string().trim(),
     byteSize: z.number().int().positive(),
+    /**
+     * Which kind of object this is. Defaults to `products` so the existing
+     * product-image callers — and every request that predates avatars — keep working
+     * unchanged.
+     */
+    scope: z.string().trim().optional(),
   })
   .strict();
 
 /**
  * Mint a single-object upload target.
  *
- * The key is derived from the **authenticated** seller id, never from the
- * request, so this endpoint cannot be used to obtain write access to another
- * seller's prefix no matter what the body says.
+ * The key is derived from the **authenticated** user's id and the requested scope, never
+ * from the request, so this endpoint cannot be used to obtain write access to another
+ * account's prefix no matter what the body says.
+ *
+ * The scope is validated against `STORAGE_SCOPES` rather than interpolated into the key:
+ * an unrecognised value is a 400, so the shape of every key this endpoint can produce is
+ * closed by `isValidObjectKey`, which the upload and delete paths both re-check.
  */
 storageRoute.post("/upload-target", async (c) => {
   const user = requireUser(c);
   const input = uploadTargetSchema.parse(await c.req.json());
+
+  const scope: StorageScope = input.scope === undefined ? "products" : input.scope as StorageScope;
+  if (!isStorageScope(scope)) {
+    throw new HttpError(400, "UNSUPPORTED_SCOPE", "That kind of upload is not supported.");
+  }
 
   if (!isAllowedImageMimeType(input.contentType)) {
     throw new HttpError(400, "UNSUPPORTED_IMAGE_TYPE", "Use a JPEG, PNG, WebP or AVIF image.");
@@ -71,7 +90,7 @@ storageRoute.post("/upload-target", async (c) => {
   }
 
   const provider = getStorageProvider();
-  const key = buildObjectKey(user.id, input.contentType);
+  const key = buildObjectKey(scope, user.id, input.contentType);
   const target = await provider.createUploadTarget({
     key,
     contentType: input.contentType,
@@ -99,11 +118,13 @@ storageRoute.put("/upload", async (c) => {
   }
 
   const key = c.req.query("key") ?? "";
-  if (!isValidObjectKey(key)) {
-    throw new HttpError(400, "BAD_REQUEST", "Invalid upload key.");
-  }
-  if (!key.startsWith(`products/${user.id}/`)) {
-    throw new HttpError(403, "FORBIDDEN", "That upload key belongs to another seller.");
+  // The scope is read back out of the key and the prefix is derived from it, rather
+  // than the check being hardcoded to `products/`. That is what lets an avatar upload
+  // work without duplicating this handler — and it keeps one rule for ownership: a key
+  // must be well-formed *and* start with the caller's own prefix within its own scope.
+  const scope = scopeOfObjectKey(key);
+  if (!scope || !ownsObjectKey(key, scope, user.id)) {
+    throw new HttpError(403, "FORBIDDEN", "That upload key belongs to another account.");
   }
 
   const contentType = c.req.header("content-type")?.split(";")[0]?.trim() ?? "";
@@ -172,8 +193,9 @@ storageRoute.delete("/object", async (c) => {
   const user = requireUser(c);
   const { key } = deleteSchema.parse(await c.req.json());
   if (!isValidObjectKey(key)) throw new HttpError(400, "BAD_REQUEST", "Invalid key.");
-  if (!key.startsWith(`products/${user.id}/`)) {
-    throw new HttpError(403, "FORBIDDEN", "That image belongs to another seller.");
+  const scope = scopeOfObjectKey(key);
+  if (!scope || !ownsObjectKey(key, scope, user.id)) {
+    throw new HttpError(403, "FORBIDDEN", "That image belongs to another account.");
   }
 
   await getStorageProvider().deleteObject(key);
