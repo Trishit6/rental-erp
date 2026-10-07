@@ -8,7 +8,7 @@ import { ApiError } from "@/lib/api/client";
 import { useOwnSellerProfile, useUpdateSellerProfile } from "./query";
 
 /**
- * Seller settings — `/dashboard/settings`.
+ * Seller settings — `/seller/settings`.
  *
  * The shopfront is the one thing about a seller that a *stranger* reads: their
  * name, their bio, how long they usually take to reply. Everything on this page

@@ -229,31 +229,31 @@ describe("the reply-time field's validation", () => {
 
 describe("where onboarding sends the seller", () => {
   it("honours a same-origin redirect", () => {
-    expect(safeRedirect("/dashboard/listings", "/dashboard")).toBe("/dashboard/listings");
+    expect(safeRedirect("/seller/listings", "/seller")).toBe("/seller/listings");
   });
 
   it("falls back when there is nothing to honour", () => {
-    expect(safeRedirect(undefined, "/dashboard")).toBe("/dashboard");
-    expect(safeRedirect("", "/dashboard")).toBe("/dashboard");
+    expect(safeRedirect(undefined, "/seller")).toBe("/seller");
+    expect(safeRedirect("", "/seller")).toBe("/seller");
   });
 
   it("refuses an absolute URL on another origin", () => {
     // An open redirect here is a phishing link the platform vouches for: the seller
     // arrives at a lookalike login page by following a link from Revaro itself.
-    expect(safeRedirect("https://evil.example/login", "/dashboard")).toBe("/dashboard");
-    expect(safeRedirect("http://evil.example", "/dashboard")).toBe("/dashboard");
+    expect(safeRedirect("https://evil.example/login", "/seller")).toBe("/seller");
+    expect(safeRedirect("http://evil.example", "/seller")).toBe("/seller");
   });
 
   it("refuses protocol-relative URLs that look like absolute paths", () => {
     // `//evil.example` and `/\evil.example` both navigate off-origin while passing a
     // naive `startsWith("/")` check. Both are why the check is a segment test rather
     // than a prefix test.
-    expect(safeRedirect("//evil.example", "/dashboard")).toBe("/dashboard");
-    expect(safeRedirect("/\\evil.example", "/dashboard")).toBe("/dashboard");
+    expect(safeRedirect("//evil.example", "/seller")).toBe("/seller");
+    expect(safeRedirect("/\\evil.example", "/seller")).toBe("/seller");
   });
 
   it("refuses a relative path, which would resolve against the current route", () => {
-    expect(safeRedirect("products", "/dashboard")).toBe("/dashboard");
-    expect(safeRedirect("../..", "/dashboard")).toBe("/dashboard");
+    expect(safeRedirect("products", "/seller")).toBe("/seller");
+    expect(safeRedirect("../..", "/seller")).toBe("/seller");
   });
 });

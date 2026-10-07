@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { requireAuth } from "@/lib/auth/guards";
 import { ordersRouteOptions } from "@/features/orders/route";
 
 /**
@@ -12,7 +11,6 @@ import { ordersRouteOptions } from "@/features/orders/route";
  * profile, while older links — notifications, order confirmation screens, bookmarks —
  * still point at `/orders`, and those must keep working without a redirect hop.
  */
-export const Route = createFileRoute("/profile/orders")({
+export const Route = createFileRoute("/_authenticated/profile/orders")({
   ...ordersRouteOptions,
-  beforeLoad: requireAuth,
 });

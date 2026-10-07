@@ -6,7 +6,7 @@
  *  - `ReviewSection` — the product page.
  *  - `ReviewProductButton` — one eligible order line on the order page.
  *  - `MyReviewsSection` — the account area.
- *  - `SellerReviewsSection` — `/dashboard/reviews`.
+ *  - `SellerReviewsSection` — `/seller/reviews`.
  *  - `ModerationSection` — the admin page's review tab.
  *
  * Everything else (the card, the form, the filters) is co-located detail that no

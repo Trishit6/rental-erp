@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { favoritesRouteOptions } from "@/features/favorites/route";
-import { requireAuth } from "@/lib/auth/guards";
 
 /**
  * `/favorites` — the personal wishlist, so it is always protected.
@@ -10,7 +9,6 @@ import { requireAuth } from "@/lib/auth/guards";
  * `/login?redirect=/favorites` so they land back here afterwards. There is no
  * favourites-specific auth logic anywhere.
  */
-export const Route = createFileRoute("/favorites")({
+export const Route = createFileRoute("/_authenticated/favorites")({
   ...favoritesRouteOptions,
-  beforeLoad: requireAuth,
 });

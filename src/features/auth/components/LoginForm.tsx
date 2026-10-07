@@ -41,9 +41,9 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
         });
         toast("Welcome back!");
         // `redirectTo` is the page the visitor was originally refused, already sanitised
-        // at the route boundary. Without one, the destination is decided by the role the
-        // server just told us about — a seller lands in their workspace, a customer on
-        // their profile — rather than everyone being sent to the same page.
+        // at the route boundary. Without one, the destination is the authenticated
+        // workspace home (`/dashboard`) — the same page `requireGuest` sends a
+        // signed-in visitor to, so the two never disagree about where a user belongs.
         void navigate({ to: redirectTo ?? homeFor(user) });
       } catch (error) {
         setServerError(serverMessage(error));

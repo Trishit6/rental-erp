@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { NotificationsPage } from "@/features/notifications";
-import { requireAuth } from "@/lib/auth/guards";
 
 /**
  * `/notifications` — the full notification feed.
@@ -19,7 +18,7 @@ import { requireAuth } from "@/lib/auth/guards";
  * which is the honest type for "unvalidated query string" — and the single parse stays
  * in one place instead of being written twice.
  */
-export const Route = createFileRoute("/notifications")({
+export const Route = createFileRoute("/_authenticated/notifications")({
   validateSearch: (search: Record<string, unknown>) => {
     const out: Record<string, string | undefined> = {};
     for (const key of ["page", "category", "unread"]) {
@@ -28,6 +27,5 @@ export const Route = createFileRoute("/notifications")({
     }
     return out;
   },
-  beforeLoad: requireAuth,
   component: NotificationsPage,
 });

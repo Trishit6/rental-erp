@@ -425,8 +425,8 @@ export function showsPurchasePrice(listingType: ProductFormValues["listingType"]
  * Not a convenience — a requirement of the router. When `validateSearch` returns
  * a type whose fields are all *required*, TanStack Router marks `search` as
  * required on that route and, worse, propagates that requirement to its **child**
- * routes. So `/dashboard/products` would make `search` mandatory on
- * `/dashboard/products/new` too, and every `<Link>` to the create form would need
+ * routes. So `/seller/products` would make `search` mandatory on
+ * `/seller/products/new` too, and every `<Link>` to the create form would need
  * `search={{}}` — a list of empty filters carried around purely to satisfy a type
  * system that is describing a URL, where every parameter genuinely can be absent.
  *
@@ -501,7 +501,7 @@ export function resolveSellerProductFilters(search: SellerProductsSearch): Selle
  * Filters → the URL shape above.
  *
  * Defaults are **omitted** rather than written out, so a link to an unfiltered
- * list is a clean `/dashboard/products` and the seller never sends a colleague a
+ * list is a clean `/seller/products` and the seller never sends a colleague a
  * URL full of parameters that all mean "no filter".
  */
 export function toSearchParams(filters: SellerProductFilters): SellerProductsSearch {

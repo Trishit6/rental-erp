@@ -37,7 +37,7 @@ import type { FavoriteSearch } from "./types";
  * used by Home, Browse and Product Details.
  */
 export function FavoritesPage() {
-  const search = useSearch({ from: "/favorites" });
+  const search = useSearch({ from: "/_authenticated/favorites" });
   const navigate = useNavigate();
   const reduceMotion = useReducedMotion();
 

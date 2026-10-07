@@ -10,13 +10,13 @@ import { ApiError } from "@/lib/api/client";
 import { useBecomeSeller, useSellerStatus } from "./query";
 
 /**
- * `/dashboard/become-a-seller` — start selling.
+ * `/seller/become-a-seller` — start selling.
  *
  * ## Why this page exists at all
  *
  * `requireSeller` sends a signed-in customer here instead of to `/`. Bouncing
  * them to the home page with no explanation is how a marketplace loses a seller
- * who was one click away; and the alternative — letting every `/dashboard/*` route
+ * who was one click away; and the alternative — letting every `/seller/*` route
  * render for a customer — is what produced panels that 403'd on first load.
  *
  * ## What it asks for, and what it refuses to
@@ -45,7 +45,7 @@ import { useBecomeSeller, useSellerStatus } from "./query";
  */
 export function BecomeSellerPage() {
   const navigate = useNavigate();
-  const { redirect: redirectTo } = useSearch({ from: "/dashboard/become-a-seller" });
+  const { redirect: redirectTo } = useSearch({ from: "/seller/become-a-seller" });
   const { data: status } = useSellerStatus();
   const becomeSeller = useBecomeSeller();
 
@@ -82,7 +82,7 @@ export function BecomeSellerPage() {
         bio: bio.trim() || undefined,
         responseRateHours: hours,
       });
-      void navigate({ to: safeRedirect(redirectTo, "/dashboard") });
+      void navigate({ to: safeRedirect(redirectTo, "/seller") });
     } catch (submitError) {
       setError(
         submitError instanceof ApiError || submitError instanceof Error
@@ -191,7 +191,7 @@ export function BecomeSellerPage() {
               )}
               Start selling
             </Button>
-            <Link to="/dashboard" className="nav-link text-sm font-semibold">
+            <Link to="/seller" className="nav-link text-sm font-semibold">
               Maybe later
             </Link>
           </div>

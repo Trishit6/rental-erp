@@ -96,14 +96,15 @@ describe("the destination a user is returned to", () => {
 });
 
 describe("where a signed-in user belongs", () => {
-  it("sends a seller to their workspace and a customer to their profile", () => {
-    // `/dashboard` is the *seller* workspace: its pages read `/api/seller/*`, which answers
-    // 403 for a customer. A single destination for everyone meant every new sign-in and
-    // every customer who opened /login by mistake landed on a page that could not load.
+  it("sends every role to the authenticated workspace home", () => {
+    // `/dashboard` is the authenticated workspace home and is role-aware: a seller sees
+    // their sales overview, an admin sees platform figures, a customer sees their
+    // marketplace. One destination for everyone means every sign-in ends on a page that
+    // can actually load for that role.
     expect(homeFor(user("SELLER"))).toBe("/dashboard");
     expect(homeFor(user("ADMIN"))).toBe("/dashboard");
-    expect(homeFor(user("USER"))).toBe("/profile");
-    expect(homeFor(null)).toBe("/profile");
+    expect(homeFor(user("USER"))).toBe("/dashboard");
+    expect(homeFor(null)).toBe("/dashboard");
   });
 });
 
@@ -148,7 +149,7 @@ describe("requireAdmin", () => {
     const options = run(requireAdmin, { context: { user: user(role) } });
 
     expect(options?.replace).toBe(true);
-    expect(options?.to).toBe(role === "SELLER" ? "/dashboard" : "/profile");
+    expect(options?.to).toBe("/dashboard");
   });
 
   it("never sends a signed-in non-admin to the login page", () => {
@@ -171,11 +172,11 @@ describe("requireSeller", () => {
   it("offers onboarding to a customer, carrying the destination", () => {
     const options = run(requireSeller, {
       context: { user: user("USER") },
-      location: { pathname: "/dashboard/wallet" },
+      location: { pathname: "/seller/wallet" },
     });
 
-    expect(options?.to).toBe("/dashboard/become-a-seller");
-    expect(options?.search).toEqual({ redirect: "/dashboard/wallet" });
+    expect(options?.to).toBe("/seller/become-a-seller");
+    expect(options?.search).toEqual({ redirect: "/seller/wallet" });
   });
 
   it("sends a signed-out visitor to login instead of to onboarding", () => {
@@ -190,14 +191,14 @@ describe("requireGuest", () => {
     expect(run(requireGuest, { context: { user: null } })).toBeNull();
   });
 
-  it("sends a signed-in customer to their profile, not the seller workspace", () => {
+  it("sends a signed-in customer to the workspace home", () => {
     const options = run(requireGuest, { context: { user: user("USER") } });
 
-    expect(options?.to).toBe("/profile");
+    expect(options?.to).toBe("/dashboard");
     expect(options?.replace).toBe(true);
   });
 
-  it("sends a signed-in seller to their workspace", () => {
+  it("sends a signed-in seller to the same workspace home", () => {
     expect(run(requireGuest, { context: { user: user("SELLER") } })?.to).toBe("/dashboard");
   });
 

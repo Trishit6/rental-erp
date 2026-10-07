@@ -101,7 +101,7 @@ export function AccountCard({ user }: { user: AccountUser }) {
 
       <div className="flex flex-wrap gap-2 border-t border-border pt-4">
         <Button type="button" variant="secondary" onClick={() => void navigate({ to: homeFor(user) })}>
-          Go to my {user.role === "SELLER" || user.role === "ADMIN" ? "dashboard" : "profile"}
+          Go to my dashboard
         </Button>
         <Button type="button" variant="ghost" disabled={logout.isPending} onClick={() => void handleLogout()}>
           <LogOut size={15} aria-hidden />

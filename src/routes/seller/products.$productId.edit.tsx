@@ -3,7 +3,7 @@ import { EditProductPage } from "@/features/seller-listings/form-pages";
 import { requireSeller } from "@/lib/auth/guards";
 
 /**
- * `/dashboard/products/$productId/edit` — edit a listing.
+ * `/seller/products/$productId/edit` — edit a listing.
  *
  * Named as a flat file, `products.$productId.edit.tsx`, to match its siblings
  * `products.tsx` and `products.new.tsx`. It previously lived at
@@ -18,7 +18,7 @@ import { requireSeller } from "@/lib/auth/guards";
  * `server/lib/seller-access.ts` is the authoritative one. A listing is the seller's,
  * so this must never be reachable by a customer.
  */
-export const Route = createFileRoute("/dashboard/products/$productId/edit")({
+export const Route = createFileRoute("/seller/products/$productId/edit")({
   beforeLoad: requireSeller,
   component: EditProductPage,
 });

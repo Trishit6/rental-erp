@@ -37,11 +37,11 @@ export function RegisterForm() {
           password: parsed.data.password,
         });
         toast("Welcome to Revaro!");
-        // Registration signs the user in. The destination comes from `homeFor` rather
-        // than a hardcoded `/dashboard`: registration always creates a plain USER, and
-        // `/dashboard` is the *seller* workspace — so a new customer used to be dropped
-        // onto a page whose every request answers `403 SELLER_REQUIRED`. The role the
-        // server assigned is what decides, not an assumption about who is signing up.
+        // Registration signs the user in, exactly once: the server created the
+        // session and set the cookies before this response arrived, so there is
+        // no login step to repeat. The destination is the authenticated
+        // workspace home (`/dashboard`) — the same page `requireGuest` sends a
+        // signed-in visitor to — rather than a public page.
         void navigate({ to: homeFor(user) });
       } catch (error) {
         setServerError(serverMessage(error));

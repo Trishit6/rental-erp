@@ -11,7 +11,7 @@ import { useSellerReviews } from "../query";
 import type { ReviewStatus } from "../types";
 
 /**
- * The seller's own review page — `/dashboard/reviews`.
+ * The seller's own review page — `/seller/reviews`.
  *
  * ## Two things this surface is not
  *

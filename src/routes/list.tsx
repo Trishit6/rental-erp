@@ -4,7 +4,7 @@ import { requireSeller } from "@/lib/auth/guards";
 /**
  * `/list` — kept as a redirect, deliberately.
  *
- * This path had a dedicated listing wizard at `/dashboard/products/new`, and the
+ * This path had a dedicated listing wizard at `/seller/products/new`, and the
  * nav, the empty states and the product page all link here. Removing the route
  * would break eight links across the app to gain nothing; a redirect keeps every
  * one of them working and puts the seller on the real form.
@@ -17,6 +17,6 @@ import { requireSeller } from "@/lib/auth/guards";
 export const Route = createFileRoute("/list")({
   beforeLoad: ({ context, location }) => {
     requireSeller({ context, location });
-    throw redirect({ to: "/dashboard/products/new" });
+    throw redirect({ to: "/seller/products/new" });
   },
 });

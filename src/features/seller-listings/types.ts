@@ -140,7 +140,7 @@ export type StockFilter = (typeof STOCK_FILTERS)[number];
  *
  * All of it lives in the URL, so a filtered listing is a link a seller can send
  * to a colleague and a filtered page survives a refresh. See
- * `src/routes/dashboard/products.tsx` for the search-param parsers.
+ * `src/routes/seller/products.tsx` for the search-param parsers.
  */
 export type SellerProductFilters = {
   page: number;

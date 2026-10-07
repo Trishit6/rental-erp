@@ -11,7 +11,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { useSellerEarnings, useSellerTransactions } from "./query";
 
 /**
- * Seller earnings — `/dashboard/earnings`.
+ * Seller earnings — `/seller/earnings`.
  *
  * ## Gross and net are both shown, and the fee is stated
  *
@@ -53,7 +53,7 @@ export function DashboardEarningsPage() {
           </p>
         </div>
         <Button asChild variant="secondary" size="sm">
-          <Link to="/dashboard/analytics">See trends</Link>
+          <Link to="/seller/analytics">See trends</Link>
         </Button>
       </header>
 

@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { requireAuth } from "@/lib/auth/guards";
 import { orderDetailRouteOptions } from "@/features/orders/route";
 
 /**
@@ -10,7 +9,6 @@ import { orderDetailRouteOptions } from "@/features/orders/route";
  * here: a guard proves the visitor is *a* user, only the API can prove the order
  * is *theirs*.
  */
-export const Route = createFileRoute("/orders/$orderId")({
+export const Route = createFileRoute("/_authenticated/orders/$orderId")({
   ...orderDetailRouteOptions,
-  beforeLoad: requireAuth,
 });

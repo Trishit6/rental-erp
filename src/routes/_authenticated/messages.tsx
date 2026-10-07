@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { MessagesPage } from "@/features/messages";
-import { requireAuth } from "@/lib/auth/guards";
 
 /**
  * `/messages` — the conversation centre.
@@ -22,13 +21,12 @@ import { requireAuth } from "@/lib/auth/guards";
  * (`server/lib/messaging.ts`) resolves the row and 403s unless the caller is a
  * participant, so no guess in the URL can reach another person's thread.
  */
-export const Route = createFileRoute("/messages")({
+export const Route = createFileRoute("/_authenticated/messages")({
   validateSearch: (search: Record<string, unknown>): { conversation?: number } => {
     const raw = search.conversation;
     if (typeof raw !== "string" && typeof raw !== "number") return {};
     const id = Number(raw);
     return { conversation: Number.isInteger(id) && id > 0 ? id : undefined };
   },
-  beforeLoad: requireAuth,
   component: MessagesPage,
 });

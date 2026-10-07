@@ -31,6 +31,20 @@ export function RootLayout() {
     },
   });
 
+  // The authenticated workspace (orders, rentals, profile, dashboard, …) renders
+  // its own chrome — sidebar, topbar, mobile menu — so the storefront header and
+  // footer are hidden there too. Detected by matched route ids rather than by
+  // pathname, because the layout is pathless: `/orders` and `/profile` look like
+  // any other page from the URL alone, but their route id in the tree is
+  // `/_authenticated/orders`.
+  //
+  // `state.matches` is always present in the real router; the `??` guard only
+  // keeps this selector total for callers that hand it a partial state.
+  const isWorkspace = useRouterState({
+    select: (state) =>
+      state.matches?.some((match) => match.routeId.startsWith("/_authenticated")) ?? false,
+  });
+
   return (
     // Two providers wrap the whole app, in this order:
     //  - the cart drawer's open state is shared by the navbar, the floating dock
@@ -42,7 +56,7 @@ export function RootLayout() {
       <FloatingRailProvider>
         <TooltipProvider>
           <div className="min-h-screen">
-            {isAdmin ? (
+            {isAdmin || isWorkspace ? (
               <Outlet />
             ) : (
               <>

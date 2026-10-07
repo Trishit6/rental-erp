@@ -13,7 +13,7 @@ import { useWalletOverview, useWalletPayouts, useWalletTransactions } from "./qu
 import type { WalletParams } from "./types";
 
 /**
- * The seller wallet — `/dashboard/wallet`.
+ * The seller wallet — `/seller/wallet`.
  *
  * ## One page, one source of numbers
  *

@@ -21,7 +21,7 @@ import {
 } from "./types";
 
 /**
- * Seller analytics — `/dashboard/analytics`.
+ * Seller analytics — `/seller/analytics`.
  *
  * ## The window is chosen by the server, not the browser
  *

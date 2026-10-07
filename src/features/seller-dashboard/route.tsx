@@ -8,7 +8,7 @@ import {
 import type { AnalyticsParams } from "./types";
 
 /**
- * The `/dashboard/analytics` route options.
+ * The `/seller/analytics` route options.
  *
  * The window and the ranking metric are URL state, parsed once at the router.
  * This matters more here than on any other page: the period is a *decision* a
@@ -25,7 +25,7 @@ export const sellerAnalyticsRouteOptions = {
 };
 
 function SellerAnalyticsRoute() {
-  const search = useSearch({ from: "/dashboard/analytics" });
+  const search = useSearch({ from: "/seller/analytics" });
   const navigate = useNavigate();
   const params = resolveAnalyticsParams(search);
 
@@ -34,7 +34,7 @@ function SellerAnalyticsRoute() {
       params={params}
       onParamsChange={(next: AnalyticsParams) =>
         void navigate({
-          to: "/dashboard/analytics",
+          to: "/seller/analytics",
           search: toAnalyticsSearch(next),
           // Replace, not push: switching between "30 days" and "90 days" is
           // re-reading the same page, not travelling. Pushing would bury the

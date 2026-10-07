@@ -24,7 +24,7 @@ import { useCategoryOptions } from "@/lib/categories";
 import { ApiError } from "@/lib/api/client";
 
 /**
- * Create a listing — `/dashboard/products/new`.
+ * Create a listing — `/seller/products/new`.
  *
  * Replaces the six-step wizard that used to live at `/list`. The wizard's real
  * problem was not its shape, it was that it was a *second* place a listing could
@@ -54,7 +54,7 @@ export function NewProductPage() {
     try {
       const created = await createProduct.mutateAsync(toPayload(values));
       void navigate({
-        to: "/dashboard/products/$productId/edit",
+        to: "/seller/products/$productId/edit",
         params: { productId: String(created.id) },
       });
     } catch (error) {
@@ -69,7 +69,7 @@ export function NewProductPage() {
   return (
     <div className="page-wrap max-w-3xl space-y-6 pb-10 pt-8">
       <Link
-        to="/dashboard/products"
+        to="/seller/products"
         className="nav-link inline-flex items-center gap-1 text-sm font-semibold"
       >
         <ArrowLeft size={15} aria-hidden />
@@ -107,7 +107,7 @@ export function NewProductPage() {
 }
 
 /**
- * Edit a listing — `/dashboard/products/$productId/edit`.
+ * Edit a listing — `/seller/products/$productId/edit`.
  *
  * There was no edit screen at all before this. The listings page offered a status
  * toggle and a delete, and a seller who wanted to correct a price or swap a photo
@@ -122,7 +122,7 @@ export function NewProductPage() {
  * than a 403 that would confirm the listing exists.
  */
 export function EditProductPage() {
-  const { productId } = useParams({ from: "/dashboard/products/$productId/edit" });
+  const { productId } = useParams({ from: "/seller/products/$productId/edit" });
   const navigate = useNavigate();
   const id = Number(productId);
 
@@ -156,7 +156,7 @@ export function EditProductPage() {
     setIssues([]);
     try {
       await updateProduct.mutateAsync(toPayload(values));
-      void navigate({ to: "/dashboard/products" });
+      void navigate({ to: "/seller/products" });
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Couldn't save your changes.");
     }
@@ -177,7 +177,7 @@ export function EditProductPage() {
             purpose, so this page can't be used to find out which.
           </p>
           <Button asChild variant="secondary" size="sm">
-            <Link to="/dashboard/products">Back to listings</Link>
+            <Link to="/seller/products">Back to listings</Link>
           </Button>
         </Card>
       </div>
@@ -187,7 +187,7 @@ export function EditProductPage() {
   return (
     <div className="page-wrap max-w-3xl space-y-6 pb-10 pt-8">
       <Link
-        to="/dashboard/products"
+        to="/seller/products"
         className="nav-link inline-flex items-center gap-1 text-sm font-semibold"
       >
         <ArrowLeft size={15} aria-hidden />

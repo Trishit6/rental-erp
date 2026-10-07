@@ -11,23 +11,26 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRouteImport } from './routes/_auth'
+import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AuthCheckRouteImport } from './routes/auth-check'
 import { Route as BrowseRouteImport } from './routes/browse'
-import { Route as CartRouteImport } from './routes/cart'
 import { Route as CheckoutRouteImport } from './routes/checkout'
-import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as HowItWorksRouteImport } from './routes/how-it-works'
 import { Route as ListRouteImport } from './routes/list'
-import { Route as MessagesRouteImport } from './routes/messages'
-import { Route as NotificationsRouteImport } from './routes/notifications'
-import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as PaymentRouteImport } from './routes/payment'
 import { Route as PreLovedRouteImport } from './routes/pre-loved'
-import { Route as ProfileRouteImport } from './routes/profile'
-import { Route as RentalsRouteImport } from './routes/rentals'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
 import { Route as AuthRegisterRouteImport } from './routes/_auth/register'
+import { Route as AuthenticatedCartRouteImport } from './routes/_authenticated/cart'
+import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedFavoritesRouteImport } from './routes/_authenticated/favorites'
+import { Route as AuthenticatedMessagesRouteImport } from './routes/_authenticated/messages'
+import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
+import { Route as AuthenticatedOrdersRouteImport } from './routes/_authenticated/orders'
+import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
+import { Route as AuthenticatedRentalsRouteImport } from './routes/_authenticated/rentals'
+import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminAuditLogRouteImport } from './routes/admin/audit-log'
 import { Route as AdminCategoriesRouteImport } from './routes/admin/categories'
@@ -46,28 +49,28 @@ import { Route as AdminSellersRouteImport } from './routes/admin/sellers'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as CategoriesIndexRouteImport } from './routes/categories/index'
 import { Route as CategoriesCategorySlugRouteImport } from './routes/categories/$categorySlug'
-import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
-import { Route as DashboardAnalyticsRouteImport } from './routes/dashboard/analytics'
-import { Route as DashboardBecomeASellerRouteImport } from './routes/dashboard/become-a-seller'
-import { Route as DashboardEarningsRouteImport } from './routes/dashboard/earnings'
-import { Route as DashboardMessagesRouteImport } from './routes/dashboard/messages'
-import { Route as DashboardOrdersRouteImport } from './routes/dashboard/orders'
-import { Route as DashboardProductsRouteImport } from './routes/dashboard/products'
-import { Route as DashboardRentalsRouteImport } from './routes/dashboard/rentals'
-import { Route as DashboardReviewsRouteImport } from './routes/dashboard/reviews'
-import { Route as DashboardSettingsRouteImport } from './routes/dashboard/settings'
-import { Route as DashboardWalletRouteImport } from './routes/dashboard/wallet'
-import { Route as OrdersOrderIdRouteImport } from './routes/orders.$orderId'
 import { Route as ProductSlugRouteImport } from './routes/product.$slug'
-import { Route as ProfileActivityRouteImport } from './routes/profile.activity'
-import { Route as ProfileOrdersRouteImport } from './routes/profile.orders'
-import { Route as ProfileRentalsRouteImport } from './routes/profile.rentals'
-import { Route as ProfileWishlistRouteImport } from './routes/profile.wishlist'
-import { Route as RentalsRentalIdRouteImport } from './routes/rentals.$rentalId'
+import { Route as SellerIndexRouteImport } from './routes/seller/index'
 import { Route as SellerIdRouteImport } from './routes/seller.$id'
+import { Route as SellerAnalyticsRouteImport } from './routes/seller/analytics'
+import { Route as SellerBecomeASellerRouteImport } from './routes/seller/become-a-seller'
+import { Route as SellerEarningsRouteImport } from './routes/seller/earnings'
+import { Route as SellerMessagesRouteImport } from './routes/seller/messages'
+import { Route as SellerOrdersRouteImport } from './routes/seller/orders'
+import { Route as SellerProductsRouteImport } from './routes/seller/products'
+import { Route as SellerRentalsRouteImport } from './routes/seller/rentals'
+import { Route as SellerReviewsRouteImport } from './routes/seller/reviews'
+import { Route as SellerSettingsRouteImport } from './routes/seller/settings'
+import { Route as SellerWalletRouteImport } from './routes/seller/wallet'
+import { Route as AuthenticatedOrdersOrderIdRouteImport } from './routes/_authenticated/orders.$orderId'
+import { Route as AuthenticatedProfileActivityRouteImport } from './routes/_authenticated/profile.activity'
+import { Route as AuthenticatedProfileOrdersRouteImport } from './routes/_authenticated/profile.orders'
+import { Route as AuthenticatedProfileRentalsRouteImport } from './routes/_authenticated/profile.rentals'
+import { Route as AuthenticatedProfileWishlistRouteImport } from './routes/_authenticated/profile.wishlist'
+import { Route as AuthenticatedRentalsRentalIdRouteImport } from './routes/_authenticated/rentals.$rentalId'
 import { Route as AdminReviewsSellersRouteImport } from './routes/admin/reviews.sellers'
-import { Route as DashboardProductsNewRouteImport } from './routes/dashboard/products.new'
-import { Route as DashboardProductsProductIdEditRouteImport } from './routes/dashboard/products.$productId.edit'
+import { Route as SellerProductsNewRouteImport } from './routes/seller/products.new'
+import { Route as SellerProductsProductIdEditRouteImport } from './routes/seller/products.$productId.edit'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -76,6 +79,10 @@ const IndexRoute = IndexRouteImport.update({
 } as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/_auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedRoute = AuthenticatedRouteImport.update({
+  id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -93,19 +100,9 @@ const BrowseRoute = BrowseRouteImport.update({
   path: '/browse',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CartRoute = CartRouteImport.update({
-  id: '/cart',
-  path: '/cart',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const CheckoutRoute = CheckoutRouteImport.update({
   id: '/checkout',
   path: '/checkout',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FavoritesRoute = FavoritesRouteImport.update({
-  id: '/favorites',
-  path: '/favorites',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HowItWorksRoute = HowItWorksRouteImport.update({
@@ -118,21 +115,6 @@ const ListRoute = ListRouteImport.update({
   path: '/list',
   getParentRoute: () => rootRouteImport,
 } as any)
-const MessagesRoute = MessagesRouteImport.update({
-  id: '/messages',
-  path: '/messages',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const NotificationsRoute = NotificationsRouteImport.update({
-  id: '/notifications',
-  path: '/notifications',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OrdersRoute = OrdersRouteImport.update({
-  id: '/orders',
-  path: '/orders',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const PaymentRoute = PaymentRouteImport.update({
   id: '/payment',
   path: '/payment',
@@ -141,16 +123,6 @@ const PaymentRoute = PaymentRouteImport.update({
 const PreLovedRoute = PreLovedRouteImport.update({
   id: '/pre-loved',
   path: '/pre-loved',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProfileRoute = ProfileRouteImport.update({
-  id: '/profile',
-  path: '/profile',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RentalsRoute = RentalsRouteImport.update({
-  id: '/rentals',
-  path: '/rentals',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthLoginRoute = AuthLoginRouteImport.update({
@@ -162,6 +134,52 @@ const AuthRegisterRoute = AuthRegisterRouteImport.update({
   id: '/register',
   path: '/register',
   getParentRoute: () => AuthRoute,
+} as any)
+const AuthenticatedCartRoute = AuthenticatedCartRouteImport.update({
+  id: '/cart',
+  path: '/cart',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedFavoritesRoute = AuthenticatedFavoritesRouteImport.update({
+  id: '/favorites',
+  path: '/favorites',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedMessagesRoute = AuthenticatedMessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedNotificationsRoute =
+  AuthenticatedNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedOrdersRoute = AuthenticatedOrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedRentalsRoute = AuthenticatedRentalsRouteImport.update({
+  id: '/rentals',
+  path: '/rentals',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
@@ -253,116 +271,122 @@ const CategoriesCategorySlugRoute = CategoriesCategorySlugRouteImport.update({
   path: '/categories/$categorySlug',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DashboardIndexRoute = DashboardIndexRouteImport.update({
-  id: '/dashboard/',
-  path: '/dashboard/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardAnalyticsRoute = DashboardAnalyticsRouteImport.update({
-  id: '/dashboard/analytics',
-  path: '/dashboard/analytics',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardBecomeASellerRoute = DashboardBecomeASellerRouteImport.update({
-  id: '/dashboard/become-a-seller',
-  path: '/dashboard/become-a-seller',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardEarningsRoute = DashboardEarningsRouteImport.update({
-  id: '/dashboard/earnings',
-  path: '/dashboard/earnings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardMessagesRoute = DashboardMessagesRouteImport.update({
-  id: '/dashboard/messages',
-  path: '/dashboard/messages',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardOrdersRoute = DashboardOrdersRouteImport.update({
-  id: '/dashboard/orders',
-  path: '/dashboard/orders',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardProductsRoute = DashboardProductsRouteImport.update({
-  id: '/dashboard/products',
-  path: '/dashboard/products',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardRentalsRoute = DashboardRentalsRouteImport.update({
-  id: '/dashboard/rentals',
-  path: '/dashboard/rentals',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardReviewsRoute = DashboardReviewsRouteImport.update({
-  id: '/dashboard/reviews',
-  path: '/dashboard/reviews',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardSettingsRoute = DashboardSettingsRouteImport.update({
-  id: '/dashboard/settings',
-  path: '/dashboard/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardWalletRoute = DashboardWalletRouteImport.update({
-  id: '/dashboard/wallet',
-  path: '/dashboard/wallet',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OrdersOrderIdRoute = OrdersOrderIdRouteImport.update({
-  id: '/$orderId',
-  path: '/$orderId',
-  getParentRoute: () => OrdersRoute,
-} as any)
 const ProductSlugRoute = ProductSlugRouteImport.update({
   id: '/product/$slug',
   path: '/product/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProfileActivityRoute = ProfileActivityRouteImport.update({
-  id: '/activity',
-  path: '/activity',
-  getParentRoute: () => ProfileRoute,
-} as any)
-const ProfileOrdersRoute = ProfileOrdersRouteImport.update({
-  id: '/orders',
-  path: '/orders',
-  getParentRoute: () => ProfileRoute,
-} as any)
-const ProfileRentalsRoute = ProfileRentalsRouteImport.update({
-  id: '/rentals',
-  path: '/rentals',
-  getParentRoute: () => ProfileRoute,
-} as any)
-const ProfileWishlistRoute = ProfileWishlistRouteImport.update({
-  id: '/wishlist',
-  path: '/wishlist',
-  getParentRoute: () => ProfileRoute,
-} as any)
-const RentalsRentalIdRoute = RentalsRentalIdRouteImport.update({
-  id: '/$rentalId',
-  path: '/$rentalId',
-  getParentRoute: () => RentalsRoute,
+const SellerIndexRoute = SellerIndexRouteImport.update({
+  id: '/seller/',
+  path: '/seller/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const SellerIdRoute = SellerIdRouteImport.update({
   id: '/seller/$id',
   path: '/seller/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SellerAnalyticsRoute = SellerAnalyticsRouteImport.update({
+  id: '/seller/analytics',
+  path: '/seller/analytics',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SellerBecomeASellerRoute = SellerBecomeASellerRouteImport.update({
+  id: '/seller/become-a-seller',
+  path: '/seller/become-a-seller',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SellerEarningsRoute = SellerEarningsRouteImport.update({
+  id: '/seller/earnings',
+  path: '/seller/earnings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SellerMessagesRoute = SellerMessagesRouteImport.update({
+  id: '/seller/messages',
+  path: '/seller/messages',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SellerOrdersRoute = SellerOrdersRouteImport.update({
+  id: '/seller/orders',
+  path: '/seller/orders',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SellerProductsRoute = SellerProductsRouteImport.update({
+  id: '/seller/products',
+  path: '/seller/products',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SellerRentalsRoute = SellerRentalsRouteImport.update({
+  id: '/seller/rentals',
+  path: '/seller/rentals',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SellerReviewsRoute = SellerReviewsRouteImport.update({
+  id: '/seller/reviews',
+  path: '/seller/reviews',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SellerSettingsRoute = SellerSettingsRouteImport.update({
+  id: '/seller/settings',
+  path: '/seller/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SellerWalletRoute = SellerWalletRouteImport.update({
+  id: '/seller/wallet',
+  path: '/seller/wallet',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedOrdersOrderIdRoute =
+  AuthenticatedOrdersOrderIdRouteImport.update({
+    id: '/$orderId',
+    path: '/$orderId',
+    getParentRoute: () => AuthenticatedOrdersRoute,
+  } as any)
+const AuthenticatedProfileActivityRoute =
+  AuthenticatedProfileActivityRouteImport.update({
+    id: '/activity',
+    path: '/activity',
+    getParentRoute: () => AuthenticatedProfileRoute,
+  } as any)
+const AuthenticatedProfileOrdersRoute =
+  AuthenticatedProfileOrdersRouteImport.update({
+    id: '/orders',
+    path: '/orders',
+    getParentRoute: () => AuthenticatedProfileRoute,
+  } as any)
+const AuthenticatedProfileRentalsRoute =
+  AuthenticatedProfileRentalsRouteImport.update({
+    id: '/rentals',
+    path: '/rentals',
+    getParentRoute: () => AuthenticatedProfileRoute,
+  } as any)
+const AuthenticatedProfileWishlistRoute =
+  AuthenticatedProfileWishlistRouteImport.update({
+    id: '/wishlist',
+    path: '/wishlist',
+    getParentRoute: () => AuthenticatedProfileRoute,
+  } as any)
+const AuthenticatedRentalsRentalIdRoute =
+  AuthenticatedRentalsRentalIdRouteImport.update({
+    id: '/$rentalId',
+    path: '/$rentalId',
+    getParentRoute: () => AuthenticatedRentalsRoute,
+  } as any)
 const AdminReviewsSellersRoute = AdminReviewsSellersRouteImport.update({
   id: '/sellers',
   path: '/sellers',
   getParentRoute: () => AdminReviewsRoute,
 } as any)
-const DashboardProductsNewRoute = DashboardProductsNewRouteImport.update({
+const SellerProductsNewRoute = SellerProductsNewRouteImport.update({
   id: '/new',
   path: '/new',
-  getParentRoute: () => DashboardProductsRoute,
+  getParentRoute: () => SellerProductsRoute,
 } as any)
-const DashboardProductsProductIdEditRoute =
-  DashboardProductsProductIdEditRouteImport.update({
+const SellerProductsProductIdEditRoute =
+  SellerProductsProductIdEditRouteImport.update({
     id: '/$productId/edit',
     path: '/$productId/edit',
-    getParentRoute: () => DashboardProductsRoute,
+    getParentRoute: () => SellerProductsRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -370,20 +394,22 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/auth-check': typeof AuthCheckRoute
   '/browse': typeof BrowseRoute
-  '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
-  '/favorites': typeof FavoritesRoute
   '/how-it-works': typeof HowItWorksRoute
   '/list': typeof ListRoute
-  '/messages': typeof MessagesRoute
-  '/notifications': typeof NotificationsRoute
-  '/orders': typeof OrdersRouteWithChildren
   '/payment': typeof PaymentRoute
   '/pre-loved': typeof PreLovedRoute
-  '/profile': typeof ProfileRouteWithChildren
-  '/rentals': typeof RentalsRouteWithChildren
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
+  '/cart': typeof AuthenticatedCartRoute
+  '/dashboard': typeof AuthenticatedDashboardRoute
+  '/favorites': typeof AuthenticatedFavoritesRoute
+  '/messages': typeof AuthenticatedMessagesRoute
+  '/notifications': typeof AuthenticatedNotificationsRoute
+  '/orders': typeof AuthenticatedOrdersRouteWithChildren
+  '/profile': typeof AuthenticatedProfileRouteWithChildren
+  '/rentals': typeof AuthenticatedRentalsRouteWithChildren
+  '/settings': typeof AuthenticatedSettingsRoute
   '/admin/audit-log': typeof AdminAuditLogRoute
   '/admin/categories': typeof AdminCategoriesRoute
   '/admin/finance': typeof AdminFinanceRoute
@@ -400,49 +426,51 @@ export interface FileRoutesByFullPath {
   '/admin/sellers': typeof AdminSellersRoute
   '/admin/users': typeof AdminUsersRoute
   '/categories/$categorySlug': typeof CategoriesCategorySlugRoute
-  '/dashboard/analytics': typeof DashboardAnalyticsRoute
-  '/dashboard/become-a-seller': typeof DashboardBecomeASellerRoute
-  '/dashboard/earnings': typeof DashboardEarningsRoute
-  '/dashboard/messages': typeof DashboardMessagesRoute
-  '/dashboard/orders': typeof DashboardOrdersRoute
-  '/dashboard/products': typeof DashboardProductsRouteWithChildren
-  '/dashboard/rentals': typeof DashboardRentalsRoute
-  '/dashboard/reviews': typeof DashboardReviewsRoute
-  '/dashboard/settings': typeof DashboardSettingsRoute
-  '/dashboard/wallet': typeof DashboardWalletRoute
-  '/orders/$orderId': typeof OrdersOrderIdRoute
   '/product/$slug': typeof ProductSlugRoute
-  '/profile/activity': typeof ProfileActivityRoute
-  '/profile/orders': typeof ProfileOrdersRoute
-  '/profile/rentals': typeof ProfileRentalsRoute
-  '/profile/wishlist': typeof ProfileWishlistRoute
-  '/rentals/$rentalId': typeof RentalsRentalIdRoute
   '/seller/$id': typeof SellerIdRoute
+  '/seller/analytics': typeof SellerAnalyticsRoute
+  '/seller/become-a-seller': typeof SellerBecomeASellerRoute
+  '/seller/earnings': typeof SellerEarningsRoute
+  '/seller/messages': typeof SellerMessagesRoute
+  '/seller/orders': typeof SellerOrdersRoute
+  '/seller/products': typeof SellerProductsRouteWithChildren
+  '/seller/rentals': typeof SellerRentalsRoute
+  '/seller/reviews': typeof SellerReviewsRoute
+  '/seller/settings': typeof SellerSettingsRoute
+  '/seller/wallet': typeof SellerWalletRoute
   '/admin/': typeof AdminIndexRoute
   '/categories/': typeof CategoriesIndexRoute
-  '/dashboard/': typeof DashboardIndexRoute
+  '/seller/': typeof SellerIndexRoute
+  '/orders/$orderId': typeof AuthenticatedOrdersOrderIdRoute
+  '/profile/activity': typeof AuthenticatedProfileActivityRoute
+  '/profile/orders': typeof AuthenticatedProfileOrdersRoute
+  '/profile/rentals': typeof AuthenticatedProfileRentalsRoute
+  '/profile/wishlist': typeof AuthenticatedProfileWishlistRoute
+  '/rentals/$rentalId': typeof AuthenticatedRentalsRentalIdRoute
   '/admin/reviews/sellers': typeof AdminReviewsSellersRoute
-  '/dashboard/products/new': typeof DashboardProductsNewRoute
-  '/dashboard/products/$productId/edit': typeof DashboardProductsProductIdEditRoute
+  '/seller/products/new': typeof SellerProductsNewRoute
+  '/seller/products/$productId/edit': typeof SellerProductsProductIdEditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth-check': typeof AuthCheckRoute
   '/browse': typeof BrowseRoute
-  '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
-  '/favorites': typeof FavoritesRoute
   '/how-it-works': typeof HowItWorksRoute
   '/list': typeof ListRoute
-  '/messages': typeof MessagesRoute
-  '/notifications': typeof NotificationsRoute
-  '/orders': typeof OrdersRouteWithChildren
   '/payment': typeof PaymentRoute
   '/pre-loved': typeof PreLovedRoute
-  '/profile': typeof ProfileRouteWithChildren
-  '/rentals': typeof RentalsRouteWithChildren
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
+  '/cart': typeof AuthenticatedCartRoute
+  '/dashboard': typeof AuthenticatedDashboardRoute
+  '/favorites': typeof AuthenticatedFavoritesRoute
+  '/messages': typeof AuthenticatedMessagesRoute
+  '/notifications': typeof AuthenticatedNotificationsRoute
+  '/orders': typeof AuthenticatedOrdersRouteWithChildren
+  '/profile': typeof AuthenticatedProfileRouteWithChildren
+  '/rentals': typeof AuthenticatedRentalsRouteWithChildren
+  '/settings': typeof AuthenticatedSettingsRoute
   '/admin/audit-log': typeof AdminAuditLogRoute
   '/admin/categories': typeof AdminCategoriesRoute
   '/admin/finance': typeof AdminFinanceRoute
@@ -459,52 +487,55 @@ export interface FileRoutesByTo {
   '/admin/sellers': typeof AdminSellersRoute
   '/admin/users': typeof AdminUsersRoute
   '/categories/$categorySlug': typeof CategoriesCategorySlugRoute
-  '/dashboard/analytics': typeof DashboardAnalyticsRoute
-  '/dashboard/become-a-seller': typeof DashboardBecomeASellerRoute
-  '/dashboard/earnings': typeof DashboardEarningsRoute
-  '/dashboard/messages': typeof DashboardMessagesRoute
-  '/dashboard/orders': typeof DashboardOrdersRoute
-  '/dashboard/products': typeof DashboardProductsRouteWithChildren
-  '/dashboard/rentals': typeof DashboardRentalsRoute
-  '/dashboard/reviews': typeof DashboardReviewsRoute
-  '/dashboard/settings': typeof DashboardSettingsRoute
-  '/dashboard/wallet': typeof DashboardWalletRoute
-  '/orders/$orderId': typeof OrdersOrderIdRoute
   '/product/$slug': typeof ProductSlugRoute
-  '/profile/activity': typeof ProfileActivityRoute
-  '/profile/orders': typeof ProfileOrdersRoute
-  '/profile/rentals': typeof ProfileRentalsRoute
-  '/profile/wishlist': typeof ProfileWishlistRoute
-  '/rentals/$rentalId': typeof RentalsRentalIdRoute
   '/seller/$id': typeof SellerIdRoute
+  '/seller/analytics': typeof SellerAnalyticsRoute
+  '/seller/become-a-seller': typeof SellerBecomeASellerRoute
+  '/seller/earnings': typeof SellerEarningsRoute
+  '/seller/messages': typeof SellerMessagesRoute
+  '/seller/orders': typeof SellerOrdersRoute
+  '/seller/products': typeof SellerProductsRouteWithChildren
+  '/seller/rentals': typeof SellerRentalsRoute
+  '/seller/reviews': typeof SellerReviewsRoute
+  '/seller/settings': typeof SellerSettingsRoute
+  '/seller/wallet': typeof SellerWalletRoute
   '/admin': typeof AdminIndexRoute
   '/categories': typeof CategoriesIndexRoute
-  '/dashboard': typeof DashboardIndexRoute
+  '/seller': typeof SellerIndexRoute
+  '/orders/$orderId': typeof AuthenticatedOrdersOrderIdRoute
+  '/profile/activity': typeof AuthenticatedProfileActivityRoute
+  '/profile/orders': typeof AuthenticatedProfileOrdersRoute
+  '/profile/rentals': typeof AuthenticatedProfileRentalsRoute
+  '/profile/wishlist': typeof AuthenticatedProfileWishlistRoute
+  '/rentals/$rentalId': typeof AuthenticatedRentalsRentalIdRoute
   '/admin/reviews/sellers': typeof AdminReviewsSellersRoute
-  '/dashboard/products/new': typeof DashboardProductsNewRoute
-  '/dashboard/products/$productId/edit': typeof DashboardProductsProductIdEditRoute
+  '/seller/products/new': typeof SellerProductsNewRoute
+  '/seller/products/$productId/edit': typeof SellerProductsProductIdEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_auth': typeof AuthRouteWithChildren
+  '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/admin': typeof AdminRouteWithChildren
   '/auth-check': typeof AuthCheckRoute
   '/browse': typeof BrowseRoute
-  '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
-  '/favorites': typeof FavoritesRoute
   '/how-it-works': typeof HowItWorksRoute
   '/list': typeof ListRoute
-  '/messages': typeof MessagesRoute
-  '/notifications': typeof NotificationsRoute
-  '/orders': typeof OrdersRouteWithChildren
   '/payment': typeof PaymentRoute
   '/pre-loved': typeof PreLovedRoute
-  '/profile': typeof ProfileRouteWithChildren
-  '/rentals': typeof RentalsRouteWithChildren
   '/_auth/login': typeof AuthLoginRoute
   '/_auth/register': typeof AuthRegisterRoute
+  '/_authenticated/cart': typeof AuthenticatedCartRoute
+  '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/favorites': typeof AuthenticatedFavoritesRoute
+  '/_authenticated/messages': typeof AuthenticatedMessagesRoute
+  '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
+  '/_authenticated/orders': typeof AuthenticatedOrdersRouteWithChildren
+  '/_authenticated/profile': typeof AuthenticatedProfileRouteWithChildren
+  '/_authenticated/rentals': typeof AuthenticatedRentalsRouteWithChildren
+  '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/admin/audit-log': typeof AdminAuditLogRoute
   '/admin/categories': typeof AdminCategoriesRoute
   '/admin/finance': typeof AdminFinanceRoute
@@ -521,30 +552,30 @@ export interface FileRoutesById {
   '/admin/sellers': typeof AdminSellersRoute
   '/admin/users': typeof AdminUsersRoute
   '/categories/$categorySlug': typeof CategoriesCategorySlugRoute
-  '/dashboard/analytics': typeof DashboardAnalyticsRoute
-  '/dashboard/become-a-seller': typeof DashboardBecomeASellerRoute
-  '/dashboard/earnings': typeof DashboardEarningsRoute
-  '/dashboard/messages': typeof DashboardMessagesRoute
-  '/dashboard/orders': typeof DashboardOrdersRoute
-  '/dashboard/products': typeof DashboardProductsRouteWithChildren
-  '/dashboard/rentals': typeof DashboardRentalsRoute
-  '/dashboard/reviews': typeof DashboardReviewsRoute
-  '/dashboard/settings': typeof DashboardSettingsRoute
-  '/dashboard/wallet': typeof DashboardWalletRoute
-  '/orders/$orderId': typeof OrdersOrderIdRoute
   '/product/$slug': typeof ProductSlugRoute
-  '/profile/activity': typeof ProfileActivityRoute
-  '/profile/orders': typeof ProfileOrdersRoute
-  '/profile/rentals': typeof ProfileRentalsRoute
-  '/profile/wishlist': typeof ProfileWishlistRoute
-  '/rentals/$rentalId': typeof RentalsRentalIdRoute
   '/seller/$id': typeof SellerIdRoute
+  '/seller/analytics': typeof SellerAnalyticsRoute
+  '/seller/become-a-seller': typeof SellerBecomeASellerRoute
+  '/seller/earnings': typeof SellerEarningsRoute
+  '/seller/messages': typeof SellerMessagesRoute
+  '/seller/orders': typeof SellerOrdersRoute
+  '/seller/products': typeof SellerProductsRouteWithChildren
+  '/seller/rentals': typeof SellerRentalsRoute
+  '/seller/reviews': typeof SellerReviewsRoute
+  '/seller/settings': typeof SellerSettingsRoute
+  '/seller/wallet': typeof SellerWalletRoute
   '/admin/': typeof AdminIndexRoute
   '/categories/': typeof CategoriesIndexRoute
-  '/dashboard/': typeof DashboardIndexRoute
+  '/seller/': typeof SellerIndexRoute
+  '/_authenticated/orders/$orderId': typeof AuthenticatedOrdersOrderIdRoute
+  '/_authenticated/profile/activity': typeof AuthenticatedProfileActivityRoute
+  '/_authenticated/profile/orders': typeof AuthenticatedProfileOrdersRoute
+  '/_authenticated/profile/rentals': typeof AuthenticatedProfileRentalsRoute
+  '/_authenticated/profile/wishlist': typeof AuthenticatedProfileWishlistRoute
+  '/_authenticated/rentals/$rentalId': typeof AuthenticatedRentalsRentalIdRoute
   '/admin/reviews/sellers': typeof AdminReviewsSellersRoute
-  '/dashboard/products/new': typeof DashboardProductsNewRoute
-  '/dashboard/products/$productId/edit': typeof DashboardProductsProductIdEditRoute
+  '/seller/products/new': typeof SellerProductsNewRoute
+  '/seller/products/$productId/edit': typeof SellerProductsProductIdEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -553,20 +584,22 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth-check'
     | '/browse'
-    | '/cart'
     | '/checkout'
-    | '/favorites'
     | '/how-it-works'
     | '/list'
+    | '/payment'
+    | '/pre-loved'
+    | '/login'
+    | '/register'
+    | '/cart'
+    | '/dashboard'
+    | '/favorites'
     | '/messages'
     | '/notifications'
     | '/orders'
-    | '/payment'
-    | '/pre-loved'
     | '/profile'
     | '/rentals'
-    | '/login'
-    | '/register'
+    | '/settings'
     | '/admin/audit-log'
     | '/admin/categories'
     | '/admin/finance'
@@ -583,49 +616,51 @@ export interface FileRouteTypes {
     | '/admin/sellers'
     | '/admin/users'
     | '/categories/$categorySlug'
-    | '/dashboard/analytics'
-    | '/dashboard/become-a-seller'
-    | '/dashboard/earnings'
-    | '/dashboard/messages'
-    | '/dashboard/orders'
-    | '/dashboard/products'
-    | '/dashboard/rentals'
-    | '/dashboard/reviews'
-    | '/dashboard/settings'
-    | '/dashboard/wallet'
-    | '/orders/$orderId'
     | '/product/$slug'
+    | '/seller/$id'
+    | '/seller/analytics'
+    | '/seller/become-a-seller'
+    | '/seller/earnings'
+    | '/seller/messages'
+    | '/seller/orders'
+    | '/seller/products'
+    | '/seller/rentals'
+    | '/seller/reviews'
+    | '/seller/settings'
+    | '/seller/wallet'
+    | '/admin/'
+    | '/categories/'
+    | '/seller/'
+    | '/orders/$orderId'
     | '/profile/activity'
     | '/profile/orders'
     | '/profile/rentals'
     | '/profile/wishlist'
     | '/rentals/$rentalId'
-    | '/seller/$id'
-    | '/admin/'
-    | '/categories/'
-    | '/dashboard/'
     | '/admin/reviews/sellers'
-    | '/dashboard/products/new'
-    | '/dashboard/products/$productId/edit'
+    | '/seller/products/new'
+    | '/seller/products/$productId/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth-check'
     | '/browse'
-    | '/cart'
     | '/checkout'
-    | '/favorites'
     | '/how-it-works'
     | '/list'
+    | '/payment'
+    | '/pre-loved'
+    | '/login'
+    | '/register'
+    | '/cart'
+    | '/dashboard'
+    | '/favorites'
     | '/messages'
     | '/notifications'
     | '/orders'
-    | '/payment'
-    | '/pre-loved'
     | '/profile'
     | '/rentals'
-    | '/login'
-    | '/register'
+    | '/settings'
     | '/admin/audit-log'
     | '/admin/categories'
     | '/admin/finance'
@@ -642,51 +677,54 @@ export interface FileRouteTypes {
     | '/admin/sellers'
     | '/admin/users'
     | '/categories/$categorySlug'
-    | '/dashboard/analytics'
-    | '/dashboard/become-a-seller'
-    | '/dashboard/earnings'
-    | '/dashboard/messages'
-    | '/dashboard/orders'
-    | '/dashboard/products'
-    | '/dashboard/rentals'
-    | '/dashboard/reviews'
-    | '/dashboard/settings'
-    | '/dashboard/wallet'
-    | '/orders/$orderId'
     | '/product/$slug'
+    | '/seller/$id'
+    | '/seller/analytics'
+    | '/seller/become-a-seller'
+    | '/seller/earnings'
+    | '/seller/messages'
+    | '/seller/orders'
+    | '/seller/products'
+    | '/seller/rentals'
+    | '/seller/reviews'
+    | '/seller/settings'
+    | '/seller/wallet'
+    | '/admin'
+    | '/categories'
+    | '/seller'
+    | '/orders/$orderId'
     | '/profile/activity'
     | '/profile/orders'
     | '/profile/rentals'
     | '/profile/wishlist'
     | '/rentals/$rentalId'
-    | '/seller/$id'
-    | '/admin'
-    | '/categories'
-    | '/dashboard'
     | '/admin/reviews/sellers'
-    | '/dashboard/products/new'
-    | '/dashboard/products/$productId/edit'
+    | '/seller/products/new'
+    | '/seller/products/$productId/edit'
   id:
     | '__root__'
     | '/'
     | '/_auth'
+    | '/_authenticated'
     | '/admin'
     | '/auth-check'
     | '/browse'
-    | '/cart'
     | '/checkout'
-    | '/favorites'
     | '/how-it-works'
     | '/list'
-    | '/messages'
-    | '/notifications'
-    | '/orders'
     | '/payment'
     | '/pre-loved'
-    | '/profile'
-    | '/rentals'
     | '/_auth/login'
     | '/_auth/register'
+    | '/_authenticated/cart'
+    | '/_authenticated/dashboard'
+    | '/_authenticated/favorites'
+    | '/_authenticated/messages'
+    | '/_authenticated/notifications'
+    | '/_authenticated/orders'
+    | '/_authenticated/profile'
+    | '/_authenticated/rentals'
+    | '/_authenticated/settings'
     | '/admin/audit-log'
     | '/admin/categories'
     | '/admin/finance'
@@ -703,65 +741,59 @@ export interface FileRouteTypes {
     | '/admin/sellers'
     | '/admin/users'
     | '/categories/$categorySlug'
-    | '/dashboard/analytics'
-    | '/dashboard/become-a-seller'
-    | '/dashboard/earnings'
-    | '/dashboard/messages'
-    | '/dashboard/orders'
-    | '/dashboard/products'
-    | '/dashboard/rentals'
-    | '/dashboard/reviews'
-    | '/dashboard/settings'
-    | '/dashboard/wallet'
-    | '/orders/$orderId'
     | '/product/$slug'
-    | '/profile/activity'
-    | '/profile/orders'
-    | '/profile/rentals'
-    | '/profile/wishlist'
-    | '/rentals/$rentalId'
     | '/seller/$id'
+    | '/seller/analytics'
+    | '/seller/become-a-seller'
+    | '/seller/earnings'
+    | '/seller/messages'
+    | '/seller/orders'
+    | '/seller/products'
+    | '/seller/rentals'
+    | '/seller/reviews'
+    | '/seller/settings'
+    | '/seller/wallet'
     | '/admin/'
     | '/categories/'
-    | '/dashboard/'
+    | '/seller/'
+    | '/_authenticated/orders/$orderId'
+    | '/_authenticated/profile/activity'
+    | '/_authenticated/profile/orders'
+    | '/_authenticated/profile/rentals'
+    | '/_authenticated/profile/wishlist'
+    | '/_authenticated/rentals/$rentalId'
     | '/admin/reviews/sellers'
-    | '/dashboard/products/new'
-    | '/dashboard/products/$productId/edit'
+    | '/seller/products/new'
+    | '/seller/products/$productId/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRouteWithChildren
+  AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   AdminRoute: typeof AdminRouteWithChildren
   AuthCheckRoute: typeof AuthCheckRoute
   BrowseRoute: typeof BrowseRoute
-  CartRoute: typeof CartRoute
   CheckoutRoute: typeof CheckoutRoute
-  FavoritesRoute: typeof FavoritesRoute
   HowItWorksRoute: typeof HowItWorksRoute
   ListRoute: typeof ListRoute
-  MessagesRoute: typeof MessagesRoute
-  NotificationsRoute: typeof NotificationsRoute
-  OrdersRoute: typeof OrdersRouteWithChildren
   PaymentRoute: typeof PaymentRoute
   PreLovedRoute: typeof PreLovedRoute
-  ProfileRoute: typeof ProfileRouteWithChildren
-  RentalsRoute: typeof RentalsRouteWithChildren
   CategoriesCategorySlugRoute: typeof CategoriesCategorySlugRoute
-  DashboardAnalyticsRoute: typeof DashboardAnalyticsRoute
-  DashboardBecomeASellerRoute: typeof DashboardBecomeASellerRoute
-  DashboardEarningsRoute: typeof DashboardEarningsRoute
-  DashboardMessagesRoute: typeof DashboardMessagesRoute
-  DashboardOrdersRoute: typeof DashboardOrdersRoute
-  DashboardProductsRoute: typeof DashboardProductsRouteWithChildren
-  DashboardRentalsRoute: typeof DashboardRentalsRoute
-  DashboardReviewsRoute: typeof DashboardReviewsRoute
-  DashboardSettingsRoute: typeof DashboardSettingsRoute
-  DashboardWalletRoute: typeof DashboardWalletRoute
   ProductSlugRoute: typeof ProductSlugRoute
   SellerIdRoute: typeof SellerIdRoute
+  SellerAnalyticsRoute: typeof SellerAnalyticsRoute
+  SellerBecomeASellerRoute: typeof SellerBecomeASellerRoute
+  SellerEarningsRoute: typeof SellerEarningsRoute
+  SellerMessagesRoute: typeof SellerMessagesRoute
+  SellerOrdersRoute: typeof SellerOrdersRoute
+  SellerProductsRoute: typeof SellerProductsRouteWithChildren
+  SellerRentalsRoute: typeof SellerRentalsRoute
+  SellerReviewsRoute: typeof SellerReviewsRoute
+  SellerSettingsRoute: typeof SellerSettingsRoute
+  SellerWalletRoute: typeof SellerWalletRoute
   CategoriesIndexRoute: typeof CategoriesIndexRoute
-  DashboardIndexRoute: typeof DashboardIndexRoute
+  SellerIndexRoute: typeof SellerIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -778,6 +810,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -801,25 +840,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BrowseRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/cart': {
-      id: '/cart'
-      path: '/cart'
-      fullPath: '/cart'
-      preLoaderRoute: typeof CartRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/checkout': {
       id: '/checkout'
       path: '/checkout'
       fullPath: '/checkout'
       preLoaderRoute: typeof CheckoutRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/favorites': {
-      id: '/favorites'
-      path: '/favorites'
-      fullPath: '/favorites'
-      preLoaderRoute: typeof FavoritesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/how-it-works': {
@@ -836,27 +861,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ListRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/messages': {
-      id: '/messages'
-      path: '/messages'
-      fullPath: '/messages'
-      preLoaderRoute: typeof MessagesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/notifications': {
-      id: '/notifications'
-      path: '/notifications'
-      fullPath: '/notifications'
-      preLoaderRoute: typeof NotificationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/orders': {
-      id: '/orders'
-      path: '/orders'
-      fullPath: '/orders'
-      preLoaderRoute: typeof OrdersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/payment': {
       id: '/payment'
       path: '/payment'
@@ -869,20 +873,6 @@ declare module '@tanstack/react-router' {
       path: '/pre-loved'
       fullPath: '/pre-loved'
       preLoaderRoute: typeof PreLovedRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/profile': {
-      id: '/profile'
-      path: '/profile'
-      fullPath: '/profile'
-      preLoaderRoute: typeof ProfileRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/rentals': {
-      id: '/rentals'
-      path: '/rentals'
-      fullPath: '/rentals'
-      preLoaderRoute: typeof RentalsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_auth/login': {
@@ -898,6 +888,69 @@ declare module '@tanstack/react-router' {
       fullPath: '/register'
       preLoaderRoute: typeof AuthRegisterRouteImport
       parentRoute: typeof AuthRoute
+    }
+    '/_authenticated/cart': {
+      id: '/_authenticated/cart'
+      path: '/cart'
+      fullPath: '/cart'
+      preLoaderRoute: typeof AuthenticatedCartRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/dashboard': {
+      id: '/_authenticated/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/favorites': {
+      id: '/_authenticated/favorites'
+      path: '/favorites'
+      fullPath: '/favorites'
+      preLoaderRoute: typeof AuthenticatedFavoritesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/messages': {
+      id: '/_authenticated/messages'
+      path: '/messages'
+      fullPath: '/messages'
+      preLoaderRoute: typeof AuthenticatedMessagesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/notifications': {
+      id: '/_authenticated/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof AuthenticatedNotificationsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/orders': {
+      id: '/_authenticated/orders'
+      path: '/orders'
+      fullPath: '/orders'
+      preLoaderRoute: typeof AuthenticatedOrdersRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/profile': {
+      id: '/_authenticated/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof AuthenticatedProfileRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/rentals': {
+      id: '/_authenticated/rentals'
+      path: '/rentals'
+      fullPath: '/rentals'
+      preLoaderRoute: typeof AuthenticatedRentalsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/admin/': {
       id: '/admin/'
@@ -1025,90 +1078,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CategoriesCategorySlugRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/dashboard/': {
-      id: '/dashboard/'
-      path: '/dashboard'
-      fullPath: '/dashboard/'
-      preLoaderRoute: typeof DashboardIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard/analytics': {
-      id: '/dashboard/analytics'
-      path: '/dashboard/analytics'
-      fullPath: '/dashboard/analytics'
-      preLoaderRoute: typeof DashboardAnalyticsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard/become-a-seller': {
-      id: '/dashboard/become-a-seller'
-      path: '/dashboard/become-a-seller'
-      fullPath: '/dashboard/become-a-seller'
-      preLoaderRoute: typeof DashboardBecomeASellerRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard/earnings': {
-      id: '/dashboard/earnings'
-      path: '/dashboard/earnings'
-      fullPath: '/dashboard/earnings'
-      preLoaderRoute: typeof DashboardEarningsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard/messages': {
-      id: '/dashboard/messages'
-      path: '/dashboard/messages'
-      fullPath: '/dashboard/messages'
-      preLoaderRoute: typeof DashboardMessagesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard/orders': {
-      id: '/dashboard/orders'
-      path: '/dashboard/orders'
-      fullPath: '/dashboard/orders'
-      preLoaderRoute: typeof DashboardOrdersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard/products': {
-      id: '/dashboard/products'
-      path: '/dashboard/products'
-      fullPath: '/dashboard/products'
-      preLoaderRoute: typeof DashboardProductsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard/rentals': {
-      id: '/dashboard/rentals'
-      path: '/dashboard/rentals'
-      fullPath: '/dashboard/rentals'
-      preLoaderRoute: typeof DashboardRentalsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard/reviews': {
-      id: '/dashboard/reviews'
-      path: '/dashboard/reviews'
-      fullPath: '/dashboard/reviews'
-      preLoaderRoute: typeof DashboardReviewsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard/settings': {
-      id: '/dashboard/settings'
-      path: '/dashboard/settings'
-      fullPath: '/dashboard/settings'
-      preLoaderRoute: typeof DashboardSettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard/wallet': {
-      id: '/dashboard/wallet'
-      path: '/dashboard/wallet'
-      fullPath: '/dashboard/wallet'
-      preLoaderRoute: typeof DashboardWalletRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/orders/$orderId': {
-      id: '/orders/$orderId'
-      path: '/$orderId'
-      fullPath: '/orders/$orderId'
-      preLoaderRoute: typeof OrdersOrderIdRouteImport
-      parentRoute: typeof OrdersRoute
-    }
     '/product/$slug': {
       id: '/product/$slug'
       path: '/product/$slug'
@@ -1116,40 +1085,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/profile/activity': {
-      id: '/profile/activity'
-      path: '/activity'
-      fullPath: '/profile/activity'
-      preLoaderRoute: typeof ProfileActivityRouteImport
-      parentRoute: typeof ProfileRoute
-    }
-    '/profile/orders': {
-      id: '/profile/orders'
-      path: '/orders'
-      fullPath: '/profile/orders'
-      preLoaderRoute: typeof ProfileOrdersRouteImport
-      parentRoute: typeof ProfileRoute
-    }
-    '/profile/rentals': {
-      id: '/profile/rentals'
-      path: '/rentals'
-      fullPath: '/profile/rentals'
-      preLoaderRoute: typeof ProfileRentalsRouteImport
-      parentRoute: typeof ProfileRoute
-    }
-    '/profile/wishlist': {
-      id: '/profile/wishlist'
-      path: '/wishlist'
-      fullPath: '/profile/wishlist'
-      preLoaderRoute: typeof ProfileWishlistRouteImport
-      parentRoute: typeof ProfileRoute
-    }
-    '/rentals/$rentalId': {
-      id: '/rentals/$rentalId'
-      path: '/$rentalId'
-      fullPath: '/rentals/$rentalId'
-      preLoaderRoute: typeof RentalsRentalIdRouteImport
-      parentRoute: typeof RentalsRoute
+    '/seller/': {
+      id: '/seller/'
+      path: '/seller'
+      fullPath: '/seller/'
+      preLoaderRoute: typeof SellerIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/seller/$id': {
       id: '/seller/$id'
@@ -1158,6 +1099,118 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SellerIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/seller/analytics': {
+      id: '/seller/analytics'
+      path: '/seller/analytics'
+      fullPath: '/seller/analytics'
+      preLoaderRoute: typeof SellerAnalyticsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/seller/become-a-seller': {
+      id: '/seller/become-a-seller'
+      path: '/seller/become-a-seller'
+      fullPath: '/seller/become-a-seller'
+      preLoaderRoute: typeof SellerBecomeASellerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/seller/earnings': {
+      id: '/seller/earnings'
+      path: '/seller/earnings'
+      fullPath: '/seller/earnings'
+      preLoaderRoute: typeof SellerEarningsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/seller/messages': {
+      id: '/seller/messages'
+      path: '/seller/messages'
+      fullPath: '/seller/messages'
+      preLoaderRoute: typeof SellerMessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/seller/orders': {
+      id: '/seller/orders'
+      path: '/seller/orders'
+      fullPath: '/seller/orders'
+      preLoaderRoute: typeof SellerOrdersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/seller/products': {
+      id: '/seller/products'
+      path: '/seller/products'
+      fullPath: '/seller/products'
+      preLoaderRoute: typeof SellerProductsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/seller/rentals': {
+      id: '/seller/rentals'
+      path: '/seller/rentals'
+      fullPath: '/seller/rentals'
+      preLoaderRoute: typeof SellerRentalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/seller/reviews': {
+      id: '/seller/reviews'
+      path: '/seller/reviews'
+      fullPath: '/seller/reviews'
+      preLoaderRoute: typeof SellerReviewsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/seller/settings': {
+      id: '/seller/settings'
+      path: '/seller/settings'
+      fullPath: '/seller/settings'
+      preLoaderRoute: typeof SellerSettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/seller/wallet': {
+      id: '/seller/wallet'
+      path: '/seller/wallet'
+      fullPath: '/seller/wallet'
+      preLoaderRoute: typeof SellerWalletRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/orders/$orderId': {
+      id: '/_authenticated/orders/$orderId'
+      path: '/$orderId'
+      fullPath: '/orders/$orderId'
+      preLoaderRoute: typeof AuthenticatedOrdersOrderIdRouteImport
+      parentRoute: typeof AuthenticatedOrdersRoute
+    }
+    '/_authenticated/profile/activity': {
+      id: '/_authenticated/profile/activity'
+      path: '/activity'
+      fullPath: '/profile/activity'
+      preLoaderRoute: typeof AuthenticatedProfileActivityRouteImport
+      parentRoute: typeof AuthenticatedProfileRoute
+    }
+    '/_authenticated/profile/orders': {
+      id: '/_authenticated/profile/orders'
+      path: '/orders'
+      fullPath: '/profile/orders'
+      preLoaderRoute: typeof AuthenticatedProfileOrdersRouteImport
+      parentRoute: typeof AuthenticatedProfileRoute
+    }
+    '/_authenticated/profile/rentals': {
+      id: '/_authenticated/profile/rentals'
+      path: '/rentals'
+      fullPath: '/profile/rentals'
+      preLoaderRoute: typeof AuthenticatedProfileRentalsRouteImport
+      parentRoute: typeof AuthenticatedProfileRoute
+    }
+    '/_authenticated/profile/wishlist': {
+      id: '/_authenticated/profile/wishlist'
+      path: '/wishlist'
+      fullPath: '/profile/wishlist'
+      preLoaderRoute: typeof AuthenticatedProfileWishlistRouteImport
+      parentRoute: typeof AuthenticatedProfileRoute
+    }
+    '/_authenticated/rentals/$rentalId': {
+      id: '/_authenticated/rentals/$rentalId'
+      path: '/$rentalId'
+      fullPath: '/rentals/$rentalId'
+      preLoaderRoute: typeof AuthenticatedRentalsRentalIdRouteImport
+      parentRoute: typeof AuthenticatedRentalsRoute
+    }
     '/admin/reviews/sellers': {
       id: '/admin/reviews/sellers'
       path: '/sellers'
@@ -1165,19 +1218,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminReviewsSellersRouteImport
       parentRoute: typeof AdminReviewsRoute
     }
-    '/dashboard/products/new': {
-      id: '/dashboard/products/new'
+    '/seller/products/new': {
+      id: '/seller/products/new'
       path: '/new'
-      fullPath: '/dashboard/products/new'
-      preLoaderRoute: typeof DashboardProductsNewRouteImport
-      parentRoute: typeof DashboardProductsRoute
+      fullPath: '/seller/products/new'
+      preLoaderRoute: typeof SellerProductsNewRouteImport
+      parentRoute: typeof SellerProductsRoute
     }
-    '/dashboard/products/$productId/edit': {
-      id: '/dashboard/products/$productId/edit'
+    '/seller/products/$productId/edit': {
+      id: '/seller/products/$productId/edit'
       path: '/$productId/edit'
-      fullPath: '/dashboard/products/$productId/edit'
-      preLoaderRoute: typeof DashboardProductsProductIdEditRouteImport
-      parentRoute: typeof DashboardProductsRoute
+      fullPath: '/seller/products/$productId/edit'
+      preLoaderRoute: typeof SellerProductsProductIdEditRouteImport
+      parentRoute: typeof SellerProductsRoute
     }
   }
 }
@@ -1193,6 +1246,73 @@ const AuthRouteChildren: AuthRouteChildren = {
 }
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
+
+interface AuthenticatedOrdersRouteChildren {
+  AuthenticatedOrdersOrderIdRoute: typeof AuthenticatedOrdersOrderIdRoute
+}
+
+const AuthenticatedOrdersRouteChildren: AuthenticatedOrdersRouteChildren = {
+  AuthenticatedOrdersOrderIdRoute: AuthenticatedOrdersOrderIdRoute,
+}
+
+const AuthenticatedOrdersRouteWithChildren =
+  AuthenticatedOrdersRoute._addFileChildren(AuthenticatedOrdersRouteChildren)
+
+interface AuthenticatedProfileRouteChildren {
+  AuthenticatedProfileActivityRoute: typeof AuthenticatedProfileActivityRoute
+  AuthenticatedProfileOrdersRoute: typeof AuthenticatedProfileOrdersRoute
+  AuthenticatedProfileRentalsRoute: typeof AuthenticatedProfileRentalsRoute
+  AuthenticatedProfileWishlistRoute: typeof AuthenticatedProfileWishlistRoute
+}
+
+const AuthenticatedProfileRouteChildren: AuthenticatedProfileRouteChildren = {
+  AuthenticatedProfileActivityRoute: AuthenticatedProfileActivityRoute,
+  AuthenticatedProfileOrdersRoute: AuthenticatedProfileOrdersRoute,
+  AuthenticatedProfileRentalsRoute: AuthenticatedProfileRentalsRoute,
+  AuthenticatedProfileWishlistRoute: AuthenticatedProfileWishlistRoute,
+}
+
+const AuthenticatedProfileRouteWithChildren =
+  AuthenticatedProfileRoute._addFileChildren(AuthenticatedProfileRouteChildren)
+
+interface AuthenticatedRentalsRouteChildren {
+  AuthenticatedRentalsRentalIdRoute: typeof AuthenticatedRentalsRentalIdRoute
+}
+
+const AuthenticatedRentalsRouteChildren: AuthenticatedRentalsRouteChildren = {
+  AuthenticatedRentalsRentalIdRoute: AuthenticatedRentalsRentalIdRoute,
+}
+
+const AuthenticatedRentalsRouteWithChildren =
+  AuthenticatedRentalsRoute._addFileChildren(AuthenticatedRentalsRouteChildren)
+
+interface AuthenticatedRouteChildren {
+  AuthenticatedCartRoute: typeof AuthenticatedCartRoute
+  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedFavoritesRoute: typeof AuthenticatedFavoritesRoute
+  AuthenticatedMessagesRoute: typeof AuthenticatedMessagesRoute
+  AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
+  AuthenticatedOrdersRoute: typeof AuthenticatedOrdersRouteWithChildren
+  AuthenticatedProfileRoute: typeof AuthenticatedProfileRouteWithChildren
+  AuthenticatedRentalsRoute: typeof AuthenticatedRentalsRouteWithChildren
+  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+}
+
+const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedCartRoute: AuthenticatedCartRoute,
+  AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedFavoritesRoute: AuthenticatedFavoritesRoute,
+  AuthenticatedMessagesRoute: AuthenticatedMessagesRoute,
+  AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
+  AuthenticatedOrdersRoute: AuthenticatedOrdersRouteWithChildren,
+  AuthenticatedProfileRoute: AuthenticatedProfileRouteWithChildren,
+  AuthenticatedRentalsRoute: AuthenticatedRentalsRouteWithChildren,
+  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+}
+
+const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
+  AuthenticatedRouteChildren,
+)
 
 interface AdminReviewsRouteChildren {
   AdminReviewsSellersRoute: typeof AdminReviewsSellersRoute
@@ -1246,91 +1366,47 @@ const AdminRouteChildren: AdminRouteChildren = {
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
-interface OrdersRouteChildren {
-  OrdersOrderIdRoute: typeof OrdersOrderIdRoute
+interface SellerProductsRouteChildren {
+  SellerProductsNewRoute: typeof SellerProductsNewRoute
+  SellerProductsProductIdEditRoute: typeof SellerProductsProductIdEditRoute
 }
 
-const OrdersRouteChildren: OrdersRouteChildren = {
-  OrdersOrderIdRoute: OrdersOrderIdRoute,
+const SellerProductsRouteChildren: SellerProductsRouteChildren = {
+  SellerProductsNewRoute: SellerProductsNewRoute,
+  SellerProductsProductIdEditRoute: SellerProductsProductIdEditRoute,
 }
 
-const OrdersRouteWithChildren =
-  OrdersRoute._addFileChildren(OrdersRouteChildren)
-
-interface ProfileRouteChildren {
-  ProfileActivityRoute: typeof ProfileActivityRoute
-  ProfileOrdersRoute: typeof ProfileOrdersRoute
-  ProfileRentalsRoute: typeof ProfileRentalsRoute
-  ProfileWishlistRoute: typeof ProfileWishlistRoute
-}
-
-const ProfileRouteChildren: ProfileRouteChildren = {
-  ProfileActivityRoute: ProfileActivityRoute,
-  ProfileOrdersRoute: ProfileOrdersRoute,
-  ProfileRentalsRoute: ProfileRentalsRoute,
-  ProfileWishlistRoute: ProfileWishlistRoute,
-}
-
-const ProfileRouteWithChildren =
-  ProfileRoute._addFileChildren(ProfileRouteChildren)
-
-interface RentalsRouteChildren {
-  RentalsRentalIdRoute: typeof RentalsRentalIdRoute
-}
-
-const RentalsRouteChildren: RentalsRouteChildren = {
-  RentalsRentalIdRoute: RentalsRentalIdRoute,
-}
-
-const RentalsRouteWithChildren =
-  RentalsRoute._addFileChildren(RentalsRouteChildren)
-
-interface DashboardProductsRouteChildren {
-  DashboardProductsNewRoute: typeof DashboardProductsNewRoute
-  DashboardProductsProductIdEditRoute: typeof DashboardProductsProductIdEditRoute
-}
-
-const DashboardProductsRouteChildren: DashboardProductsRouteChildren = {
-  DashboardProductsNewRoute: DashboardProductsNewRoute,
-  DashboardProductsProductIdEditRoute: DashboardProductsProductIdEditRoute,
-}
-
-const DashboardProductsRouteWithChildren =
-  DashboardProductsRoute._addFileChildren(DashboardProductsRouteChildren)
+const SellerProductsRouteWithChildren = SellerProductsRoute._addFileChildren(
+  SellerProductsRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRouteWithChildren,
+  AuthenticatedRoute: AuthenticatedRouteWithChildren,
   AdminRoute: AdminRouteWithChildren,
   AuthCheckRoute: AuthCheckRoute,
   BrowseRoute: BrowseRoute,
-  CartRoute: CartRoute,
   CheckoutRoute: CheckoutRoute,
-  FavoritesRoute: FavoritesRoute,
   HowItWorksRoute: HowItWorksRoute,
   ListRoute: ListRoute,
-  MessagesRoute: MessagesRoute,
-  NotificationsRoute: NotificationsRoute,
-  OrdersRoute: OrdersRouteWithChildren,
   PaymentRoute: PaymentRoute,
   PreLovedRoute: PreLovedRoute,
-  ProfileRoute: ProfileRouteWithChildren,
-  RentalsRoute: RentalsRouteWithChildren,
   CategoriesCategorySlugRoute: CategoriesCategorySlugRoute,
-  DashboardAnalyticsRoute: DashboardAnalyticsRoute,
-  DashboardBecomeASellerRoute: DashboardBecomeASellerRoute,
-  DashboardEarningsRoute: DashboardEarningsRoute,
-  DashboardMessagesRoute: DashboardMessagesRoute,
-  DashboardOrdersRoute: DashboardOrdersRoute,
-  DashboardProductsRoute: DashboardProductsRouteWithChildren,
-  DashboardRentalsRoute: DashboardRentalsRoute,
-  DashboardReviewsRoute: DashboardReviewsRoute,
-  DashboardSettingsRoute: DashboardSettingsRoute,
-  DashboardWalletRoute: DashboardWalletRoute,
   ProductSlugRoute: ProductSlugRoute,
   SellerIdRoute: SellerIdRoute,
+  SellerAnalyticsRoute: SellerAnalyticsRoute,
+  SellerBecomeASellerRoute: SellerBecomeASellerRoute,
+  SellerEarningsRoute: SellerEarningsRoute,
+  SellerMessagesRoute: SellerMessagesRoute,
+  SellerOrdersRoute: SellerOrdersRoute,
+  SellerProductsRoute: SellerProductsRouteWithChildren,
+  SellerRentalsRoute: SellerRentalsRoute,
+  SellerReviewsRoute: SellerReviewsRoute,
+  SellerSettingsRoute: SellerSettingsRoute,
+  SellerWalletRoute: SellerWalletRoute,
   CategoriesIndexRoute: CategoriesIndexRoute,
-  DashboardIndexRoute: DashboardIndexRoute,
+  SellerIndexRoute: SellerIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

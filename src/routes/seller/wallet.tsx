@@ -3,7 +3,7 @@ import { sellerWalletRouteOptions } from "@/features/seller-wallet/route";
 import { requireSeller } from "@/lib/auth/guards";
 
 /**
- * `/dashboard/wallet`.
+ * `/seller/wallet`.
  *
  * `requireSeller` rather than `requireAuth`, for the reason every other financial
  * seller page uses it: this route renders balances and a payout form, and there is no
@@ -11,7 +11,7 @@ import { requireSeller } from "@/lib/auth/guards";
  * enforces the same rule independently in `requireSeller` (`server/lib/seller-access.ts`),
  * and the wallet router takes the seller id from the session on every single query.
  */
-export const Route = createFileRoute("/dashboard/wallet")({
+export const Route = createFileRoute("/seller/wallet")({
   beforeLoad: requireSeller,
   ...sellerWalletRouteOptions,
 });

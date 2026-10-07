@@ -1,8 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ProfilePage } from "@/features/profile";
-import { requireAuth } from "@/lib/auth/guards";
 
-export const Route = createFileRoute("/profile")({
-  beforeLoad: requireAuth,
+export const Route = createFileRoute("/_authenticated/profile")({
   component: ProfilePage,
 });

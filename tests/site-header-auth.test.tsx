@@ -267,17 +267,18 @@ describe("the mobile sheet", () => {
     expect(screen.queryByRole("link", { name: "Register" })).not.toBeInTheDocument();
   });
 
-  it("hides the seller dashboard from a customer", async () => {
-    // `/dashboard` is the seller workspace and its pages read `/api/seller/*`, so offering
-    // it to a customer meant every tap either redirected to onboarding or rendered a page
-    // whose requests all 403.
+  it("shows the workspace dashboard and hides the seller link from a customer", async () => {
+    // Every signed-in user's sheet offers the authenticated workspace home
+    // (`/dashboard`). What a customer must NOT see is the *seller* entry — it
+    // changes the "Seller Dashboard" wording so the two can be told apart.
     const user = userEvent.setup();
     renderHeader(CUSTOMER);
 
     await user.click(screen.getByRole("button", { name: "Open menu" }));
 
     await waitFor(() => expect(screen.getByText("My orders")).toBeInTheDocument());
-    expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
+    expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    expect(screen.queryByText("Seller Dashboard")).not.toBeInTheDocument();
   });
 
   it("shows the seller dashboard to a seller", async () => {
@@ -288,5 +289,6 @@ describe("the mobile sheet", () => {
 
     await waitFor(() => expect(screen.getByText("My orders")).toBeInTheDocument());
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    expect(screen.getByText("Seller Dashboard")).toBeInTheDocument();
   });
 });

@@ -42,7 +42,7 @@ import type { AnalyticsParams, OnboardingPayload } from "./types";
  *
  * Deliberately *not* gated behind `requireSeller` on the client, because the
  * question has to be answerable before onboarding — that is what lets
- * `/dashboard/become-a-seller` show the current profile rather than a blank form.
+ * `/seller/become-a-seller` show the current profile rather than a blank form.
  * The server gates it on `requireUser` for the same reason.
  */
 export function useSellerStatus() {

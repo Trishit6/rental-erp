@@ -7,9 +7,17 @@ type GuardContext = { user: AuthUser | null; loading?: boolean };
 /** The shape of the router's location these guards read. */
 type GuardLocation = { pathname: string; searchStr?: string };
 
-/** Where a signed-in user belongs when they did not arrive from a specific page. */
-export function homeFor(user: AuthUser | null | undefined): string {
-  return isSellerRole(user?.role) ? "/dashboard" : "/profile";
+/**
+ * Where a signed-in user belongs when they did not arrive from a specific page.
+ *
+ * Always `/dashboard`: that route is the authenticated workspace's home and is
+ * role-aware (a seller sees sales, an admin sees platform figures, a customer
+ * sees their marketplace), so there is no role that needs a different default.
+ * The parameter is kept for call-site stability — the server's role wording is
+ * not consulted here, because the destination no longer depends on it.
+ */
+export function homeFor(_user: AuthUser | null | undefined): string {
+  return "/dashboard";
 }
 
 /**
@@ -96,8 +104,8 @@ export function requireAdmin({ context, location }: { context: GuardContext; loc
  *
  * ## Why this is not the same as `requireAuth`
  *
- * Every `/dashboard/*` route used `requireAuth`, which asks only "is there a
- * session?". So a customer could open the seller dashboard, and the pages
+ * Every `/seller/*` route used `requireAuth`, which asks only "is there a
+ * session?". So a customer could open the seller workspace, and the pages
  * behind it either failed (the API answered `403 SELLER_REQUIRED`) or, worse,
  * quietly showed the wrong thing — the orders tab was wired to the *customer's*
  * `/orders` endpoint and the rentals tab to `/rentals?role=all`, which is both
@@ -124,7 +132,7 @@ export function requireSeller({ context, location }: { context: GuardContext; lo
   }
   if (!isSellerRole(context.user.role)) {
     throw redirect({
-      to: "/dashboard/become-a-seller",
+      to: "/seller/become-a-seller",
       // The route's search is `{ redirect: string | undefined }`; the router drops
       // undefined values, so no pathname serializes as no param.
       search: { redirect: location?.pathname },
@@ -135,13 +143,13 @@ export function requireSeller({ context, location }: { context: GuardContext; lo
 /**
  * Guest-only routes (login/register): signed-in users leave.
  *
- * ## Why the destination depends on the role
+ * ## Why the destination is `/dashboard` for every role
  *
- * This sent everyone to `/dashboard`. `/dashboard` is the *seller* workspace — its pages
- * read `/api/seller/*`, which answers `403 SELLER_REQUIRED` for a plain customer — so the
- * one thing it did for an ordinary shopper who opened `/login` by mistake was bounce them
- * into a page that could only fail. `homeFor` sends a customer to their profile and keeps
- * a seller where they actually work.
+ * `/dashboard` is the authenticated workspace home, and `homeFor` points every
+ * role there: a seller's dashboard shows sales, an admin's shows platform
+ * figures, a customer's shows their marketplace. Sending the visitor to their
+ * account home rather than back to a public page is what makes `/login` for a
+ * signed-in person feel like an obvious "you're already in".
  *
  * `replace: true` matters here: the sign-in they just completed is not a page they should
  * be able to go "back" to, and a history entry pointing at `/login` is what makes a

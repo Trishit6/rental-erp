@@ -4,7 +4,7 @@ import { parseWalletSearch, resolveWalletParams, toWalletSearch } from "./compon
 import type { WalletParams } from "./types";
 
 /**
- * The `/dashboard/wallet` route options.
+ * The `/seller/wallet` route options.
  *
  * The window and the filter are URL state, parsed once at the router, for the reason
  * `seller-dashboard/route.tsx` does the same for the analytics period: a wallet view
@@ -27,7 +27,7 @@ export const sellerWalletRouteOptions = {
 };
 
 function SellerWalletRoute() {
-  const search = useSearch({ from: "/dashboard/wallet" });
+  const search = useSearch({ from: "/seller/wallet" });
   const navigate = useNavigate();
   const params = resolveWalletParams(search);
 
@@ -36,7 +36,7 @@ function SellerWalletRoute() {
       params={params}
       onParamsChange={(next: WalletParams) =>
         void navigate({
-          to: "/dashboard/wallet",
+          to: "/seller/wallet",
           search: toWalletSearch(next),
           // Replace, not push: switching between "30 days" and "payouts only" is
           // re-reading the same page, not travelling. Pushing would bury the seller's

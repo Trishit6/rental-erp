@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { cartRouteOptions } from "@/features/cart/route";
-import { requireAuth } from "@/lib/auth/guards";
 
 /**
  * `/cart` — the cart is server-persisted per user, so it is always protected.
@@ -9,7 +8,6 @@ import { requireAuth } from "@/lib/auth/guards";
  * bounces to `/auth-check`, and a guest is sent to `/login?redirect=/cart` so
  * they land back here afterwards. There is no cart-specific auth path.
  */
-export const Route = createFileRoute("/cart")({
+export const Route = createFileRoute("/_authenticated/cart")({
   ...cartRouteOptions,
-  beforeLoad: requireAuth,
 });

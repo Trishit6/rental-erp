@@ -68,7 +68,7 @@ export function ProductRowActions({
           )}
 
           <Link
-            to="/dashboard/products/$productId/edit"
+            to="/seller/products/$productId/edit"
             params={{ productId: String(product.id) }}
             aria-label="Edit this listing"
             className="rounded-full p-1.5 transition hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"

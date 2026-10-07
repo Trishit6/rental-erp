@@ -17,6 +17,7 @@ import {
   Settings,
   ShieldCheck,
   ShoppingBag,
+  Store,
   User as UserIcon,
   X,
 } from "lucide-react";
@@ -234,6 +235,13 @@ export function SiteHeader() {
               {user ? (
                 <>
                   <Link
+                    to="/dashboard"
+                    className="nav-link flex items-center gap-2 py-2"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    <LayoutDashboard size={15} /> Dashboard
+                  </Link>
+                  <Link
                     to="/profile"
                     className="nav-link flex items-center gap-2 py-2"
                     onClick={() => setMenuOpen(false)}
@@ -286,8 +294,15 @@ export function SiteHeader() {
                   >
                     <History size={15} /> Activity
                   </Link>
+                  <Link
+                    to="/settings"
+                    className="nav-link flex items-center gap-2 py-2"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    <Settings size={15} /> Settings
+                  </Link>
                   {/*
-                   * Seller-only. `/dashboard` is the seller workspace and its pages read
+                   * Seller-only. `/seller` is the seller workspace and its pages read
                    * `/api/seller/*`, so offering it to a customer meant every tap either
                    * redirected to onboarding or rendered a page whose requests all 403.
                    * The role shown here is the server's, from the session query — the same
@@ -295,11 +310,11 @@ export function SiteHeader() {
                    */}
                   {isSellerRole(user.role) && (
                     <Link
-                      to="/dashboard"
+                      to="/seller"
                       className="nav-link flex items-center gap-2 py-2"
                       onClick={() => setMenuOpen(false)}
                     >
-                      <LayoutDashboard size={15} aria-hidden /> Dashboard
+                      <Store size={15} aria-hidden /> Seller Dashboard
                     </Link>
                   )}
                   {user.role === "ADMIN" && (
@@ -395,15 +410,12 @@ function ProfileMenu() {
     { to: "/profile/activity", label: "My Activity", icon: History },
     { to: "/cart", label: "Cart", icon: Package },
     { to: "/list", label: "Sell your product", icon: Plus },
-    // `Settings` used to point at `/profile/settings`, which is not a route — the
-    // account dropdown's last item 404'd for every signed-in user. The only real
-    // settings surface in the app is the seller shopfront form at
-    // `/dashboard/settings`, and that is `requireSeller`-guarded, so it is offered
-    // to sellers and omitted for customers rather than linked to a page that
-    // would bounce them to onboarding. A customer edits their name, phone and
-    // addresses from "My Profile" just above.
+    // `Settings` is the authenticated workspace's preference page (`/settings`);
+    // sellers additionally get their shopfront form, which lives in the seller
+    // workspace and is `requireSeller`-guarded.
+    { to: "/settings", label: "Settings", icon: Settings },
     ...(isSellerRole(user.role)
-      ? [{ to: "/dashboard/settings", label: "Shopfront settings", icon: Settings }]
+      ? [{ to: "/seller/settings", label: "Shopfront settings", icon: Settings }]
       : []),
   ];
 

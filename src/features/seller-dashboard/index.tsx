@@ -20,7 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useSellerSummary } from "./query";
 
 /**
- * The seller dashboard — `/dashboard`.
+ * The seller dashboard — `/seller`.
  *
  * ## One request, and it is the only one
  *
@@ -58,15 +58,15 @@ import { useSellerSummary } from "./query";
  * a platform fee turns into a complaint.
  */
 const TABS = [
-  { to: "/dashboard", label: "Overview" },
-  { to: "/dashboard/products", label: "Listings" },
-  { to: "/dashboard/orders", label: "Orders" },
-  { to: "/dashboard/rentals", label: "Rentals" },
-  { to: "/dashboard/analytics", label: "Analytics" },
-  { to: "/dashboard/reviews", label: "Reviews" },
-  { to: "/dashboard/earnings", label: "Earnings" },
-  { to: "/dashboard/wallet", label: "Wallet" },
-  { to: "/dashboard/messages", label: "Messages" },
+  { to: "/seller", label: "Overview" },
+  { to: "/seller/products", label: "Listings" },
+  { to: "/seller/orders", label: "Orders" },
+  { to: "/seller/rentals", label: "Rentals" },
+  { to: "/seller/analytics", label: "Analytics" },
+  { to: "/seller/reviews", label: "Reviews" },
+  { to: "/seller/earnings", label: "Earnings" },
+  { to: "/seller/wallet", label: "Wallet" },
+  { to: "/seller/messages", label: "Messages" },
 ] as const;
 
 export function DashboardPage() {
@@ -87,13 +87,13 @@ export function DashboardPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="secondary">
-            <Link to="/dashboard/analytics">
+            <Link to="/seller/analytics">
               <BarChart3 size={15} aria-hidden />
               Analytics
             </Link>
           </Button>
           <Button asChild>
-            <Link to="/dashboard/products/new">
+            <Link to="/seller/products/new">
               List an item <ArrowRight size={15} aria-hidden />
             </Link>
           </Button>
@@ -117,14 +117,14 @@ export function DashboardPage() {
               label="Sale earnings"
               value={formatInr(data?.earnings.saleNetPaise ?? 0)}
               note="After the platform fee"
-              to="/dashboard/wallet"
+              to="/seller/wallet"
             />
             <StatCard
               icon={Calendar}
               label="Rental earnings"
               value={formatInr(data?.earnings.rentalNetPaise ?? 0)}
               note="After the platform fee"
-              to="/dashboard/wallet"
+              to="/seller/wallet"
             />
             <StatCard
               icon={Package}
@@ -135,14 +135,14 @@ export function DashboardPage() {
                   ? `${data?.rentals.overdue} overdue`
                   : "Nothing overdue"
               }
-              to="/dashboard/rentals"
+              to="/seller/rentals"
             />
             <StatCard
               icon={ShoppingBag}
               label="Orders to action"
               value={String((data?.orders.pending ?? 0) + (data?.orders.inProgress ?? 0))}
               note="Waiting on you"
-              to="/dashboard/orders"
+              to="/seller/orders"
             />
           </div>
 
@@ -151,7 +151,7 @@ export function DashboardPage() {
               <div className="flex items-center justify-between gap-3">
                 <h2 className="font-heading text-lg font-extrabold">Your listings</h2>
                 <Button asChild size="sm" variant="ghost">
-                  <Link to="/dashboard/products">
+                  <Link to="/seller/products">
                     Manage <ArrowRight size={14} aria-hidden />
                   </Link>
                 </Button>
@@ -167,19 +167,19 @@ export function DashboardPage() {
 
               <ul className="mt-5 grid gap-2 sm:grid-cols-3">
                 <QuickLink
-                  to="/dashboard/products/new"
+                  to="/seller/products/new"
                   icon={PackagePlus}
                   label="List something"
                   hint="Saves as a draft"
                 />
                 <QuickLink
-                  to="/dashboard/orders"
+                  to="/seller/orders"
                   icon={ShoppingBag}
                   label="Orders"
                   hint={`${data?.orders.total ?? 0} in total`}
                 />
                 <QuickLink
-                  to="/dashboard/messages"
+                  to="/seller/messages"
                   icon={MessageSquare}
                   label="Messages"
                   hint="Buyer questions"
@@ -210,7 +210,7 @@ export function DashboardPage() {
                   </p>
                 )}
                 <Button asChild size="sm" variant="secondary" className="mt-4">
-                  <Link to="/dashboard/reviews">Read reviews</Link>
+                  <Link to="/seller/reviews">Read reviews</Link>
                 </Button>
               </Card>
 
@@ -238,7 +238,7 @@ export function DashboardPage() {
  * `useLocation` rather than the global `location`, so it re-renders on a
  * client-side navigation instead of lagging one render behind — and so the
  * dashboard renders at all outside a browser. `isActive` compares
- * `pathname` prefixes because `/dashboard/products/new` should light up the
+ * `pathname` prefixes because `/seller/products/new` should light up the
  * Listings tab, not leave every tab inactive.
  */
 function DashboardTabs() {
@@ -259,9 +259,9 @@ function DashboardTabs() {
   );
 }
 
-/** Exact match for `/dashboard`, prefix match for the rest. */
+/** Exact match for `/seller`, prefix match for the rest. */
 function isActive(pathname: string, to: string): boolean {
-  if (to === "/dashboard") return pathname === to || pathname === "/dashboard/";
+  if (to === "/seller") return pathname === to || pathname === "/seller/";
   return pathname === to || pathname.startsWith(`${to}/`);
 }
 

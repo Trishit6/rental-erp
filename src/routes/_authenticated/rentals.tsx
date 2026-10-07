@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { requireAuth } from "@/lib/auth/guards";
 import { rentalsRouteOptions } from "@/features/rentals/route";
 
 /**
@@ -10,7 +9,6 @@ import { rentalsRouteOptions } from "@/features/rentals/route";
  * rent-capable products now lives at `/browse?type=rent`, which is the same
  * query the old page made and the canonical place for browsing.
  */
-export const Route = createFileRoute("/rentals")({
+export const Route = createFileRoute("/_authenticated/rentals")({
   ...rentalsRouteOptions,
-  beforeLoad: requireAuth,
 });

@@ -7,7 +7,7 @@ import {
 } from "./components/schema";
 
 /**
- * The `/dashboard/products` route options, including the URL contract.
+ * The `/seller/products` route options, including the URL contract.
  *
  * ## Why the page takes its filters as props
  *
@@ -34,7 +34,7 @@ export const sellerListingsRouteOptions = {
 };
 
 function SellerListingsRoute() {
-  const search = useSearch({ from: "/dashboard/products" });
+  const search = useSearch({ from: "/seller/products" });
   const navigate = useNavigate();
   const filters = resolveSellerProductFilters(search);
 
@@ -43,7 +43,7 @@ function SellerListingsRoute() {
       filters={filters}
       onFiltersChange={(next) =>
         void navigate({
-          to: "/dashboard/products",
+          to: "/seller/products",
           search: toSearchParams(next),
           // Replace rather than push. A seller working through the status chips
           // would otherwise fill the Back button with filter permutations and

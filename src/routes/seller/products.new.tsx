@@ -3,7 +3,7 @@ import { NewProductPage } from "@/features/seller-listings/form-pages";
 import { requireSeller } from "@/lib/auth/guards";
 
 /**
- * `/dashboard/products/new` — create a listing.
+ * `/seller/products/new` — create a listing.
  *
  * This is where `/list` now points. The old six-step wizard at `/list` was a
  * *second* way to create a listing, with its own validation, no photo upload and
@@ -11,7 +11,7 @@ import { requireSeller } from "@/lib/auth/guards";
  * once (`components/schema.ts` on the client, `product-validation.ts` on the
  * server) instead of twice and drifting.
  */
-export const Route = createFileRoute("/dashboard/products/new")({
+export const Route = createFileRoute("/seller/products/new")({
   beforeLoad: requireSeller,
   component: NewProductPage,
 });

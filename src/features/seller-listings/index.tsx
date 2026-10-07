@@ -21,7 +21,7 @@ import {
 } from "./query";
 
 /**
- * The seller's listings page — `/dashboard/products`.
+ * The seller's listings page — `/seller/products`.
  *
  * ## One page, not a client-side table over everything
  *
@@ -78,7 +78,7 @@ export function SellerListingsPage({
           </p>
         </div>
         <Button asChild>
-          <Link to="/dashboard/products/new">
+          <Link to="/seller/products/new">
             <PackagePlus size={15} aria-hidden />
             New listing
           </Link>
@@ -104,7 +104,7 @@ export function SellerListingsPage({
           onEditStock={setStockFor}
           emptyAction={
             <Button asChild variant="secondary" size="sm">
-              <Link to="/dashboard/products/new">List your first item</Link>
+              <Link to="/seller/products/new">List your first item</Link>
             </Button>
           }
         />
