@@ -3,6 +3,21 @@ import { afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 /**
+ * Signing secrets for the suites that exercise token and cookie code.
+ *
+ * These are *test* values, set before any test file imports `server/lib/*`, so a
+ * checkout with no `.env` can still run the suite. `dotenv` will not override
+ * them (it never overwrites an existing variable), so a developer's real local
+ * secrets are untouched, and nothing here is a credential for anything: a token
+ * signed with this key is accepted by nothing outside these tests.
+ *
+ * Minimum length matters — `server/lib/env.ts` refuses short secrets, and a test
+ * asserting that refusal needs a *valid* baseline to vary from.
+ */
+process.env.JWT_ACCESS_SECRET ??= "test-access-secret-0000000000000000000000000000000000000000000";
+process.env.JWT_REFRESH_SECRET ??= "test-refresh-secret-00000000000000000000000000000000000000000";
+
+/**
  * jsdom implements neither `matchMedia` nor `ResizeObserver`, both of which
  * framer-motion and Radix reach for. Stub them once so component tests exercise
  * behaviour instead of missing browser APIs.

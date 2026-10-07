@@ -69,6 +69,18 @@ export type LogoutResponse = {
 };
 
 /**
+ * `POST /auth/logout-all` — every session on the account, this one included.
+ *
+ * `revokedSessions` is a count, not a list: the client needs it for the toast
+ * ("signed out 3 devices"), and a list would be session ids it has no business
+ * holding.
+ */
+export type LogoutAllResponse = {
+  loggedOut: boolean;
+  revokedSessions: number;
+};
+
+/**
  * The change-password request body.
  *
  * `newPassword` only — `confirmNewPassword` is deliberately absent. The confirmation is

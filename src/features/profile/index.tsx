@@ -5,6 +5,7 @@ import { AddressSection } from "./components/AddressSection";
 import { AvatarCard } from "./components/AvatarCard";
 import { ProfileDetailsCard } from "./components/ProfileDetailsCard";
 import { SecurityCard } from "./components/SecurityCard";
+import { SessionsCard } from "./components/SessionsCard";
 
 /**
  * `/profile` — the signed-in user's own account.
@@ -39,6 +40,11 @@ export function ProfilePage() {
       <ProfileDetailsCard user={user} />
       <AvatarCard user={user} />
       <SecurityCard />
+      {/* Sessions sit beside the password change because they are the other half of the
+          same question — "who still has access to this account?" — and because the
+          control that ends *other* devices belongs next to the one that ends their
+          credentials. */}
+      <SessionsCard />
       <AddressSection />
 
       {/* Reviews live here rather than on their own route because a customer's

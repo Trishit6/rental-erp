@@ -1,5 +1,12 @@
-export { getCollections, resetCollectionsForTests, type RevaroCollections } from "./collections";
+export {
+  getCollections,
+  resetCollectionsForTests,
+  type AuthUserCollection,
+  type RevaroCollections,
+} from "./collections";
 export type {
+  AuthUserInput,
+  AuthUserRow,
   CategoryRow,
   OrderItemRow,
   OrderRow,
@@ -13,10 +20,10 @@ export {
   clearPrivateCollections,
   forgetSellerProduct,
   patchOrderStatus,
+  syncAuthUser,
   syncCategories,
   syncOrderItems,
   syncOrders,
-  syncProducts,
   syncRentals,
   syncReviews,
   syncReviewsToCollection,

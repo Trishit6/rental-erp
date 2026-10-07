@@ -1,6 +1,8 @@
 import type { ChangeMessage } from "@tanstack/db";
 import { getCollections } from "./collections";
 import type {
+  AuthUserInput,
+  AuthUserRow,
   CategoryRow,
   ConversationRow,
   MessageRow,
@@ -80,6 +82,52 @@ function replaceAll(
     if (!incomingKeys.has(key as string | number)) collection.delete(key);
   }
   mergeByKey(collection, keyOf, rows);
+}
+
+/**
+ * Mirror the signed-in user — the auth query's answer, and nothing else.
+ *
+ * **Replace, always, including with "nothing".** This is the one sync that runs
+ * with `null`: signing out, a session that expired and a "signed out in another
+ * tab" notice all resolve to "this browser has no user", and the row has to go
+ * at the same moment the query cache's does. Clearing the cache while leaving
+ * this row behind would leave the previous customer's name, email and role
+ * readable from the reactive store on a shared machine — the exact leak
+ * `clearPrivateCollections` exists to prevent, arrived at by a different route.
+ *
+ * At most one row is kept: any key that is not the incoming user is dropped
+ * first, so the collection is a fact about *this* session rather than an
+ * accumulation of everyone who signed in on this device.
+ */
+export function syncAuthUser(user: AuthUserInput | null): void {
+  const collection = getCollections().authUser as never as SyncTarget;
+
+  if (!user) {
+    for (const key of [...collection.keys()]) collection.delete(key);
+    return;
+  }
+
+  const row: AuthUserRow = {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    verified: user.verified,
+    avatarUrl: user.avatarUrl,
+    phone: user.phone ?? null,
+    // Derived, not asserted: this function is only ever called with a user the
+    // server returned. See `authUserCollectionSchema`.
+    isAuthenticated: true,
+  };
+
+  for (const key of [...collection.keys()]) {
+    if (key !== row.id) collection.delete(key);
+  }
+  if (collection.has(row.id)) {
+    collection.update(row.id, (draft: never) => Object.assign(draft, row));
+  } else {
+    collection.insert(row);
+  }
 }
 
 /** Mirror an order-list page into the `orders` collection. */
@@ -372,6 +420,7 @@ export function patchOrderStatus(orderId: number, status: string): void {
  */
 export function clearPrivateCollections(): void {
   const {
+    authUser,
     orders,
     orderItems,
     rentals,
@@ -388,6 +437,10 @@ export function clearPrivateCollections(): void {
   }) => {
     for (const key of [...collection.keys()]) collection.delete(key);
   };
+  // First, deliberately: this row is *who* was signed in, and every other wipe
+  // below is data belonging to that person. Leaving it would mean the store kept
+  // the previous customer's identity even after it had forgotten their orders.
+  wipe(authUser as never);
   wipe(orders as never);
   wipe(orderItems as never);
   wipe(rentals as never);

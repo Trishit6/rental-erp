@@ -3,7 +3,7 @@
  *
  * TanStack DB sits between TanStack Query and the reactive UI:
  *
- *   MariaDB → Hono API → TanStack Query → TanStack DB → UI
+ *   MariaDB → Express API → TanStack Query → TanStack DB → UI
  *
  * Query owns fetching, caching and invalidation. The DB collections hold the
  * mirrored rows so components can read across entities (an order against its

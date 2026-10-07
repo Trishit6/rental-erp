@@ -51,6 +51,7 @@
     "drizzle-orm": "^0.44.2",
     "express": "^5.1.0",
     "framer-motion": "^13.4.4",
+    "jose": "^6.2.12",
     "lucide-react": "^0.468.0",
     "mysql2": "^3.14.1",
     "react": "^19.1.0",

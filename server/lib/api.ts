@@ -96,7 +96,13 @@ let nextLimiterId = 0;
 function clientKey(c: Ctx): string {
   const forwarded = c.req.header("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0]!.trim();
-  return "unknown";
+  // Without a proxy header, the socket's own address. The old fallback here was
+  // the literal `"unknown"`, which put *every* client that arrived without a
+  // proxy — i.e. the default local deployment, and any deployment not behind a
+  // load balancer — into one shared bucket: the sixth sign-in from anybody then
+  // rate-limited everybody. Falling back to the peer address is what makes the
+  // limiter per-IP as its documentation already claimed.
+  return c.req.raw.socket?.remoteAddress ?? "unknown";
 }
 
 export function rateLimit(limit: number, windowMs: number) {

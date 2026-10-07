@@ -2,7 +2,9 @@ import { pool } from "./db";
 import { ok } from "./lib/api";
 import { onErrorHandler } from "./lib/api";
 import { attachUser } from "./lib/auth";
+import { assertServerEnv } from "./lib/env";
 import { createApp, Router, type Ctx } from "./lib/http";
+import { originGuard, securityHeaders } from "./lib/security";
 import { auth } from "./routes/auth";
 import { productsRoute, categoriesRoute } from "./routes/products";
 import { favoritesRoute, cartRoute, addressesRoute } from "./routes/market";
@@ -46,6 +48,16 @@ const requestLogger: RequestHandler = (req, res, next) => {
 const { app, router } = createApp({ captureRawBody: true });
 
 /**
+ * Fail fast, and fail in the terminal rather than in a user's browser.
+ *
+ * A missing JWT secret is an operator problem: it is discovered here, once, with
+ * the variable's name — not as a 500 on the first sign-in attempt or, worse, as
+ * a *default* secret that happens to work locally and signs production tokens
+ * anyone can forge. Runs after the imports above, which is what loads `.env`.
+ */
+assertServerEnv();
+
+/**
  * Request-scoped middleware, mounted ahead of every API route.
  *
  * A `Router` rather than `app.use` so `attachUser` keeps its `(c, next)` shape and
@@ -54,7 +66,14 @@ const { app, router } = createApp({ captureRawBody: true });
 const beforeApi = new Router();
 beforeApi.use(attachUser);
 
+// Headers first: they apply to every response, including the ones the guard and
+// the error handler produce later.
+app.use(securityHeaders);
 app.use(requestLogger);
+// Origin check before any session work, so a foreign origin is refused without
+// reading a cookie. `SameSite=Lax` on both auth cookies is the browser half of
+// the same defence; see `server/lib/security.ts` for why both are needed.
+app.use("/api", originGuard);
 app.use("/api", beforeApi.toExpress());
 
 /* --------------------------------- health ---------------------------------- */

@@ -7,6 +7,7 @@ import {
   getCurrentUser,
   login,
   logout,
+  logoutAll,
   register,
   updateProfile,
 } from "./api";
@@ -114,6 +115,28 @@ export function useLogoutMutation() {
      * header rendering a signed-in user whose session is genuinely gone — exactly the
      * stale-auth state another tab must not show, arrived at by a different route.
      */
+    onSettled: () => {
+      clearAuthState(queryClient);
+    },
+  });
+}
+
+/**
+ * Sign out of **every** device — every session on the account, this one included.
+ *
+ * Deliberately shaped like `useLogoutMutation`: the server has revoked the rows
+ * and cleared the cookies before the response reaches here, so `onSettled` again
+ * — a transient failure on the way back must not leave the header rendering a
+ * user whose sessions demonstrably no longer exist. The other tabs are told too,
+ * because they are signed out as well and have no way of knowing otherwise.
+ */
+export function useLogoutAllMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => logoutAll(),
+    onSuccess: () => {
+      publishAuthChange("signed-out");
+    },
     onSettled: () => {
       clearAuthState(queryClient);
     },

@@ -2,18 +2,23 @@ import { Router } from "../lib/http";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { deleteCookie, getCookie } from "../lib/http";
+import { getCookie } from "../lib/http";
 import { db } from "../db";
 import { users } from "../schema";
 import { fail, ok, rateLimit, HttpError } from "../lib/api";
 import {
+  ACCESS_TOKEN_COOKIE,
+  REFRESH_TOKEN_COOKIE,
   applyProfileUpdate,
-  createSession,
+  clearAuthCookies,
+  currentSessionId,
+  deleteAllSessions,
   deleteOtherSessions,
-  deleteSession,
+  issueSession,
   requireUser,
+  revokeCurrentSession,
+  rotateSession,
   selfEditableProfileFields,
-  SESSION_COOKIE,
 } from "../lib/auth";
 import { BCRYPT_ROUNDS } from "../lib/config";
 import { notificationEventKey } from "../lib/notification-events";
@@ -81,6 +86,10 @@ auth.use("/login", rateLimit(10, 60_000));
 // costs a real bcrypt comparison, so the limiter is a genuine CPU brake here rather
 // than just a politeness signal.
 auth.use("/change-password", rateLimit(5, 60_000));
+// Generous compared to login — an expiring access token wakes every open tab at
+// once, and each of those is one legitimate refresh — but bounded, because the
+// same endpoint is what a loop holding a stolen refresh cookie would call.
+auth.use("/refresh", rateLimit(30, 60_000));
 
 auth.post("/register", async (c) => {
   const input = registerSchema.parse(await c.req.json());
@@ -96,8 +105,11 @@ auth.post("/register", async (c) => {
     .values({ name: input.name, email: input.email, passwordHash, role: "USER" })
     .$returningId();
 
-  await createSession(c, created.id);
   const [user] = await db.select().from(users).where(eq(users.id, created.id)).limit(1);
+
+  // The account exists; the session is the next thing that can fail, and a
+  // half-signed-in registration would leave a row nobody can get back into.
+  await issueSession(c, user);
 
   // The first thing a new account should see, and the only notification anyone is
   // guaranteed to receive: it is written before any preference row exists, and a
@@ -122,12 +134,16 @@ auth.post("/login", async (c) => {
     return c.json(fail("INVALID_CREDENTIALS", "Email or password is incorrect."), 401);
   }
 
-  // Read the cookie *before* `createSession` overwrites it. A login that arrived
+  // Read the cookies *before* `issueSession` overwrites them. A login that arrived
   // already carrying a session is a re-authentication (the client refreshing a stale
-  // user, the profile form re-submitting) and says nothing about a new device.
-  const hadSession = Boolean(getCookie(c, SESSION_COOKIE));
+  // user, the profile form re-submitting) and says nothing about a new device. Either
+  // cookie counts: the access token expires on its own, so a tab that has been open a
+  // while still holds a refresh cookie and is still "this browser".
+  const hadSession = Boolean(
+    getCookie(c, ACCESS_TOKEN_COOKIE) || getCookie(c, REFRESH_TOKEN_COOKIE),
+  );
 
-  await createSession(c, user.id);
+  await issueSession(c, user);
 
   // A sign-in from a browser that was not already signed in is the one thing a user
   // cannot see happening — it happens on a device they may not be holding. Keyed on
@@ -148,10 +164,56 @@ auth.post("/login", async (c) => {
 });
 
 auth.post("/logout", async (c) => {
-  const token = getCookie(c, SESSION_COOKIE);
-  await deleteSession(token);
-  deleteCookie(c, SESSION_COOKIE, { path: "/" });
+  await revokeCurrentSession(c);
   return c.json(ok({ loggedOut: true }));
+});
+
+/**
+ * `POST /api/auth/refresh`
+ *
+ * ## What happens, in order
+ *
+ *  1. The refresh cookie is hashed and looked up — the raw value never reaches
+ *     a query, a log or a response.
+ *  2. `classifyRefreshToken` decides between a normal rotation, the two-tab
+ *     grace window, replay and "not our token". Only the first two answer with
+ *     new cookies; a replay revokes the session before it is refused.
+ *  3. A new refresh token is written, the old hash is demoted to *previous*, the
+ *     expiry is pushed out, and both cookies are re-armed.
+ *  4. The account row is re-read and returned, so the client's cached user is
+ *     the current one rather than the one from sign-in.
+ *
+ * ## What this does *not* do
+ *
+ * It never echoes a token. The client asks "continue my session" and gets a
+ * sanitized user or a 401; the credentials travel only as `Set-Cookie` headers
+ * that JavaScript cannot read. There is deliberately no request body to carry a
+ * token either — a body is where an implementation is most likely to put one by
+ * accident, so the handler does not read one.
+ */
+auth.post("/refresh", async (c) => {
+  const user = await rotateSession(c);
+  return c.json(ok(publicUser(user)));
+});
+
+/**
+ * `POST /api/auth/logout-all`
+ *
+ * "Sign out of every device", including the one asking. Every session row for the
+ * account goes, then the cookies are cleared — the order matters, because the
+ * response must never arrive while a refresh cookie that still maps to a live row
+ * would let the next request sign straight back in.
+ *
+ * The count of revoked sessions is returned for the same reason the
+ * password-change endpoint returns one: it is the only part of the answer the
+ * user can act on, and it says nothing an attacker could use (they know how many
+ * devices they hold).
+ */
+auth.post("/logout-all", async (c) => {
+  const user = requireUser(c);
+  const revokedSessions = await deleteAllSessions(user.id);
+  clearAuthCookies(c);
+  return c.json(ok({ loggedOut: true, revokedSessions }));
 });
 
 /**
@@ -201,12 +263,12 @@ auth.post("/change-password", async (c) => {
   }
 
   const passwordHash = await bcrypt.hash(input.newPassword, BCRYPT_ROUNDS);
-  await db
-    .update(users)
-    .set({ passwordHash, updatedAt: new Date() })
-    .where(eq(users.id, user.id));
+  await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, user.id));
 
-  const revokedSessions = await deleteOtherSessions(user.id, getCookie(c, SESSION_COOKIE));
+  // Keep the session this request authenticated with, and only that one. The id
+  // comes from the access token and is confirmed against a live row — so if it
+  // cannot be established, nothing is kept, which is the safe direction.
+  const revokedSessions = await deleteOtherSessions(user.id, await currentSessionId(c));
   console.log(
     `[auth] password changed for user ${user.id}; ${revokedSessions} other session(s) revoked`,
   );
@@ -215,9 +277,10 @@ auth.post("/change-password", async (c) => {
     userId: user.id,
     type: "ACCOUNT_PASSWORD_CHANGED",
     title: "Your password was changed",
-    body: revokedSessions > 0
-      ? `We signed out ${revokedSessions} other session${revokedSessions === 1 ? "" : "s"} so nobody else keeps access. If this wasn't you, contact support.`
-      : "If this wasn't you, contact support right away.",
+    body:
+      revokedSessions > 0
+        ? `We signed out ${revokedSessions} other session${revokedSessions === 1 ? "" : "s"} so nobody else keeps access. If this wasn't you, contact support.`
+        : "If this wasn't you, contact support right away.",
     relatedEntityType: "ACCOUNT",
     relatedEntityId: user.id,
     // Keyed on the new hash: two real changes are two edits and must both be announced,

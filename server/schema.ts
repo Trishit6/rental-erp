@@ -34,16 +34,50 @@ export const users = mysqlTable(
 export const sessions = mysqlTable(
   "sessions",
   {
-    // Primary key is the SHA-256 hash of the opaque session token — raw tokens never touch the DB.
+    /**
+     * Server-generated session id, and what the access token's `sid` claim points
+     * at.
+     *
+     * It used to *be* the hash of the opaque session cookie, which made rotation
+     * impossible: replacing the credential would replace the primary key, and with
+     * it every reference to the session. It is now an independent random id, and
+     * the credential lives in `refreshTokenHash` where it can be rotated,
+     * compared and revoked without moving the row's identity.
+     */
     id: varchar("id", { length: 64 }).primaryKey(),
     userId: int("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    /**
+     * SHA-256 of the *current* refresh token, as a hex string. The raw token
+     * exists only in the browser's HttpOnly cookie; the row holds the hash, so a
+     * database dump cannot be replayed against the API.
+     *
+     * Nullable only because the sessions written before this column existed have
+     * no value to backfill — those rows are unreachable credentials (their
+     * cookies are the retired `revaro_session` format) and expire on their own.
+     * Every session this code creates sets it.
+     */
+    refreshTokenHash: varchar("refresh_token_hash", { length: 64 }),
+    /** Hash of the token used before the most recent rotation — see `rotatedAt`. */
+    previousRefreshTokenHash: varchar("previous_refresh_token_hash", { length: 64 }),
+    /** When the current token was issued; starts the reuse-detection grace window. */
+    rotatedAt: timestamp("rotated_at"),
     expiresAt: timestamp("expires_at").notNull(),
+    /** Set when the session is revoked outright — a logout writes `sessions.id`, reuse detection writes this. */
+    revokedAt: timestamp("revoked_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     lastUsedAt: timestamp("last_used_at").notNull().defaultNow(),
   },
-  (table) => [index("sessions_user_id_idx").on(table.userId)],
+  (table) => [
+    index("sessions_user_id_idx").on(table.userId),
+    // Both hashes are looked up by equality on every refresh. The current one is
+    // unique: two rows claiming the same live credential would make the lookup
+    // ambiguous exactly when it matters. MySQL unique indexes permit multiple
+    // NULLs, which is what keeps this legal while legacy rows exist.
+    uniqueIndex("sessions_refresh_token_hash_idx").on(table.refreshTokenHash),
+    index("sessions_previous_refresh_token_hash_idx").on(table.previousRefreshTokenHash),
+  ],
 );
 
 /* -------------------------------- addresses -------------------------------- */

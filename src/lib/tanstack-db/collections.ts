@@ -1,5 +1,6 @@
 import { createCollection, localOnlyCollectionOptions } from "@tanstack/db";
 import {
+  authUserCollectionSchema,
   categoryCollectionSchema,
   orderCollectionSchema,
   orderItemCollectionSchema,
@@ -18,7 +19,7 @@ import {
  * The client-side reactive store.
  *
  * TanStack DB is a *derived* store between TanStack Query and the UI, not a
- * second source of truth: MariaDB → Hono → TanStack Query → TanStack DB → UI.
+ * second source of truth: MariaDB → the Express API → TanStack Query → TanStack DB → UI.
  * Every collection below is a `local-only` in-memory collection that a sync
  * module writes into from data the query cache has already validated, and the
  * reactive UI subscribes to the collection rather than to yet another fetch.
@@ -42,6 +43,35 @@ export type ConversationCollection = ReturnType<typeof createConversationsCollec
 export type MessageCollection = ReturnType<typeof createMessagesCollection>;
 export type WalletTransactionCollection = ReturnType<typeof createWalletTransactionsCollection>;
 export type WalletPayoutCollection = ReturnType<typeof createWalletPayoutsCollection>;
+export type AuthUserCollection = ReturnType<typeof createAuthUserCollection>;
+
+/**
+ * Who is signed in — at most one row, and only while somebody is.
+ *
+ * **Private**, and the first collection wiped on logout: it is a name, an email
+ * and a role, and a shared machine must not still be showing the previous
+ * customer's identity from the reactive store after the query cache has been
+ * cleared. Both are cleared together (`clearPrivateCollections` runs on the same
+ * path that evicts `privateQueryKeys`) precisely so the cache and the store can
+ * never disagree about whether someone is signed in.
+ *
+ * Keyed by user id, but it is *not* a list: `syncAuthUser` removes any other key
+ * before writing, because the browser has one session identity, not a collection
+ * of them.
+ *
+ * It holds the sanitized projection of `GET /auth/me` and nothing else. No
+ * token, no password, no session id — those live in HttpOnly cookies this code
+ * cannot read, which is the point.
+ */
+export function createAuthUserCollection() {
+  return createCollection(
+    localOnlyCollectionOptions({
+      id: "auth-user",
+      getKey: (row) => row.id,
+      schema: authUserCollectionSchema,
+    }),
+  );
+}
 
 /** Public order history, synced from the `/orders` list responses. */
 export function createOrdersCollection() {
@@ -223,6 +253,7 @@ export function createMessagesCollection() {
 }
 
 export type RevaroCollections = {
+  authUser: AuthUserCollection;
   orders: OrderCollection;
   orderItems: OrderItemCollection;
   rentals: RentalCollection;
@@ -249,6 +280,7 @@ let collections: RevaroCollections | null = null;
 export function getCollections(): RevaroCollections {
   if (!collections) {
     collections = {
+      authUser: createAuthUserCollection(),
       orders: createOrdersCollection(),
       orderItems: createOrderItemsCollection(),
       rentals: createRentalsCollection(),

@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { queryKeys } from "../query/keys";
 import { authMeQuery, clearAuthState, useCurrentUser } from "@/features/auth/query";
+import { syncAuthUser } from "@/lib/tanstack-db";
 import { setSessionExpiredHandler } from "./session-expiry";
 import { subscribeToAuthChanges, type AuthChangeEvent } from "./session-sync";
 
@@ -26,6 +27,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
 
   const user = data ?? null;
+
+  /**
+   * Mirror the session into TanStack DB — one writer, and it is here.
+   *
+   * TanStack Query owns fetching, caching and invalidation; TanStack DB holds
+   * the safe, reactive projection of the answer so anything that needs to react
+   * to *identity* reads one row instead of subscribing to a cache entry. This
+   * effect is the whole synchronisation: every path that changes who is signed
+   * in — sign-in, sign-out, expiry, another tab, a profile edit that writes the
+   * cache directly — ends at `data`, so they all land in the store together.
+   *
+   * What is written is the sanitized `GET /auth/me` payload and nothing more. No
+   * token, no password, no session id: the credentials are in HttpOnly cookies
+   * this process cannot read, and the row is a *report* of the server's answer
+   * rather than anything that could keep a session alive on its own. Signing out
+   * writes `null`, which removes the row outright rather than leaving an
+   * `isAuthenticated: false` ghost of the previous customer's details behind.
+   */
+  useEffect(() => {
+    syncAuthUser(user);
+  }, [user]);
 
   /**
    * Guard against announcing the same expiry twice.

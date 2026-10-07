@@ -9,6 +9,47 @@ import { z } from "zod";
  * malformed response degrades at the boundary instead of corrupting the cache.
  */
 
+/**
+ * The signed-in user, exactly as `GET /api/auth/me` projected them.
+ *
+ * ## What makes this schema different from the others
+ *
+ * It is a *deny-list enforced by construction*: the shape has no field a token
+ * could occupy, and `.strict()` makes an extra one a validation **failure**
+ * rather than something that is quietly stored. `accessToken`, `refreshToken`
+ * and `passwordHash` are therefore not "excluded" here — they cannot be written,
+ * so a response that carried one would be rejected at the boundary instead of
+ * landing in the store. The credential for this session lives in an HttpOnly
+ * cookie the browser holds and this code cannot read, and this row is the *only*
+ * thing the client keeps about who is signed in.
+ *
+ * `isAuthenticated` is derived, never asserted: a row is written only when the
+ * server answered with a user, so it is always `true`. It exists so a reader
+ * never has to infer the state from a collection's emptiness — and so "the store
+ * says signed in" remains visibly a *report* of a server answer, not a claim the
+ * client could have made on its own.
+ */
+export const authUserCollectionSchema = z
+  .object({
+    id: z.number(),
+    name: z.string(),
+    email: z.string(),
+    role: z.string(),
+    verified: z.boolean(),
+    avatarUrl: z.string().nullable(),
+    phone: z.string().nullable(),
+    isAuthenticated: z.boolean(),
+  })
+  .strict();
+
+export type AuthUserRow = z.infer<typeof authUserCollectionSchema>;
+
+/** What a caller supplies: the server's user, without the derived flag. */
+export type AuthUserInput = Omit<AuthUserRow, "isAuthenticated" | "phone"> & {
+  phone?: string | null;
+};
+
+
 export const orderCollectionSchema = z.object({
   id: z.number(),
   /** The public `RV-2026-XXXXXX` identifier; the key the UI links with. */
