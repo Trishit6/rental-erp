@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { BadgeCheck, BadgeX, Store } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,7 +14,7 @@ import {
 import { AdminConfirmDialog, useConfirmTarget } from "../components/AdminConfirmDialog";
 import { formatAdminCount, formatAdminDate, formatAdminMoney } from "../components/format";
 import { MODERATION_STATUS_BADGE } from "../components/status-badge";
-import { useAdminSellerVerification, useAdminSellersList } from "../query";
+import { useAdminSearchFilters, useAdminSellerVerification, useAdminSellersList } from "../query";
 import { EMPTY_ADMIN_SELLER_FILTERS, type AdminSellerRow } from "../api";
 
 /**
@@ -42,7 +41,7 @@ const STATUS_OPTIONS = [
 ];
 
 export function AdminSellersPage() {
-  const [filters, setFilters] = useState(EMPTY_ADMIN_SELLER_FILTERS);
+  const [filters, setFilters] = useAdminSearchFilters(EMPTY_ADMIN_SELLER_FILTERS);
   const sellers = useAdminSellersList(filters);
   const verification = useAdminSellerVerification();
   const confirm = useConfirmTarget<AdminSellerRow>();

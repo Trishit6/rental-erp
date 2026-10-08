@@ -12,15 +12,19 @@ import {
   orderItems,
   orders,
   payouts,
+  permissions,
   productImages,
   products,
   productTags,
   rentals,
   reviews,
   reviewHelpfulVotes,
+  rolePermissions,
+  roles,
   sellerPayoutMethods,
   sellerProfiles,
   transactions,
+  userRoles,
   users,
   walletTransactions,
 } from "./schema";
@@ -34,6 +38,7 @@ import {
 } from "./lib/config";
 import { refreshProductRatings } from "./lib/rating-aggregate";
 import { TRUNCATED_TABLES } from "./lib/seed-truncate";
+import { ALL_ROLE_NAMES } from "./lib/enums";
 import { createOrderNumber } from "./lib/payments/order-number";
 import { createPayoutNumber } from "./lib/wallet";
 
@@ -80,6 +85,132 @@ import { IMG, IMAGE_POOLS, pick } from "./lib/demo-images";
  * Every demo account's credentials come from `lib/config`, so a deployment can set
  * them in the environment instead of editing this file — see the note there.
  */
+/* ----------------------------------- RBAC ---------------------------------- */
+
+/**
+ * The staff permission catalogue.
+ *
+ * Seeded rather than left empty: a permission table that starts blank is one
+ * nobody notices staying blank. The first admin screen to check a key would
+ * deny everyone, and the failure would look like an authentication bug instead
+ * of missing data.
+ *
+ * Keys are `resource.action`, the shape `permissions.key` CHECKs for at the
+ * database as well — a typo here fails the seed rather than becoming a
+ * permission that can never be granted.
+ */
+const PERMISSIONS: { key: string; description: string }[] = [
+  { key: "orders.view", description: "Read orders across sellers" },
+  { key: "orders.manage", description: "Change order status and fulfillment" },
+  { key: "orders.refund", description: "Issue a refund against an order" },
+  { key: "products.view", description: "Read listings, including unpublished ones" },
+  { key: "products.moderate", description: "Publish, pause or remove a listing" },
+  { key: "users.view", description: "Read customer and seller accounts" },
+  { key: "users.manage", description: "Suspend, restore and edit accounts" },
+  { key: "payouts.view", description: "Read the payout ledger" },
+  { key: "payouts.approve", description: "Approve or reject a payout" },
+  { key: "support.view", description: "Read support tickets" },
+  { key: "support.reply", description: "Reply to a support ticket" },
+  { key: "reports.resolve", description: "Resolve or dismiss a report" },
+  { key: "content.manage", description: "Edit banners and CMS blocks" },
+  { key: "audit.view", description: "Read the audit log" },
+  { key: "settings.manage", description: "Change platform settings and feature flags" },
+  { key: "rbac.manage", description: "Grant and revoke roles and permissions" },
+  { key: "exports.run", description: "Start a data export" },
+];
+
+/**
+ * Which system role holds which key.
+ *
+ * `USER` and `SELLER` hold **none** on purpose. Their access comes from
+ * `users.role` and the ownership checks that already exist; giving two systems
+ * overlapping authority over the same endpoint is how a customer ends up with a
+ * permission nobody granted them.
+ *
+ * `SUPER_ADMIN` is the only role with `rbac.manage`, and nothing is seeded into
+ * it — unrestricted access should have to be handed out deliberately, not arrive
+ * with the demo data.
+ */
+const ROLE_PERMISSIONS: Record<(typeof ALL_ROLE_NAMES)[number], readonly string[]> = {
+  SUPER_ADMIN: PERMISSIONS.map((permission) => permission.key),
+  ADMIN: PERMISSIONS.filter((permission) => permission.key !== "rbac.manage").map((p) => p.key),
+  SUPPORT: [
+    "orders.view",
+    "users.view",
+    "support.view",
+    "support.reply",
+    "reports.resolve",
+    "exports.run",
+  ],
+  FINANCE: ["orders.view", "payouts.view", "payouts.approve", "audit.view", "exports.run"],
+  MODERATOR: ["products.view", "products.moderate", "reports.resolve", "users.view", "support.view"],
+  CONTENT_MANAGER: ["content.manage", "products.view"],
+  USER: [],
+  SELLER: [],
+};
+
+const ROLE_DESCRIPTIONS: Record<(typeof ALL_ROLE_NAMES)[number], string> = {
+  SUPER_ADMIN: "Unrestricted access. Grants rbac.manage and must be assigned by hand.",
+  ADMIN: "Full operational access, except granting roles.",
+  SUPPORT: "Reads accounts and orders, answers tickets.",
+  FINANCE: "Reads the ledger, approves payouts, reads the audit log.",
+  MODERATOR: "Reviews listings and reports.",
+  CONTENT_MANAGER: "Edits banners and CMS blocks.",
+  USER: "A customer account — the coarse role on `users.role`.",
+  SELLER: "A seller account — the coarse role on `users.role`.",
+};
+
+/**
+ * Fills `roles`, `permissions`, `role_permissions` and grants the seeded
+ * administrator their role.
+ *
+ * Runs inside `seed()` rather than at import, and after the truncate, so a
+ * re-seed refreshes the catalogue instead of colliding with last run's rows.
+ */
+async function seedRbac(adminUserId: number): Promise<void> {
+  const permissionRows = PERMISSIONS.map((permission) => ({
+    key: permission.key,
+    description: permission.description,
+    // Everything a key can be about, read off the key itself rather than kept in
+    // a second list that can drift from the first.
+    groupKey: permission.key.slice(0, permission.key.indexOf(".")),
+  }));
+  const insertedPermissions = await db.insert(permissions).values(permissionRows).$returningId();
+  const permissionIdByKey = new Map(
+    permissionRows.map((permission, index) => [
+      permission.key,
+      Number(insertedPermissions[index].id),
+    ]),
+  );
+
+  const roleRows = ALL_ROLE_NAMES.map((name) => ({
+    name,
+    description: ROLE_DESCRIPTIONS[name],
+    isSystem: true,
+  }));
+  const insertedRoles = await db.insert(roles).values(roleRows).$returningId();
+  const roleIdByName = new Map(roleRows.map((role, index) => [role.name, Number(insertedRoles[index].id)]));
+
+  const grants = Object.entries(ROLE_PERMISSIONS).flatMap(([roleName, keys]) => {
+    const roleId = roleIdByName.get(roleName as (typeof ALL_ROLE_NAMES)[number]);
+    if (roleId === undefined) throw new Error(`RBAC seed: role "${roleName}" was not inserted`);
+    return keys.map((key) => {
+      const permissionId = permissionIdByKey.get(key);
+      if (permissionId === undefined) {
+        throw new Error(`RBAC seed: role "${roleName}" grants unknown permission "${key}"`);
+      }
+      return { roleId, permissionId };
+    });
+  });
+  if (grants.length > 0) await db.insert(rolePermissions).values(grants);
+
+  // `ADMIN`, not `SUPER_ADMIN`: the demo account matches its own `users.role`,
+  // and unrestricted access is not something a `db:seed` should hand out.
+  const adminRoleId = roleIdByName.get("ADMIN");
+  if (adminRoleId === undefined) throw new Error("RBAC seed: ADMIN role is missing");
+  await db.insert(userRoles).values({ userId: adminUserId, roleId: adminRoleId });
+}
+
 async function seed() {
   console.log("Clearing existing data...");
   await db.execute(sql`SET FOREIGN_KEY_CHECKS = 0`);
@@ -135,7 +266,10 @@ async function seed() {
     ])
     .$returningId();
 
-  const [, maya, daniel, priya, arjun, sara] = insertedUsers.map((u) => Number(u.id));
+  const [admin, maya, daniel, priya, arjun, sara] = insertedUsers.map((u) => Number(u.id));
+
+  console.log("Seeding RBAC...");
+  await seedRbac(admin);
 
   await db.insert(sellerProfiles).values([
     {

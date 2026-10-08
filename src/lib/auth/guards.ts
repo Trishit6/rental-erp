@@ -91,11 +91,11 @@ export function requireAdmin({ context, location }: { context: GuardContext; loc
     throw loginRedirect(location);
   }
   if (context.user.role !== "ADMIN") {
-    // Sent to their own account rather than to a bare 403 page. A customer who typed
-    // `/admin` is not looking for an error, they are looking for their account — and the
-    // destination is deliberately *not* `/login`, because they are already signed in:
-    // bouncing a signed-in visitor to the login page is how redirect loops start.
-    throw redirect({ to: homeFor(context.user), replace: true });
+    // A signed-in non-admin gets a real 403 page, not a silent bounce to their
+    // account. The forbidden route is exempted from this guard below so landing on
+    // it cannot loop; anywhere else under `/admin` is redirected there.
+    if (location?.pathname === "/admin/forbidden") return;
+    throw redirect({ to: "/admin/forbidden", replace: true });
   }
 }
 

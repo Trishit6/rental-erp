@@ -68,6 +68,23 @@ export async function fetchAdminOverview(): Promise<AdminOverview> {
   return (await api.get<AdminOverview>("/admin/stats")).data;
 }
 
+/**
+ * One probe of `/api/health`.
+ *
+ * The dashboard's system-status card reads this. The endpoint is deliberately public
+ * (it answers `SELECT 1` and nothing else), but the *query* it feeds is scoped under
+ * the admin prefix so the workspace's status display is cleared from the cache with
+ * the rest of the workspace when the admin signs out.
+ */
+export type AdminHealth = {
+  status: "ok" | "unavailable";
+  database: "connected" | "unavailable";
+};
+
+export async function fetchAdminHealth(): Promise<AdminHealth> {
+  return (await api.get<AdminHealth>("/health")).data;
+}
+
 export async function fetchAdminProducts(filters: AdminProductFilters): Promise<{
   rows: AdminProductRow[];
   total: number;

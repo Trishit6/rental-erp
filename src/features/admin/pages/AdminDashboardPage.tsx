@@ -2,14 +2,22 @@ import { Card } from "@/components/ui/card";
 import { useAdminOverview } from "../query";
 import { AdminPageHeader } from "../components/AdminLayout";
 import { OverviewCards } from "../components/OverviewCards";
+import { AdminQuickActions } from "../components/AdminQuickActions";
+import { AdminRecentActivity } from "../components/AdminRecentActivity";
+import { AdminSystemStatus } from "../components/AdminSystemStatus";
 
 /**
  * `/admin` — the workspace dashboard.
  *
- * The headline figures plus a short pointer onward. It deliberately does *not* try to
- * be the catalogue: that is a table with eleven columns and its own filters, and
- * cramming it above the fold would bury the numbers an administrator opens the page
- * for.
+ * The headline figures, the actions an administrator most often reaches for, and two
+ * real status reads (recent audit activity and the health probe). It deliberately does
+ * *not* try to be the catalogue: that is a table with eleven columns and its own
+ * filters, and cramming it above the fold would bury the numbers an administrator
+ * opens the page for.
+ *
+ * Nothing here is invented: the cards are live `COUNT`/`SUM` aggregates, the activity
+ * list is audit rows that actions wrote, and the system status comes from
+ * `/api/health`. Where there is no data the sections say so.
  */
 export function AdminDashboardPage() {
   const overview = useAdminOverview();
@@ -29,31 +37,25 @@ export function AdminDashboardPage() {
         onRetry={() => void overview.refetch()}
       />
 
-      <Card className="p-4">
-        <h2 className="text-sm font-bold">Where to next</h2>
-        <ul className="mt-2 space-y-1.5 text-sm text-muted-foreground">
-          <li>
-            <span className="font-semibold text-foreground">Products</span> — search, filter, sort,
-            edit any listing, archive or delete it, and change several at once.
-          </li>
-          <li>
-            <span className="font-semibold text-foreground">Orders and rentals</span> — every
-            purchase, every rental booking, and the items that have come back.
-          </li>
-          <li>
-            <span className="font-semibold text-foreground">Finance</span> — revenue, seller
-            earnings, fees and payouts, plus the per-transaction ledger.
-          </li>
-          <li>
-            <span className="font-semibold text-foreground">Moderation</span> — reported content,
-            hidden reviews and suspended accounts.
-          </li>
-        </ul>
-        <p className="mt-3 text-xs text-muted-foreground/80">
-          Every section in the sidebar is a live page backed by the database. Financial history is
-          read-only — it is written by the checkout, rental and payout flows, never edited here.
-        </p>
-      </Card>
+      <AdminQuickActions />
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <Card className="p-4 lg:col-span-2">
+          <h2 className="text-sm font-extrabold uppercase tracking-wider">Recent activity</h2>
+          <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
+            Every entry is a moderation action, written when it happened.
+          </p>
+          <AdminRecentActivity />
+        </Card>
+
+        <Card className="p-4">
+          <h2 className="text-sm font-extrabold uppercase tracking-wider">System status</h2>
+          <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
+            Live probes — never assumed.
+          </p>
+          <AdminSystemStatus />
+        </Card>
+      </div>
     </div>
   );
 }

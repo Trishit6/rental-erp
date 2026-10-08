@@ -86,6 +86,15 @@ describe("the demo seed truncates every table", () => {
       // The audit log records who did what; a surviving row would attribute this run's
       // history to whoever the next run gives that id.
       ["admin_audit_log", "users"],
+      // The foundation tables added alongside them.
+      ["order_events", "orders"],
+      ["order_events", "users"],
+      ["stock_reservations", "orders"],
+      ["stock_reservations", "products"],
+      ["stock_reservations", "users"],
+      ["idempotency_keys", "users"],
+      ["search_history", "users"],
+      ["platform_settings", "users"],
     ];
 
     for (const [child, parent] of childrenFirst) {

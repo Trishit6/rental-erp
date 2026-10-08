@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearch } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { api } from "@/lib/api/client";
 import { queryKeys } from "@/lib/query/keys";
@@ -9,6 +11,7 @@ import {
   fetchAdminAuditPage,
   fetchAdminCategories,
   fetchAdminFinance,
+  fetchAdminHealth,
   fetchAdminOrdersPage,
   fetchAdminOverview,
   fetchAdminProductDetail,
@@ -444,6 +447,67 @@ export function useAdminAuditLog(filters: AdminAuditFilters) {
     queryFn: () => fetchAdminAuditPage(filters),
     placeholderData: keepPreviousData,
   });
+}
+
+/**
+ * The `/api/health` probe behind the dashboard's system-status card.
+ *
+ * Short-lived on purpose: the card answers "is the application up right now", so a
+ * stale success is as misleading as a stale failure. When the fetch fails the query
+ * is an error and the card reports the component as unavailable — it never invents
+ * a "connected" for a call that did not happen.
+ */
+export function useAdminHealth() {
+  return useQuery({
+    queryKey: queryKeys.adminHealth,
+    queryFn: fetchAdminHealth,
+    staleTime: 15_000,
+    retry: 1,
+  });
+}
+
+/**
+ * The `q` the admin topbar search navigated here with.
+ *
+ * The topbar search is a routing handoff, not a result engine: it sends the term to
+ * a module page as `?q=`, and this reads it back. Pages seed their filter state from
+ * it once and keep it in sync while the param changes, so "search for `nikon`" from
+ * the topbar lands on a catalogue already searching for `nikon`.
+ *
+ * `strict: false` keeps the read working on every admin module without each route
+ * declaring a shared search schema — the routes only define `q` so navigation
+ * type-checks, and this is the loose side of the same contract.
+ */
+export function useAdminModuleSearch(): string {
+  const search = useSearch({ strict: false });
+  const q = (search as { q?: unknown }).q;
+  return typeof q === "string" ? q : "";
+}
+
+/**
+ * A list page's filter state, seeded from the topbar search's `?q=` handoff.
+ *
+ * The page's filter object is still the single source of truth — this only wraps its
+ * `useState` so the search box starts with the term the topbar carried, and follows
+ * the param if it changes while the page is open (a second search from the topbar
+ * lands on the same page with a new term). Changing the search resets to page 1,
+ * because page 4 of the previous query is not a page of the new one.
+ */
+export function useAdminSearchFilters<T extends { search: string; page: number }>(empty: T) {
+  const q = useAdminModuleSearch();
+  const [seededQ, setSeededQ] = useState(q);
+  const [filters, setFilters] = useState<T>(() => ({ ...empty, search: q }));
+
+  // The topbar-search handoff: if `q` changes while this page is mounted (a second
+  // search from the bar), re-seed the filter's search. This is React's documented
+  // "adjust state when a prop changes" pattern — a render-phase update, not an
+  // effect — because it converges in one render and costs no extra paint.
+  if (q !== seededQ) {
+    setSeededQ(q);
+    setFilters((current) => ({ ...current, search: q, page: 1 }));
+  }
+
+  return [filters, setFilters] as const;
 }
 
 /* ---------------------- moderation (users, reports, reviews) ------------------ */

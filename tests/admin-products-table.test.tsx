@@ -57,6 +57,9 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => navigateMock,
   useRouterState: ({ select }: { select: (state: unknown) => unknown }) =>
     select({ location: { pathname: routerState.pathname } }),
+  // The catalogue now seeds its search box from the topbar's `?q=` handoff, which is
+  // read through `useSearch`. Empty search params is the page opened directly.
+  useSearch: () => ({}),
 }));
 
 vi.mock("@/features/admin/api", () => ({

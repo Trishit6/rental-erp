@@ -1,23 +1,34 @@
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { useLocation } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { LayoutGrid, ShieldCheck } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { AdminSidebar, AdminSidebarFooter } from "./AdminSidebar";
+import { AdminTopbar } from "./AdminTopbar";
 
 /**
  * The admin workspace shell.
  *
+ * ## The two render modes
+ *
+ * Every `/admin/*` route gets the shell: a topbar (brand, breadcrumbs, search,
+ * notifications, profile) and a sidebar rail on desktop that becomes a sections
+ * drawer below `lg`.
+ *
+ * One route escapes the shell: `/admin/forbidden`. A signed-in non-admin who opens
+ * the workspace sees a bare 403 page on purpose — no sidebar listing the sections
+ * they are being refused, no profile menu, no navigation that would just bounce them
+ * again. The guard lets exactly that path through for an authenticated non-admin
+ * (`requireAdmin`), and this layout renders it without chrome.
+ *
  * ## Why the sidebar is a column on desktop and a sheet on mobile
  *
- * A 220px rail of eight section groups does not fit beside a product catalogue on a
+ * A 220px rail of section groups does not fit beside a product catalogue on a
  * phone. Rather than let it push the table off-screen — the failure that makes an
- * admin page unusable on a handset — the rail becomes a bottom sheet behind a
- * "Sections" button below `lg`, and the content column takes the full width. The
- * sheet is the project's existing Radix-backed component, so focus trapping, escape
- * and `aria-modal` are already correct.
+ * admin page unusable on a handset — the rail becomes a bottom sheet behind the
+ * topbar's "Sections" button below `lg`, and the content column takes the full
+ * width. The sheet is the project's existing Radix-backed component, so focus
+ * trapping, escape and `aria-modal` are already correct.
  *
  * ## Why this chrome is only here
  *
@@ -29,35 +40,20 @@ import { AdminSidebar, AdminSidebarFooter } from "./AdminSidebar";
  */
 export function AdminLayout({ children }: { children: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
+  const pathname = useLocation({ select: (location) => location.pathname });
+
+  if (pathname === "/admin/forbidden") {
+    return <div className="min-h-screen bg-background">{children}</div>;
+  }
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Mobile bar */}
-      <header className="sticky top-0 z-[var(--layer-header)] border-b border-[var(--divider)] bg-background/95 backdrop-blur lg:hidden">
-        <div className="flex items-center justify-between gap-3 px-4 py-3">
-          <Link to="/admin" className="flex items-center gap-2">
-            <span className="soft-button flex size-9 items-center justify-center rounded-xl text-primary">
-              <ShieldCheck size={17} aria-hidden />
-            </span>
-            <span className="font-heading text-base font-extrabold">Admin</span>
-          </Link>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setNavOpen(true)}
-            aria-haspopup="dialog"
-          >
-            <LayoutGrid size={16} aria-hidden />
-            Sections
-          </Button>
-        </div>
-      </header>
+      <AdminTopbar onOpenNav={() => setNavOpen(true)} />
 
       <div className="mx-auto flex w-full max-w-[1600px] gap-8 px-4 py-6 lg:px-8 lg:py-8">
         {/* Desktop rail */}
         <aside className="hidden w-60 shrink-0 lg:block">
-          <div className="sticky top-6 max-h-[calc(100vh-3rem)] overflow-y-auto pr-2">
+          <div className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto pr-2">
             <AdminSidebar />
             <div className="mt-6 border-t border-[var(--divider)] pt-4">
               <AdminSidebarFooter />

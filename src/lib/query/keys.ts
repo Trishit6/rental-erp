@@ -296,6 +296,12 @@ export const queryKeys = {
   adminCategories: ["admin-categories"] as const,
   adminProductImages: ["admin-product-images"] as const,
   adminAuditLog: ["admin-audit-log"] as const,
+  /**
+   * The `/api/health` probe the admin dashboard's system-status card reads. It is
+   * scoped under the admin prefix so the status shown in the workspace is never
+   * mistaken for storefront data.
+   */
+  adminHealth: ["admin-health"] as const,
   profile: ["profile"] as const,
 };
 
@@ -349,4 +355,5 @@ export const privateQueryKeys = [
   ["admin-categories"],
   ["admin-product-images"],
   ["admin-audit-log"],
+  ["admin-health"],
 ] as const;

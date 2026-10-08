@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { CreditCard, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Pagination } from "@/components/shared/pagination";
@@ -13,7 +12,7 @@ import {
 } from "../components/AdminTableScaffold";
 import { formatAdminDateTime, formatAdminMoney, humanizeEnum } from "../components/format";
 import { NEUTRAL_BADGE, PAYMENT_STATUS_BADGE } from "../components/status-badge";
-import { useAdminTransactions } from "../query";
+import { useAdminSearchFilters, useAdminTransactions } from "../query";
 import { EMPTY_ADMIN_TRANSACTION_FILTERS, type AdminTransactionRow } from "../api";
 
 /**
@@ -78,7 +77,7 @@ function ProviderCell({ row }: { row: AdminTransactionRow }) {
 }
 
 export function AdminPaymentsPage({ mode = "all" }: { mode?: "all" | "refunds" }) {
-  const [filters, setFilters] = useState(EMPTY_ADMIN_TRANSACTION_FILTERS);
+  const [filters, setFilters] = useAdminSearchFilters(EMPTY_ADMIN_TRANSACTION_FILTERS);
   const refundsOnly = mode === "refunds";
   const effective = refundsOnly ? { ...filters, type: "REFUND" } : filters;
   const transactions = useAdminTransactions(effective);

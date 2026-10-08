@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { AdminLayout } from "@/features/admin";
+import { AdminLayout, AdminNotFoundState } from "@/features/admin";
 import { requireAdmin } from "@/lib/auth/guards";
 
 /**
@@ -19,10 +19,18 @@ import { requireAdmin } from "@/lib/auth/guards";
  * every `/api/admin/*` route in `server/routes/admin.ts`: typing `/admin` into the
  * address bar must not be enough, and hiding the UI is not authorization. Both are
  * needed; neither alone is.
+ *
+ * ## Why the not-found lives here
+ *
+ * An unknown `/admin/*` address renders inside the workspace shell (it *is* the
+ * workspace, just a page in it that does not exist) rather than falling out to the
+ * storefront's not-found page. One exemption: `/admin/forbidden` is a real page, and
+ * `requireAdmin` lets a signed-in non-admin reach exactly it.
  */
 export const Route = createFileRoute("/admin")({
   beforeLoad: requireAdmin,
   component: AdminRouteLayout,
+  notFoundComponent: AdminNotFoundState,
 });
 
 function AdminRouteLayout() {

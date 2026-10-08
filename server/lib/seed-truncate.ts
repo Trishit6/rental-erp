@@ -26,6 +26,75 @@
  * require it.
  */
 export const TRUNCATED_TABLES = [
+  // --- Admin, security, support and growth. Children before parents, always. ---
+  // Before `ticket_messages`: an attachment that outlives its message points at
+  // a row the next seed will never recreate.
+  "ticket_attachments",
+  // Before `support_tickets` and `users`.
+  "ticket_messages",
+  // Before `users` and `orders`.
+  "support_tickets",
+  // Before `coupons`, `users` and `orders`: a redemption without its coupon or
+  // its order is the counter on a coupon nobody can find.
+  "coupon_redemptions",
+  // Before `orders`, `order_items`, `transactions` and `users`.
+  "refunds",
+  // Before `orders` and `users`.
+  "disputes",
+  // Before `users` and `roles`. A surviving grant would hand the next run's
+  // administrator a role no row describes.
+  "user_roles",
+  // Before `roles` and `permissions`.
+  "role_permissions",
+  // Before `users`.
+  "mfa_recovery_codes",
+  // Before `users`.
+  "user_mfa",
+  // Before `users`.
+  "login_attempts",
+  // Before `users`.
+  "security_events",
+  // Before `users`.
+  "cms_banners",
+  // Before `users`.
+  "cms_blocks",
+  // Before `categories` and `users`.
+  "commission_rules",
+  // Before `users`.
+  "seller_verifications",
+  // Before `categories` and `users`.
+  "coupons",
+  // Before `users`.
+  "feature_flags",
+  // Before `users`.
+  "app_config",
+  // Before `users`.
+  "export_jobs",
+  // Parents of the two junctions above — named last among the RBAC tables.
+  "roles",
+  "permissions",
+
+  // --- Foundation ---
+  // No foreign keys at all — provider webhook receipts, dropped first because
+  // nothing else depends on them and nothing they record survives a reseed.
+  "payment_webhook_events",
+  // Before `orders` and `users`: an order event records *who* moved an order, so
+  // a survivor points `actor_id` at an id the next run hands to someone else and
+  // the timeline reads as their action.
+  "order_events",
+  // Before `orders`, `products` and `users`. Holds are meaningless after a reseed
+  // — and a survivor would keep dead stock pinned, so the next run's inventory
+  // would disagree with what the catalogue actually has.
+  "stock_reservations",
+  // Before `users`. Replay keys outlive the request they guard; leaving them
+  // behind makes a legitimate retry look like a duplicate submission against a
+  // request that no longer exists.
+  "idempotency_keys",
+  // Before `users`. Recent searches belong to the person who made them.
+  "search_history",
+  // Before `users`. `updated_by` is `set null` on delete, but TRUNCATE does not
+  // run delete rules — the column would keep a stale administrator id.
+  "platform_settings",
   "transactions",
   // Before `payouts`, and both before `users` — the wallet's own money. A ledger row
   // left behind keeps its `seller_id` pointing at a user the TRUNCATE below has

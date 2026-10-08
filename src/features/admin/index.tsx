@@ -33,6 +33,19 @@
  * protects every `/api/admin/*` endpoint. A guard in this folder would only run after the
  * page had already been fetched — by which point the data it protects is in the browser.
  */
+export { fetchAdminHealth } from "./api";
+export type { AdminHealth } from "./api";
+export { useAdminHealth, useAdminModuleSearch } from "./query";
+export { AdminQuickActions } from "./components/AdminQuickActions";
+export { AdminRecentActivity } from "./components/AdminRecentActivity";
+export { AdminSystemStatus } from "./components/AdminSystemStatus";
+export { AdminReportsList } from "./components/AdminReportsList";
+export { AdminTopbar } from "./components/AdminTopbar";
+export { AdminSearch } from "./components/AdminSearch";
+export { AdminProfileMenu } from "./components/AdminProfileMenu";
+export { AdminNotificationsBell } from "./components/AdminNotificationsBell";
+export { AdminLoadingState } from "./components/AdminLoadingState";
+export { AdminErrorState } from "./components/AdminErrorState";
 export { AdminDashboardPage } from "./pages/AdminDashboardPage";
 export { AdminProductsPage } from "./pages/AdminProductsPage";
 export { AdminOrdersPage } from "./pages/AdminOrdersPage";
@@ -47,4 +60,10 @@ export { AdminFinancePage } from "./pages/AdminFinancePage";
 export { AdminProductImagesPage } from "./pages/AdminProductImagesPage";
 export { AdminAuditPage } from "./pages/AdminAuditPage";
 export { AdminModerationPage } from "./pages/AdminModerationPage";
+export { AdminReportsPage } from "./pages/AdminReportsPage";
+export { AdminNotificationsPage } from "./pages/AdminNotificationsPage";
+export { AdminSettingsPage } from "./pages/AdminSettingsPage";
 export { AdminLayout } from "./components/AdminLayout";
+export { AdminForbiddenState } from "./components/AdminForbiddenState";
+export { AdminNotFoundState } from "./components/AdminNotFoundState";
+export { AdminBreadcrumbs, adminBreadcrumbTrail } from "./components/AdminBreadcrumbs";

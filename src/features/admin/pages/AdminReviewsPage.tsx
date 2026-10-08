@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { EyeOff, MessageSquareQuote, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,7 +14,7 @@ import {
 import { AdminConfirmDialog, useConfirmTarget } from "../components/AdminConfirmDialog";
 import { formatAdminDate, humanizeEnum } from "../components/format";
 import { MODERATION_STATUS_BADGE, NEUTRAL_BADGE } from "../components/status-badge";
-import { useAdminReviewStatusMutation, useAdminReviewsList } from "../query";
+import { useAdminReviewStatusMutation, useAdminReviewsList, useAdminSearchFilters } from "../query";
 import { EMPTY_ADMIN_REVIEW_FILTERS, type AdminReviewRow } from "../api";
 
 /**
@@ -56,7 +55,7 @@ export function AdminReviewsPage({
 }: {
   mode?: "product" | "seller";
 }) {
-  const [filters, setFilters] = useState({ ...EMPTY_ADMIN_REVIEW_FILTERS, scope: mode });
+  const [filters, setFilters] = useAdminSearchFilters({ ...EMPTY_ADMIN_REVIEW_FILTERS, scope: mode });
   const reviews = useAdminReviewsList(filters);
   const status = useAdminReviewStatusMutation();
   const confirm = useConfirmTarget<AdminReviewRow>();

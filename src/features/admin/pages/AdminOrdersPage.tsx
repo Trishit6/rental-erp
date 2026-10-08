@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { ClipboardList, ShoppingBag } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,7 +13,7 @@ import {
 } from "../components/AdminTableScaffold";
 import { formatAdminDate, formatAdminMoney, humanizeEnum } from "../components/format";
 import { NEUTRAL_BADGE, ORDER_STATUS_BADGE, PAYMENT_STATUS_BADGE } from "../components/status-badge";
-import { useAdminOrders, useAdminOrderStatusMutation } from "../query";
+import { useAdminOrders, useAdminOrderStatusMutation, useAdminSearchFilters } from "../query";
 import { EMPTY_ADMIN_ORDER_FILTERS, type AdminOrderRow } from "../api";
 
 const ORDER_STATUS_OPTIONS = [
@@ -62,7 +61,7 @@ const NEXT_STATUSES: Record<string, { value: string; label: string }> = {
  * what a purchase order looks like.
  */
 export function AdminOrdersPage({ mode = "all" }: { mode?: "all" | "purchases" }) {
-  const [filters, setFilters] = useState(EMPTY_ADMIN_ORDER_FILTERS);
+  const [filters, setFilters] = useAdminSearchFilters(EMPTY_ADMIN_ORDER_FILTERS);
   const effective = mode === "purchases" ? { ...filters, type: "PURCHASE" } : filters;
   const orders = useAdminOrders(effective);
   const setStatus = useAdminOrderStatusMutation();

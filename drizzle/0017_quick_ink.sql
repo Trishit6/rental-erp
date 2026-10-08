@@ -1,0 +1,2 @@
+ALTER TABLE `conversation_participants` ADD `updated_at` timestamp DEFAULT (now()) NOT NULL ON UPDATE CURRENT_TIMESTAMP;--> statement-breakpoint
+ALTER TABLE `idempotency_keys` ADD `updated_at` timestamp DEFAULT (now()) NOT NULL ON UPDATE CURRENT_TIMESTAMP;

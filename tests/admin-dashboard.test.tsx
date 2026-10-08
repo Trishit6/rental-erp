@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ADMIN_NAV, AdminSidebar } from "@/features/admin/components/AdminSidebar";
 import { OverviewCards } from "@/features/admin/components/OverviewCards";
 import { AdminDashboardPage } from "@/features/admin/pages/AdminDashboardPage";
-import { fetchAdminOverview } from "@/features/admin/api";
+import { fetchAdminOverview, fetchAdminHealth, fetchAdminAuditPage } from "@/features/admin/api";
 import { makeAdminOverview } from "./support/admin-fixtures";
 
 /**
@@ -36,11 +36,30 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => navigateMock,
   useRouterState: ({ select }: { select: (state: unknown) => unknown }) =>
     select({ location: { pathname: routerState.pathname } }),
+  useSearch: () => ({}),
   createRoute: () => ({ useLoaderData: () => undefined }),
+}));
+
+/**
+ * The system-status block reads the signed-in administrator, so this test supplies
+ * one directly rather than booting the whole auth provider (whose session query
+ * would be another network call to stub). The dashboard only needs `user.role` to
+ * decide the row reads "Session active".
+ */
+vi.mock("@/lib/auth/auth-context", () => ({
+  useAuth: () => ({
+    user: { id: 1, name: "Ops Admin", email: "admin@admin.com", role: "ADMIN" },
+    loading: false,
+  }),
 }));
 
 vi.mock("@/features/admin/api", () => ({
   fetchAdminOverview: vi.fn(),
+  fetchAdminHealth: vi.fn(),
+  fetchAdminAuditPage: vi.fn(),
+  // `AdminRecentActivity` spreads the real empty-filter object; the mocked module has
+  // to carry it or the dashboard cannot build its audit query.
+  EMPTY_ADMIN_AUDIT_FILTERS: { action: "", entityType: null, page: 1, pageSize: 20 },
 }));
 
 let client: QueryClient;
@@ -54,6 +73,16 @@ beforeEach(() => {
   routerState.pathname = "/admin";
   vi.mocked(fetchAdminOverview).mockReset();
   vi.mocked(fetchAdminOverview).mockResolvedValue(makeAdminOverview());
+  vi.mocked(fetchAdminHealth).mockReset();
+  vi.mocked(fetchAdminHealth).mockResolvedValue({ status: "ok", database: "connected" });
+  vi.mocked(fetchAdminAuditPage).mockReset();
+  vi.mocked(fetchAdminAuditPage).mockResolvedValue({
+    rows: [],
+    total: 0,
+    totalPages: 1,
+    page: 1,
+    pageSize: 6,
+  });
 });
 
 describe("the overview cards", () => {
@@ -192,12 +221,11 @@ describe("the sidebar's navigation tree", () => {
     const titles = ADMIN_NAV.map((section) => section.title);
     expect(titles).toEqual([
       "Overview",
-      "Catalog",
-      "Orders",
+      "Marketplace",
       "Users",
       "Finance",
-      "Reviews",
-      "System",
+      "Moderation",
+      "Platform",
     ]);
   });
 
@@ -210,21 +238,25 @@ describe("the sidebar's navigation tree", () => {
     // catches: the tree would look complete in the sidebar and still be missing pages.
     for (const expected of [
       "Overview/Dashboard",
-      "Catalog/Products",
-      "Catalog/Categories",
-      "Catalog/Product images",
-      "Orders/All orders",
-      "Orders/Purchases",
-      "Orders/Rentals",
-      "Orders/Returns",
+      "Marketplace/Products",
+      "Marketplace/Categories",
+      "Marketplace/Product images",
+      "Marketplace/All orders",
+      "Marketplace/Purchases",
+      "Marketplace/Rentals",
+      "Marketplace/Returns",
       "Users/Customers",
       "Users/Sellers",
+      "Finance/Summary",
       "Finance/Payments",
       "Finance/Refunds",
-      "Reviews/Product reviews",
-      "Reviews/Seller engagement",
-      "System/Moderation",
-      "System/Audit log",
+      "Moderation/Reports",
+      "Moderation/Moderation hub",
+      "Moderation/Product reviews",
+      "Moderation/Seller engagement",
+      "Platform/Notifications",
+      "Platform/Settings",
+      "Platform/Audit logs",
     ]) {
       expect(entries, `sidebar is missing "${expected}"`).toContain(expected);
     }

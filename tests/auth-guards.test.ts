@@ -149,7 +149,7 @@ describe("requireAdmin", () => {
     const options = run(requireAdmin, { context: { user: user(role) } });
 
     expect(options?.replace).toBe(true);
-    expect(options?.to).toBe("/dashboard");
+    expect(options?.to).toBe("/admin/forbidden");
   });
 
   it("never sends a signed-in non-admin to the login page", () => {
@@ -157,6 +157,18 @@ describe("requireAdmin", () => {
     // `/dashboard` → … with the user bouncing and the destination lost each time.
     const options = run(requireAdmin, { context: { user: user("USER") } });
     expect(options?.to).not.toBe("/login");
+  });
+
+  it("lets a non-admin render the forbidden page itself", () => {
+    // The one path the guard exempts. Without it, refusing a non-admin would redirect
+    // them to `/admin/forbidden`, which would refuse them again — a loop. The page has
+    // to be reachable by the person it refuses.
+    expect(
+      run(requireAdmin, {
+        context: { user: user("USER") },
+        location: { pathname: "/admin/forbidden" },
+      }),
+    ).toBeNull();
   });
 
   it("still sends an anonymous visitor to login", () => {

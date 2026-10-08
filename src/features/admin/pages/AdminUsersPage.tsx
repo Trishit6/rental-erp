@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Ban, CheckCircle2, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,7 +14,7 @@ import {
 import { AdminConfirmDialog, useConfirmTarget } from "../components/AdminConfirmDialog";
 import { formatAdminCount, formatAdminDate, humanizeEnum } from "../components/format";
 import { MODERATION_STATUS_BADGE, NEUTRAL_BADGE } from "../components/status-badge";
-import { useAdminUserSuspension, useAdminWorkspaceUsers } from "../query";
+import { useAdminSearchFilters, useAdminUserSuspension, useAdminWorkspaceUsers } from "../query";
 import { EMPTY_ADMIN_USER_FILTERS, type AdminWorkspaceUserRow } from "../api";
 
 /**
@@ -50,7 +49,7 @@ const SORT_OPTIONS = [
 ];
 
 export function AdminUsersPage() {
-  const [filters, setFilters] = useState(EMPTY_ADMIN_USER_FILTERS);
+  const [filters, setFilters] = useAdminSearchFilters(EMPTY_ADMIN_USER_FILTERS);
   const users = useAdminWorkspaceUsers(filters);
   const suspension = useAdminUserSuspension();
   const confirm = useConfirmTarget<AdminWorkspaceUserRow>();

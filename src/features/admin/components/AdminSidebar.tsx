@@ -1,15 +1,18 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BadgeIndianRupee,
+  Bell,
   ClipboardList,
   CreditCard,
   FileText,
+  Flag,
   Image as ImageIcon,
   LayoutDashboard,
   MessageSquareQuote,
   Package,
   RefreshCcw,
   RotateCcw,
+  Settings,
   ShieldCheck,
   ShoppingBag,
   Store,
@@ -62,22 +65,14 @@ export type AdminNavSection = {
 export const ADMIN_NAV: AdminNavSection[] = [
   {
     title: "Overview",
-    items: [
-      { label: "Dashboard", to: "/admin", icon: LayoutDashboard },
-      { label: "Finance", to: "/admin/finance", icon: BadgeIndianRupee },
-    ],
+    items: [{ label: "Dashboard", to: "/admin", icon: LayoutDashboard }],
   },
   {
-    title: "Catalog",
+    title: "Marketplace",
     items: [
       { label: "Products", to: "/admin/products", icon: Package },
       { label: "Categories", to: "/admin/categories", icon: Tag },
       { label: "Product images", to: "/admin/product-images", icon: ImageIcon },
-    ],
-  },
-  {
-    title: "Orders",
-    items: [
       { label: "All orders", to: "/admin/orders", icon: ClipboardList },
       { label: "Purchases", to: "/admin/purchases", icon: ShoppingBag },
       { label: "Rentals", to: "/admin/rentals", icon: RefreshCcw },
@@ -94,22 +89,26 @@ export const ADMIN_NAV: AdminNavSection[] = [
   {
     title: "Finance",
     items: [
+      { label: "Summary", to: "/admin/finance", icon: BadgeIndianRupee },
       { label: "Payments", to: "/admin/payments", icon: CreditCard },
       { label: "Refunds", to: "/admin/refunds", icon: RotateCcw },
     ],
   },
   {
-    title: "Reviews",
+    title: "Moderation",
     items: [
+      { label: "Reports", to: "/admin/reports", icon: Flag },
+      { label: "Moderation hub", to: "/admin/moderation", icon: ShieldCheck },
       { label: "Product reviews", to: "/admin/reviews", icon: MessageSquareQuote },
       { label: "Seller engagement", to: "/admin/reviews/sellers", icon: MessageSquareQuote },
     ],
   },
   {
-    title: "System",
+    title: "Platform",
     items: [
-      { label: "Moderation", to: "/admin/moderation", icon: ShieldCheck },
-      { label: "Audit log", to: "/admin/audit-log", icon: FileText },
+      { label: "Notifications", to: "/admin/notifications", icon: Bell },
+      { label: "Settings", to: "/admin/settings", icon: Settings },
+      { label: "Audit logs", to: "/admin/audit-logs", icon: FileText },
     ],
   },
 ];

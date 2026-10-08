@@ -37,6 +37,7 @@ import {
   useAdminProductDetail,
   useAdminProductFacets,
   useAdminProducts,
+  useAdminSearchFilters,
   useBulkAdminProductStatus,
   useDeleteAdminProduct,
   useSetAdminProductStatus,
@@ -140,7 +141,7 @@ const STATUS_BADGE: Record<string, string> = {
 };
 
 export function AdminProductsTable() {
-  const [filters, setFilters] = useState<AdminProductFilters>(EMPTY_ADMIN_PRODUCT_FILTERS);
+  const [filters, setFilters] = useAdminSearchFilters<AdminProductFilters>(EMPTY_ADMIN_PRODUCT_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Row selection, for the bulk status bar. A `Set` rather than an array of ids

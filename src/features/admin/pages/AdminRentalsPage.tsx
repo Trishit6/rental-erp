@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { RefreshCcw, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Pagination } from "@/components/shared/pagination";
@@ -13,7 +12,7 @@ import {
 } from "../components/AdminTableScaffold";
 import { formatAdminDate, formatAdminMoney, humanizeEnum } from "../components/format";
 import { NEUTRAL_BADGE, RENTAL_STATUS_BADGE } from "../components/status-badge";
-import { useAdminRentals } from "../query";
+import { useAdminRentals, useAdminSearchFilters } from "../query";
 import { EMPTY_ADMIN_RENTAL_FILTERS, type AdminRentalRow } from "../api";
 
 /**
@@ -70,7 +69,7 @@ function isOverdue(row: AdminRentalRow): boolean {
 }
 
 export function AdminRentalsPage() {
-  const [filters, setFilters] = useState(EMPTY_ADMIN_RENTAL_FILTERS);
+  const [filters, setFilters] = useAdminSearchFilters(EMPTY_ADMIN_RENTAL_FILTERS);
   const rentals = useAdminRentals(filters);
 
   // A filter change resets to page 1; paging is the only thing that may move the page
