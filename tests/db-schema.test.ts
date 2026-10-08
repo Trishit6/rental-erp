@@ -12,8 +12,28 @@ import {
   USER_ROLES,
   productStatusSchema,
   reportStatusSchema,
+  // PROMPT 1 vocabularies.
+  ALL_ROLE_NAMES,
+  CMS_STATUSES,
+  COMMISSION_SCOPES,
+  COUPON_SCOPES,
+  DISCOUNT_TYPES,
+  DISPUTE_STATUSES,
+  PERCENT_BPS_MAX,
+  REFUND_STATUSES,
+  SELLER_VERIFICATION_STATUSES,
+  SYSTEM_ROLES,
+  TICKET_STATUSES,
+  commissionScopeSchema,
+  couponScopeSchema,
+  discountTypeSchema,
+  disputeStatusSchema,
+  securityEventTypeSchema,
+  ticketStatusSchema,
 } from "../server/lib/enums";
 import {
+  commissionRuleInsertSchema,
+  couponInsertSchema,
   orderEventInsertSchema,
   stockReservationInsertSchema,
   searchHistoryInsertSchema,
@@ -110,6 +130,29 @@ describe("the tables the spec asks for", () => {
     "platform_settings",
     "search_history",
     "notification_preferences",
+    // Admin, security, support, money and growth (PROMPT 1).
+    "roles",
+    "permissions",
+    "role_permissions",
+    "user_roles",
+    "user_mfa",
+    "mfa_recovery_codes",
+    "login_attempts",
+    "security_events",
+    "cms_banners",
+    "cms_blocks",
+    "support_tickets",
+    "ticket_messages",
+    "ticket_attachments",
+    "refunds",
+    "disputes",
+    "commission_rules",
+    "seller_verifications",
+    "coupons",
+    "coupon_redemptions",
+    "feature_flags",
+    "app_config",
+    "export_jobs",
   ];
 
   it("defines every one of them", () => {
@@ -121,7 +164,7 @@ describe("the tables the spec asks for", () => {
   it("introduces no table that does not exist in MariaDB", () => {
     // The other direction: a table left behind in the schema after being dropped
     // would make every query against it fail at runtime and only at runtime.
-    expect(tablesByName.size).toBe(34);
+    expect(tablesByName.size).toBe(56);
   });
 
   it("gives every table a created_at", () => {
@@ -147,6 +190,14 @@ describe("the tables the spec asks for", () => {
       review_helpful_votes: "cast or withdrawn, never edited",
       search_history: "a search is recorded once, at the moment it is made",
       sessions: "only `last_used_at` moves",
+      // PROMPT 1 append-only rows and junctions.
+      role_permissions: "junction; a grant set is rebuilt on change, never edited in place",
+      user_roles: "junction; a grant is added or removed, never edited",
+      login_attempts: "one row per attempt, written at the moment it happens",
+      security_events: "append-only security audit trail",
+      ticket_messages: "append-only transcript; a message is never rewritten",
+      ticket_attachments: "append-only file reference; a row is created once",
+      coupon_redemptions: "append-only; one row per redemption, in the transaction that spends it",
     };
 
     const missing = [...tablesByName.keys()].filter(
@@ -174,6 +225,11 @@ describe("money is stored as integer paise", () => {
     ["transactions", "amount"],
     ["payouts", "amount"],
     ["wallet_transactions", "amount"],
+    // PROMPT 1 money columns — all integer paise (never a float or decimal).
+    ["commission_rules", "fixed_fee_paise"],
+    ["coupons", "discount_value"],
+    ["coupon_redemptions", "discount_paise"],
+    ["refunds", "amount"],
   ];
 
   it("uses an integer column for every amount, never a float or decimal", () => {
@@ -201,6 +257,21 @@ describe("unique constraints the spec calls for", () => {
     ["idempotency_keys", "idempotency_keys_scope_key_unique"],
     ["payment_webhook_events", "payment_webhook_events_provider_event_unique"],
     ["search_history", "search_history_user_term_unique"],
+    // PROMPT 1 uniqueness.
+    ["roles", "roles_name_unique"],
+    ["permissions", "permissions_key_unique"],
+    ["app_config", "app_config_key_unique"],
+    ["cms_blocks", "cms_blocks_key_unique"],
+    ["feature_flags", "feature_flags_key_unique"],
+    ["coupons", "coupons_code_unique"],
+    ["coupon_redemptions", "coupon_redemptions_coupon_order_unique"],
+    ["commission_rules", "commission_rules_scope_subject_start_unique"],
+    ["disputes", "disputes_number_unique"],
+    ["refunds", "refunds_number_unique"],
+    ["refunds", "refunds_idempotency_key_unique"],
+    ["support_tickets", "support_tickets_number_unique"],
+    ["export_jobs", "export_jobs_key_unique"],
+    ["mfa_recovery_codes", "mfa_recovery_codes_hash_unique"],
   ])("enforces %s.%s", (tableName, indexName) => {
     expect(hasIndex(tableName, indexName), `${tableName}.${indexName}`).toBe(true);
   });
@@ -269,6 +340,59 @@ describe("check constraints", () => {
       0,
     );
     expect(total).toBeGreaterThanOrEqual(40);
+  });
+});
+
+describe("PROMPT 1 check constraints", () => {
+  it("keeps commission rates in whole-percent bound and windows in order", () => {
+    expect(hasCheck("commission_rules", "commission_rules_percent_range")).toBe(true);
+    expect(hasCheck("commission_rules", "commission_rules_fixed_fee_nonneg")).toBe(true);
+    expect(hasCheck("commission_rules", "commission_rules_window_ordered")).toBe(true);
+  });
+
+  it("keeps a coupon well-formed even before the API validates it", () => {
+    expect(hasCheck("coupons", "coupons_value_positive")).toBe(true);
+    expect(hasCheck("coupons", "coupons_percent_bp_range")).toBe(true);
+    expect(hasCheck("coupons", "coupons_minimum_order_nonneg")).toBe(true);
+    expect(hasCheck("coupons", "coupons_used_within_limit")).toBe(true);
+    expect(hasCheck("coupons", "coupons_window_ordered")).toBe(true);
+    expect(hasCheck("coupon_redemptions", "coupon_redemptions_discount_positive")).toBe(true);
+  });
+
+  it("orders a dispute's resolution after its opening", () => {
+    expect(hasCheck("disputes", "disputes_resolved_at_not_before_created")).toBe(true);
+    expect(hasCheck("disputes", "disputes_reason_not_empty")).toBe(true);
+    expect(hasCheck("refunds", "refunds_amount_positive")).toBe(true);
+    expect(hasCheck("refunds", "refunds_currency_length")).toBe(true);
+  });
+
+  it("keeps support rows presentable", () => {
+    expect(hasCheck("support_tickets", "support_tickets_sla_after_created")).toBe(true);
+    expect(hasCheck("support_tickets", "support_tickets_subject_not_empty")).toBe(true);
+    expect(hasCheck("ticket_messages", "ticket_messages_body_not_empty")).toBe(true);
+    expect(hasCheck("ticket_attachments", "ticket_attachments_file_not_empty")).toBe(true);
+    expect(hasCheck("ticket_attachments", "ticket_attachments_size_positive")).toBe(true);
+  });
+
+  it("anchors the RBAC and identity keys so a blank row is impossible", () => {
+    expect(hasCheck("roles", "roles_name_not_empty")).toBe(true);
+    expect(hasCheck("permissions", "permissions_key_not_empty")).toBe(true);
+    expect(hasCheck("permissions", "permissions_key_has_separator")).toBe(true);
+    expect(hasCheck("login_attempts", "login_attempts_identifier_not_empty")).toBe(true);
+    expect(hasCheck("security_events", "security_events_type_not_empty")).toBe(true);
+    expect(hasCheck("mfa_recovery_codes", "mfa_recovery_codes_hash_not_empty")).toBe(true);
+  });
+
+  it("keeps the content and config rows sane", () => {
+    expect(hasCheck("cms_banners", "cms_banners_title_not_empty")).toBe(true);
+    expect(hasCheck("cms_banners", "cms_banners_sort_nonneg")).toBe(true);
+    expect(hasCheck("cms_blocks", "cms_blocks_key_not_empty")).toBe(true);
+    expect(hasCheck("app_config", "app_config_key_not_empty")).toBe(true);
+    expect(hasCheck("app_config", "app_config_value_not_empty")).toBe(true);
+    expect(hasCheck("feature_flags", "feature_flags_rollout_range")).toBe(true);
+    expect(hasCheck("export_jobs", "export_jobs_row_count_nonneg")).toBe(true);
+    expect(hasCheck("export_jobs", "export_jobs_type_not_empty")).toBe(true);
+    expect(hasCheck("seller_verifications", "seller_verifications_rejected_needs_reason")).toBe(true);
   });
 });
 
@@ -345,6 +469,134 @@ describe("delete rules", () => {
   });
 });
 
+describe("PROMPT 1 delete rules", () => {
+  it("lets the RBAC junctions die with either side", () => {
+    expect(deleteRules("role_permissions")).toContainEqual({
+      column: "role_id",
+      to: "roles",
+      onDelete: "cascade",
+    });
+    expect(deleteRules("role_permissions")).toContainEqual({
+      column: "permission_id",
+      to: "permissions",
+      onDelete: "cascade",
+    });
+    expect(deleteRules("user_roles")).toContainEqual({
+      column: "user_id",
+      to: "users",
+      onDelete: "cascade",
+    });
+  });
+
+  it("refuses to drop a role that still has grants", () => {
+    expect(deleteRules("user_roles")).toContainEqual({
+      column: "role_id",
+      to: "roles",
+      onDelete: "restrict",
+    });
+  });
+
+  it("cascades identity state that is meaningless without the account", () => {
+    expect(deleteRules("user_mfa")).toContainEqual({
+      column: "user_id",
+      to: "users",
+      onDelete: "cascade",
+    });
+    expect(deleteRules("mfa_recovery_codes")).toContainEqual({
+      column: "user_id",
+      to: "users",
+      onDelete: "cascade",
+    });
+    expect(deleteRules("coupon_redemptions")).toContainEqual({
+      column: "coupon_id",
+      to: "coupons",
+      onDelete: "cascade",
+    });
+  });
+
+  it("keeps the money trail even when the user is deleted", () => {
+    expect(deleteRules("refunds")).toContainEqual({
+      column: "order_id",
+      to: "orders",
+      onDelete: "restrict",
+    });
+    expect(deleteRules("refunds")).toContainEqual({
+      column: "transaction_id",
+      to: "transactions",
+      onDelete: "set null",
+    });
+    expect(deleteRules("disputes")).toContainEqual({
+      column: "order_id",
+      to: "orders",
+      onDelete: "restrict",
+    });
+  });
+
+  it("keeps a verification history with the seller, and its reviewer only until they vanish", () => {
+    expect(deleteRules("seller_verifications")).toContainEqual({
+      column: "seller_id",
+      to: "users",
+      onDelete: "restrict",
+    });
+    expect(deleteRules("seller_verifications")).toContainEqual({
+      column: "reviewed_by",
+      to: "users",
+      onDelete: "set null",
+    });
+  });
+
+  it("keeps a support conversation with its customer and its order", () => {
+    expect(deleteRules("support_tickets")).toContainEqual({
+      column: "user_id",
+      to: "users",
+      onDelete: "restrict",
+    });
+    expect(deleteRules("support_tickets")).toContainEqual({
+      column: "order_id",
+      to: "orders",
+      onDelete: "set null",
+    });
+    expect(deleteRules("ticket_messages")).toContainEqual({
+      column: "ticket_id",
+      to: "support_tickets",
+      onDelete: "cascade",
+    });
+    expect(deleteRules("ticket_attachments")).toContainEqual({
+      column: "ticket_message_id",
+      to: "ticket_messages",
+      onDelete: "cascade",
+    });
+  });
+
+  it("nulls the audit trail's actor and the flagged columns, never deletes them", () => {
+    expect(deleteRules("security_events")).toContainEqual({
+      column: "user_id",
+      to: "users",
+      onDelete: "set null",
+    });
+    expect(deleteRules("login_attempts")).toContainEqual({
+      column: "user_id",
+      to: "users",
+      onDelete: "set null",
+    });
+    expect(deleteRules("coupons")).toContainEqual({
+      column: "category_id",
+      to: "categories",
+      onDelete: "set null",
+    });
+    expect(deleteRules("commission_rules")).toContainEqual({
+      column: "category_id",
+      to: "categories",
+      onDelete: "set null",
+    });
+    expect(deleteRules("export_jobs")).toContainEqual({
+      column: "requested_by",
+      to: "users",
+      onDelete: "restrict",
+    });
+  });
+});
+
 describe("indexes the spec asks for", () => {
   it.each([
     ["products", "products_status_category_created_idx"],
@@ -366,6 +618,31 @@ describe("indexes the spec asks for", () => {
     expect(hasIndex("transactions", "transactions_created_at_idx")).toBe(true);
     expect(hasIndex("notifications", "notifications_user_read_idx")).toBe(true);
     expect(hasIndex("messages", "messages_conversation_created_idx")).toBe(true);
+  });
+});
+
+describe("PROMPT 1 indexes", () => {
+  it.each([
+    // Search: the prefix fallback for `search_text` full-text (added in 0019).
+    ["products", "products_title_idx"],
+    ["cms_banners", "cms_banners_placement_status_sort_idx"],
+    ["commission_rules", "commission_rules_scope_effective_idx"],
+    ["coupon_redemptions", "coupon_redemptions_user_created_idx"],
+    ["coupons", "coupons_status_starts_idx"],
+    ["disputes", "disputes_status_created_idx"],
+    ["export_jobs", "export_jobs_user_created_idx"],
+    ["feature_flags", "feature_flags_enabled_idx"],
+    ["login_attempts", "login_attempts_identifier_created_idx"],
+    ["mfa_recovery_codes", "mfa_recovery_codes_user_used_idx"],
+    ["permissions", "permissions_group_key_idx"],
+    ["refunds", "refunds_status_created_idx"],
+    ["security_events", "security_events_user_created_idx"],
+    ["seller_verifications", "seller_verifications_seller_status_idx"],
+    ["support_tickets", "support_tickets_sla_idx"],
+    ["ticket_messages", "ticket_messages_ticket_created_idx"],
+    ["user_roles", "user_roles_role_id_idx"],
+  ])("keeps %s.%s", (tableName, indexName) => {
+    expect(hasIndex(tableName, indexName), `${tableName}.${indexName}`).toBe(true);
   });
 });
 
@@ -427,6 +704,46 @@ describe("the shared vocabulary module", () => {
     expect(reportStatusSchema.safeParse("OPEN").success).toBe(true);
     expect(reportStatusSchema.safeParse("SOMETHING_ELSE").success).toBe(false);
   });
+
+  it("PROMPT 1 — covers the roles a grant can name", () => {
+    expect(SYSTEM_ROLES).toEqual([
+      "SUPER_ADMIN",
+      "ADMIN",
+      "SUPPORT",
+      "FINANCE",
+      "MODERATOR",
+      "CONTENT_MANAGER",
+    ]);
+    // `users.role` still carries only the coarse values (see enums.ts), so the
+    // grantable set is system roles plus the two account kinds — otherwise a
+    // role value that exists in `roles` could not be assigned.
+    expect(ALL_ROLE_NAMES).toEqual([...SYSTEM_ROLES, "USER", "SELLER"]);
+  });
+
+  it("PROMPT 1 — one list per workflow vocabulary", () => {
+    expect(TICKET_STATUSES).toEqual(["OPEN", "PENDING", "IN_PROGRESS", "RESOLVED", "CLOSED"]);
+    expect(DISPUTE_STATUSES).toEqual(["OPEN", "UNDER_REVIEW", "RESOLVED", "DISMISSED"]);
+    expect(REFUND_STATUSES).toEqual(["PENDING", "PROCESSING", "SUCCEEDED", "FAILED", "CANCELLED"]);
+    expect(CMS_STATUSES).toEqual(["DRAFT", "SCHEDULED", "ACTIVE", "PAUSED"]);
+    expect(SELLER_VERIFICATION_STATUSES).toEqual(["PENDING", "VERIFIED", "REJECTED", "EXPIRED"]);
+    expect(DISCOUNT_TYPES).toEqual(["PERCENT", "FLAT"]);
+    expect(COUPON_SCOPES).toEqual(["ALL", "CATEGORY", "PRODUCT"]);
+    expect(COMMISSION_SCOPES).toEqual(["GLOBAL", "CATEGORY", "SELLER"]);
+  });
+
+  it("PROMPT 1 — parses the vocabularies it declares, and rejects near-misses", () => {
+    expect(ticketStatusSchema.safeParse("OPEN").success).toBe(true);
+    expect(ticketStatusSchema.safeParse("OPENED").success).toBe(false);
+    expect(disputeStatusSchema.safeParse("UNDER_REVIEW").success).toBe(true);
+    expect(disputeStatusSchema.safeParse("UNDERREVIEW").success).toBe(false);
+    expect(commissionScopeSchema.safeParse("SELLER").success).toBe(true);
+    expect(couponScopeSchema.safeParse("CATEGORY").success).toBe(true);
+    expect(discountTypeSchema.safeParse("FLAT").success).toBe(true);
+    expect(discountTypeSchema.safeParse("VALUE").success).toBe(false);
+    expect(securityEventTypeSchema.safeParse("MFA_ENABLED").success).toBe(true);
+    expect(securityEventTypeSchema.safeParse("MFA_ON").success).toBe(false);
+    expect(PERCENT_BPS_MAX).toBe(10_000);
+  });
 });
 
 describe("foundation insert schemas", () => {
@@ -480,5 +797,57 @@ describe("foundation insert schemas", () => {
     const withId = orderEventInsertSchema.safeParse({ ...validEvent, id: 999 });
     expect(withId.success).toBe(true); // stripped as an unknown key, not read back
     expect(orderEventInsertSchema.shape.id).toBeUndefined();
+  });
+});
+
+describe("PROMPT 1 insert schemas (the boundary half of dropped CHECKs)", () => {
+  it("accepts a bare GLOBAL commission rule", () => {
+    expect(commissionRuleInsertSchema.safeParse({}).success).toBe(true);
+  });
+
+  it("requires the subject when the scope names one", () => {
+    // The DB-level CHECKs for these were removed because MariaDB refuses an
+    // `ADD CONSTRAINT ... FOREIGN KEY` on a CHECK-referenced column (see
+    // `server/schema.ts`); the boundary schema is what enforces them now.
+    expect(commissionRuleInsertSchema.safeParse({ scope: "CATEGORY" }).success).toBe(false);
+    expect(
+      commissionRuleInsertSchema.safeParse({ scope: "CATEGORY", categoryId: 7 }).success,
+    ).toBe(true);
+    expect(commissionRuleInsertSchema.safeParse({ scope: "SELLER", sellerId: 3 }).success).toBe(true);
+  });
+
+  it("keeps a commission percent inside basis-point bounds", () => {
+    expect(commissionRuleInsertSchema.safeParse({ percentBp: 10_001 }).success).toBe(false);
+    expect(commissionRuleInsertSchema.safeParse({ percentBp: 10_000 }).success).toBe(true);
+  });
+
+  it("rejects an inverted commission window", () => {
+    expect(
+      commissionRuleInsertSchema.safeParse({
+        effectiveFrom: new Date("2026-10-05T00:00:00Z"),
+        effectiveTo: new Date("2026-10-01T00:00:00Z"),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires a category when a coupon targets one", () => {
+    expect(couponInsertSchema.safeParse({ code: "SAVE10", discountType: "FLAT", discountValue: 1000 }).success).toBe(true);
+    expect(
+      couponInsertSchema.safeParse({
+        code: "SAVE10",
+        discountType: "FLAT",
+        discountValue: 1000,
+        appliesTo: "CATEGORY",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps a percent coupon inside 10000 bp and money values non-negative", () => {
+    const base = { code: "P10", discountType: "PERCENT" as const };
+    expect(couponInsertSchema.safeParse({ ...base, discountValue: 10_001 }).success).toBe(false);
+    expect(couponInsertSchema.safeParse({ ...base, discountValue: 10_000 }).success).toBe(true);
+    expect(
+      couponInsertSchema.safeParse({ code: "F", discountType: "FLAT", discountValue: 5, minimumOrderPaise: -1 }).success,
+    ).toBe(false);
   });
 });

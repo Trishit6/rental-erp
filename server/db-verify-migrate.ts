@@ -58,6 +58,29 @@ const REQUIRED_TABLES = [
   "payment_webhook_events",
   "platform_settings",
   "search_history",
+  // PROMPT 1 — admin, security, support, money and growth.
+  "roles",
+  "permissions",
+  "role_permissions",
+  "user_roles",
+  "user_mfa",
+  "mfa_recovery_codes",
+  "login_attempts",
+  "security_events",
+  "cms_banners",
+  "cms_blocks",
+  "support_tickets",
+  "ticket_messages",
+  "ticket_attachments",
+  "refunds",
+  "disputes",
+  "commission_rules",
+  "seller_verifications",
+  "coupons",
+  "coupon_redemptions",
+  "feature_flags",
+  "app_config",
+  "export_jobs",
 ];
 
 function fail(message: string): never {
@@ -126,6 +149,16 @@ const [tableRows] = await verifier.query(
 const present = new Set((tableRows as { name: string }[]).map((row) => row.name));
 const missing = REQUIRED_TABLES.filter((table) => !present.has(table));
 
+// The FULLTEXT index ships in the custom 0019 migration, which drizzle-kit can
+// not express or diff. It must exist on an empty replay just as it does on the
+// populated database, or search silently degrades to the prefix index only.
+const [fulltextRows] = await verifier.query(
+  `SELECT INDEX_NAME AS name, INDEX_TYPE AS type FROM information_schema.STATISTICS
+   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'products' AND INDEX_NAME = 'products_search_fulltext'`,
+);
+const fulltext = (fulltextRows as { name: string; type: string }[])[0];
+const fulltextPresent = fulltext?.type === "FULLTEXT";
+
 const [migrationRows] = await verifier.query("SELECT COUNT(*) AS n FROM __drizzle_migrations");
 const recordedMigrations = (migrationRows as { n: number }[])[0]?.n ?? 0;
 
@@ -138,9 +171,13 @@ if (recordedMigrations < 1) {
 if (missing.length > 0) {
   fail(`tables missing after migrating an empty database: ${missing.join(", ")}`);
 }
+if (!fulltextPresent) {
+  fail("products.search_fulltext is not a FULLTEXT index after an empty-database replay.");
+}
 
 console.log(
   `\n  db:verify:migrate OK — ${recordedMigrations} migration(s) replayed on an empty\n` +
-    `  database, all ${REQUIRED_TABLES.length} required tables present.\n` +
+    `  database, all ${REQUIRED_TABLES.length} required tables present, and the\n` +
+    `  FULLTEXT search index survived the replay.\n` +
     `  "${TEST_DATABASE}" dropped afterwards.\n`,
 );

@@ -14,9 +14,9 @@
 -- `title`): `LIKE 'chair%'` cannot use this index, but it can use that one, so a
 -- term with no exact-word match degrades to a prefix scan instead of a table scan.
 --
--- InnoDB ignores tokens shorter than `innodb_min_token_size` (3 by default), so
--- one- and two-character queries are answered by the prefix index rather than by
--- full-text — which is the correct behaviour for them anyway.
+-- InnoDB ignores tokens shorter than `innodb_ft_min_token_size` (3 by default),
+-- so one- and two-character queries are answered by the prefix index rather than
+-- by full-text — which is the correct behaviour for them anyway.
 -- -----------------------------------------------------------------------------
 ALTER TABLE `products` ADD FULLTEXT INDEX `products_search_fulltext` (`search_text`);--> statement-breakpoint
 
@@ -39,8 +39,8 @@ WHERE `oi`.`slug_snapshot` IS NULL;--> statement-breakpoint
 -- works the moment the index above is created rather than only for products
 -- edited afterwards.
 --
--- `NULLIF` on both sides means a product with no description still gets its title,
--- and never a literal "null" in the middle of its search text.
+-- `IFNULL` on the description means a product with no description still gets its
+-- title, and never a literal "null" in the middle of its search text.
 UPDATE `products`
 SET `search_text` = TRIM(CONCAT_WS(' ', `title`, IFNULL(`description`, '')))
 WHERE `search_text` IS NULL OR `search_text` = '';--> statement-breakpoint

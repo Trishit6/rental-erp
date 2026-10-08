@@ -89,6 +89,13 @@ const cleanupStatements = [
   `DELETE FROM payment_webhook_events WHERE event_id = 'evt_duplicate'`,
   `DELETE FROM products WHERE slug IN ('neg-price-slug', 'neg-rent-slug') OR title = 'dupe'`,
   `DELETE FROM users WHERE password_hash = 'x'`,
+  // PROMPT 1 sentinels. A *missing* constraint would have let these land, so the
+  // cleanup has to catch what a passing run would never leave behind.
+  `DELETE FROM coupons WHERE code IN ('SAVEVERIFY', 'saveverify', 'SAVEVERIFY-BAD')`,
+  `DELETE FROM disputes WHERE dispute_number LIKE 'DSP-VERIFY-%'`,
+  `DELETE FROM commission_rules WHERE percent_bp = 9505`,
+  `DELETE FROM roles WHERE name IN ('VERIFY_ROLE', 'verify_role')`,
+  "DELETE FROM permissions WHERE `key` IN ('verify.probe', 'noprefix')",
 ];
 
 async function cleanup(): Promise<void> {
@@ -114,6 +121,29 @@ const REQUIRED_TABLES = [
   "payment_webhook_events",
   "platform_settings",
   "search_history",
+  // PROMPT 1 — admin, security, support, money and growth.
+  "roles",
+  "permissions",
+  "role_permissions",
+  "user_roles",
+  "user_mfa",
+  "mfa_recovery_codes",
+  "login_attempts",
+  "security_events",
+  "cms_banners",
+  "cms_blocks",
+  "support_tickets",
+  "ticket_messages",
+  "ticket_attachments",
+  "refunds",
+  "disputes",
+  "commission_rules",
+  "seller_verifications",
+  "coupons",
+  "coupon_redemptions",
+  "feature_flags",
+  "app_config",
+  "export_jobs",
 ];
 
 for (const table of REQUIRED_TABLES) {
@@ -153,6 +183,8 @@ const fixtures = await returnsRows(
           (SELECT id FROM products LIMIT 1) AS productId,
           (SELECT seller_id FROM products WHERE seller_id IS NOT NULL LIMIT 1) AS sellerId,
           (SELECT id FROM carts LIMIT 1) AS cartId,
+          (SELECT id FROM orders LIMIT 1) AS orderId,
+          (SELECT id FROM categories LIMIT 1) AS categoryId,
           (SELECT user_id FROM favorites LIMIT 1) AS favoriteUserId,
           (SELECT product_id FROM favorites LIMIT 1) AS favoriteProductId`,
 );
@@ -162,6 +194,8 @@ const userId = fixture.userId;
 const productId = fixture.productId;
 const sellerId = fixture.sellerId;
 const cartId = fixture.cartId;
+const orderId = fixture.orderId;
+const categoryId = fixture.categoryId;
 const favoriteUserId = fixture.favoriteUserId;
 const favoriteProductId = fixture.favoriteProductId;
 
@@ -260,6 +294,144 @@ if (!userId || !productId || !sellerId) {
   } catch {
     record("deleting a product with order history is rejected", "PASS");
   }
+
+  /* ------------------ PROMPT 1 — coupons, disputes, commission ---------------- */
+  /* ---------------------------------------------------------------------------- */
+
+  // A coupon code is UNIQUE under `utf8mb4_unicode_ci`, so the same code in a
+  // different case must collide. First write is legitimate and must succeed.
+  await mustBeAccepted(
+    "first coupon code accepted",
+    `INSERT INTO coupons (code, discount_type, discount_value) VALUES ('SAVEVERIFY', 'PERCENT', 1500)`,
+  );
+  await mustBeRejected(
+    "duplicate coupon code (case-insensitive)",
+    `INSERT INTO coupons (code, discount_type, discount_value) VALUES ('saveverify', 'PERCENT', 1000)`,
+  );
+  await mustBeRejected(
+    "percent coupon above 10000 basis points",
+    `INSERT INTO coupons (code, discount_type, discount_value) VALUES ('SAVEVERIFY-BAD', 'PERCENT', 200000)`,
+  );
+  await mustBeRejected(
+    "coupon with a nil discount value",
+    `INSERT INTO coupons (code, discount_type, discount_value) VALUES ('SAVEVERIFY-BAD', 'FLAT', 0)`,
+  );
+  await mustBeRejected(
+    "coupon already spent past its usage limit",
+    `INSERT INTO coupons (code, discount_type, discount_value, usage_limit, used_count) VALUES ('SAVEVERIFY-BAD', 'FLAT', 100, 5, 6)`,
+  );
+  // These two now guard what MariaDB CHECKs cannot: live orders use `status`
+  // values the DB cannot enumerate (the enum lives in the API layer), so only
+  // the outer shape is pinned down here.
+  if (orderId && userId) {
+    await mustBeRejected(
+      "dispute resolved before it was opened",
+      `INSERT INTO disputes (dispute_number, order_id, opened_by, reason, status, resolved_at)
+       VALUES ('DSP-VERIFY-1', ${orderId}, ${userId}, 'probe window', 'RESOLVED', NOW() - INTERVAL 1 DAY)`,
+    );
+    await mustBeRejected(
+      "dispute with a blank reason",
+      `INSERT INTO disputes (dispute_number, order_id, opened_by, reason) VALUES ('DSP-VERIFY-2', ${orderId}, ${userId}, '   ')`,
+    );
+    await mustBeAccepted(
+      "first dispute number accepted",
+      `INSERT INTO disputes (dispute_number, order_id, opened_by, reason) VALUES ('DSP-VERIFY-3', ${orderId}, ${userId}, 'probe unique')`,
+    );
+    await mustBeRejected(
+      "duplicate dispute number",
+      `INSERT INTO disputes (dispute_number, order_id, opened_by, reason) VALUES ('DSP-VERIFY-3', ${orderId}, ${userId}, 'again')`,
+    );
+  }
+
+  // Commission rules are UNIQUE on (scope, category_id, seller_id,
+  // effective_from). MySQL treats NULL as distinct in a unique index, so the
+  // constraint only bites when every subject column is named — the shape proven
+  // here is a seller's category override. GLOBAL/CATEGORY singletons (rows with
+  // NULL subjects) are defended by the API layer; see `server/schema.ts` and
+  // Follow-up F6 in docs/database.md. A fixed timestamp makes the second insert
+  // collide instead of silently getting a different now().
+  await mustBeRejected(
+    "commission percent beyond 10000 bp",
+    `INSERT INTO commission_rules (scope, percent_bp) VALUES ('GLOBAL', 20000)`,
+  );
+  await mustBeRejected(
+    "commission with a negative fixed fee",
+    `INSERT INTO commission_rules (scope, percent_bp, fixed_fee_paise) VALUES ('GLOBAL', 500, -1)`,
+  );
+  await mustBeRejected(
+    "commission with an inverted window",
+    `INSERT INTO commission_rules (scope, percent_bp, effective_from, effective_to)
+     VALUES ('GLOBAL', 500, NOW(), NOW() - INTERVAL 1 DAY)`,
+  );
+  if (sellerId) {
+    await mustBeAccepted(
+      "first seller commission rule accepted",
+      `INSERT INTO commission_rules (scope, seller_id, percent_bp, effective_from)
+       VALUES ('SELLER', ${sellerId}, 9505, '2026-01-15 00:00:00')`,
+    );
+    await mustBeAccepted(
+      "same seller, later effective_from, is a new rule",
+      `INSERT INTO commission_rules (scope, seller_id, percent_bp, effective_from)
+       VALUES ('SELLER', ${sellerId}, 9505, '2026-05-01 00:00:00')`,
+    );
+  }
+  if (categoryId && sellerId) {
+    // Every subject column named → every column non-NULL → the unique fires.
+    await mustBeAccepted(
+      "first category-override for a seller accepted",
+      `INSERT INTO commission_rules (scope, category_id, seller_id, percent_bp, effective_from)
+       VALUES ('SELLER', ${categoryId}, ${sellerId}, 9505, '2026-02-01 00:00:00')`,
+    );
+    await mustBeRejected(
+      "duplicate (scope, category, seller, effective_from) commission rule",
+      `INSERT INTO commission_rules (scope, category_id, seller_id, percent_bp, effective_from)
+       VALUES ('SELLER', ${categoryId}, ${sellerId}, 500, '2026-02-01 00:00:00')`,
+    );
+  }
+
+  /* ---------------------- PROMPT 1 — RBAC and verifications ------------------ */
+  /* ---------------------------------------------------------------------------- */
+
+  // Role names are UNIQUE and case-insensitive too — a grant holder must not be
+  // able to create a near-twin role.
+  await mustBeAccepted(
+    "first role name accepted",
+    `INSERT INTO roles (name, description, is_system) VALUES ('VERIFY_ROLE', 'probe', false)`,
+  );
+  await mustBeRejected(
+    "duplicate role name (case-insensitive)",
+    `INSERT INTO roles (name) VALUES ('verify_role')`,
+  );
+  await mustBeRejected(
+    "permission key without a resource.action separator",
+    "INSERT INTO permissions (`key`, group_key) VALUES ('noprefix', 'verify')",
+  );
+  await mustBeAccepted(
+    "permission key that does have the separator",
+    "INSERT INTO permissions (`key`, group_key) VALUES ('verify.probe', 'verify')",
+  );
+  await mustBeRejected(
+    "empty login identifier",
+    `INSERT INTO login_attempts (identifier, success) VALUES ('   ', false)`,
+  );
+  if (userId) {
+    await mustBeRejected(
+      "assigning a role that does not exist",
+      `INSERT INTO user_roles (user_id, role_id) VALUES (${userId}, 2147483647)`,
+    );
+  }
+  if (sellerId) {
+    await mustBeRejected(
+      "seller verification rejected without a reason",
+      `INSERT INTO seller_verifications (seller_id, status) VALUES (${sellerId}, 'REJECTED')`,
+    );
+  }
+  if (sellerId && orderId) {
+    await mustBeRejected(
+      "refund with a non-positive amount",
+      `INSERT INTO refunds (refund_number, order_id, user_id, amount) VALUES ('RF-VERIFY-1', ${orderId}, ${sellerId}, 0)`,
+    );
+  }
 }
 
 /* -------------------------------- cleanup ------------------------------- */
@@ -278,7 +450,16 @@ const [residueRows] = await db.query(
      (SELECT COUNT(*) FROM search_history WHERE TRIM(term) = '') AS f,
      (SELECT COUNT(*) FROM stock_reservations WHERE quantity <= 0 OR rental_end <= rental_start) AS g,
      (SELECT COUNT(*) FROM cart_items WHERE quantity <= 0) AS h,
-     (SELECT COUNT(*) FROM reviews WHERE comment = 'bad' AND rating NOT BETWEEN 1 AND 5) AS i`,
+     (SELECT COUNT(*) FROM reviews WHERE comment = 'bad' AND rating NOT BETWEEN 1 AND 5) AS i,
+     (SELECT COUNT(*) FROM coupons WHERE code IN ('SAVEVERIFY', 'saveverify', 'SAVEVERIFY-BAD')) AS j,
+     (SELECT COUNT(*) FROM disputes WHERE dispute_number LIKE 'DSP-VERIFY-%') AS k,
+     (SELECT COUNT(*) FROM commission_rules WHERE percent_bp = 9505) AS l,
+     (SELECT COUNT(*) FROM roles WHERE name IN ('VERIFY_ROLE', 'verify_role')) AS m,
+     (SELECT COUNT(*) FROM user_roles WHERE role_id = 2147483647) AS n,
+     (SELECT COUNT(*) FROM login_attempts WHERE TRIM(identifier) = '') AS o,
+     (SELECT COUNT(*) FROM seller_verifications WHERE status = 'REJECTED' AND COALESCE(rejection_reason, '') = '') AS p,
+     (SELECT COUNT(*) FROM refunds WHERE refund_number = 'RF-VERIFY-1') AS q,
+     (SELECT COUNT(*) FROM permissions WHERE \`key\` IN ('verify.probe', 'noprefix')) AS r`,
 );
 const residue = (residueRows as Record<string, number>[])[0];
 const residueCount = Object.values(residue ?? {}).reduce((sum, n) => sum + n, 0);

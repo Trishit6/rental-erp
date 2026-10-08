@@ -2251,8 +2251,17 @@ export const commissionRules = mysqlTable(
   (table) => [
     // Two rules for the same subject starting at the same instant would make
     // "which one applies?" a coin flip — rejected rather than resolved by luck.
-    // MySQL treats NULLs as distinct in a unique index, so many `GLOBAL` rules
-    // coexist while the same start instant cannot be claimed twice.
+    //
+    // MySQL/MariaDB treat NULL as distinct in a unique index, so this constraint
+    // only bites when *every* subject column is named — i.e. a seller's
+    // category override, where `category_id` and `seller_id` are both set. A
+    // `GLOBAL` rule (no subject) or a bare `CATEGORY`/`SELLER` rule has a NULL
+    // in the key, so those duplicate-per-start rows are defended at the API
+    // layer instead (`commissionRuleSchema` shapes the write; the rule service
+    // is the only writer by construction). The named-subject half is proven by
+    // `pnpm db:verify:constraints`. MariaDB's `NULLS NOT DISTINCT` would extend
+    // the same key to the NULL rows; this MariaDB 12.3.3 build rejects it in
+    // every syntax tried, and it is tracked as Follow-up F6 in docs/database.md.
     uniqueIndex("commission_rules_scope_subject_start_unique").on(
       table.scope,
       table.categoryId,
@@ -2271,9 +2280,15 @@ export const commissionRules = mysqlTable(
     ),
     // A `CATEGORY` rule naming no category would silently match every category,
     // and a `SELLER` rule naming no seller would silently match every seller.
-    // The rule's own shape is checked here rather than left to an API to notice.
-    check("commission_rules_category_requires_scope", sql`${table.scope} <> 'CATEGORY' OR ${table.categoryId} IS NOT NULL`),
-    check("commission_rules_seller_requires_scope", sql`${table.scope} <> 'SELLER' OR ${table.sellerId} IS NOT NULL`),
+    //
+    // These two were originally `CHECK`s here — and had to be removed: MariaDB
+    // rejects `ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY` on a column that a
+    // CHECK constraint references ("Function or expression 'category_id' cannot
+    // be used in the CHECK clause"), which made the whole FK block of the
+    // migration fail. The invariant is enforced by the Zod schema instead
+    // (`commissionRuleSchema` in `server/schema-zod.ts`) and noted here so the
+    // reason the database does not carry it is documented rather than a hole.
+    // The FK on `category_id`/`seller_id` still guarantees the targets exist.
   ],
 );
 
@@ -2388,7 +2403,9 @@ export const coupons = mysqlTable(
       sql`${table.endsAt} IS NULL OR ${table.startsAt} IS NULL OR ${table.endsAt} > ${table.startsAt}`,
     ),
     // A `CATEGORY` coupon that names no category would match every category.
-    check("coupons_category_requires_scope", sql`${table.appliesTo} <> 'CATEGORY' OR ${table.categoryId} IS NOT NULL`),
+    // Same MariaDB limitation as `commission_rules`: a CHECK referencing a column
+    // that later gets a FOREIGN KEY makes the FK ALTER fail, so this invariant is
+    // enforced by `couponSchema` in `server/schema-zod.ts` instead.
     // The counter and its ceiling in one constraint: a race that pushes the count
     // past the limit fails the write instead of admitting one redemption too many.
     check("coupons_used_within_limit", sql`${table.usageLimit} IS NULL OR ${table.usedCount} <= ${table.usageLimit}`),

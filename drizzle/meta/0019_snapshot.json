@@ -1,6 +1,6 @@
 {
-  "id": "c281e30f-79ea-40cb-aa98-1aa5f703a837",
-  "prevId": "f908fdc9-2753-493f-9ba8-2c883e229e97",
+  "id": "c42da918-b875-4b09-88be-839563a10398",
+  "prevId": "5761f2f8-9bf7-4ace-baad-60a064ac6098",
   "version": "5",
   "dialect": "mysql",
   "tables": {
@@ -1130,14 +1130,6 @@
         "commission_rules_window_ordered": {
           "name": "commission_rules_window_ordered",
           "value": "`commission_rules`.`effective_to` IS NULL OR `commission_rules`.`effective_to` > `commission_rules`.`effective_from`"
-        },
-        "commission_rules_category_requires_scope": {
-          "name": "commission_rules_category_requires_scope",
-          "value": "`commission_rules`.`scope` <> 'CATEGORY' OR `commission_rules`.`category_id` IS NOT NULL"
-        },
-        "commission_rules_seller_requires_scope": {
-          "name": "commission_rules_seller_requires_scope",
-          "value": "`commission_rules`.`scope` <> 'SELLER' OR `commission_rules`.`seller_id` IS NOT NULL"
         }
       }
     },
@@ -1729,10 +1721,6 @@
         "coupons_window_ordered": {
           "name": "coupons_window_ordered",
           "value": "`coupons`.`ends_at` IS NULL OR `coupons`.`starts_at` IS NULL OR `coupons`.`ends_at` > `coupons`.`starts_at`"
-        },
-        "coupons_category_requires_scope": {
-          "name": "coupons_category_requires_scope",
-          "value": "`coupons`.`applies_to` <> 'CATEGORY' OR `coupons`.`category_id` IS NOT NULL"
         },
         "coupons_used_within_limit": {
           "name": "coupons_used_within_limit",

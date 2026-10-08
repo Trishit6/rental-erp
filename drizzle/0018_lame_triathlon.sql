@@ -61,9 +61,7 @@ CREATE TABLE `commission_rules` (
 	CONSTRAINT `commission_rules_scope_subject_start_unique` UNIQUE(`scope`,`category_id`,`seller_id`,`effective_from`),
 	CONSTRAINT `commission_rules_percent_range` CHECK(`commission_rules`.`percent_bp` BETWEEN 0 AND 10000),
 	CONSTRAINT `commission_rules_fixed_fee_nonneg` CHECK(`commission_rules`.`fixed_fee_paise` >= 0),
-	CONSTRAINT `commission_rules_window_ordered` CHECK(`commission_rules`.`effective_to` IS NULL OR `commission_rules`.`effective_to` > `commission_rules`.`effective_from`),
-	CONSTRAINT `commission_rules_category_requires_scope` CHECK(`commission_rules`.`scope` <> 'CATEGORY' OR `commission_rules`.`category_id` IS NOT NULL),
-	CONSTRAINT `commission_rules_seller_requires_scope` CHECK(`commission_rules`.`scope` <> 'SELLER' OR `commission_rules`.`seller_id` IS NOT NULL)
+	CONSTRAINT `commission_rules_window_ordered` CHECK(`commission_rules`.`effective_to` IS NULL OR `commission_rules`.`effective_to` > `commission_rules`.`effective_from`)
 );
 --> statement-breakpoint
 CREATE TABLE `coupon_redemptions` (
@@ -108,7 +106,6 @@ CREATE TABLE `coupons` (
 	CONSTRAINT `coupons_per_user_limit_positive` CHECK(`coupons`.`per_user_limit` IS NULL OR `coupons`.`per_user_limit` > 0),
 	CONSTRAINT `coupons_used_count_nonneg` CHECK(`coupons`.`used_count` >= 0),
 	CONSTRAINT `coupons_window_ordered` CHECK(`coupons`.`ends_at` IS NULL OR `coupons`.`starts_at` IS NULL OR `coupons`.`ends_at` > `coupons`.`starts_at`),
-	CONSTRAINT `coupons_category_requires_scope` CHECK(`coupons`.`applies_to` <> 'CATEGORY' OR `coupons`.`category_id` IS NOT NULL),
 	CONSTRAINT `coupons_used_within_limit` CHECK(`coupons`.`usage_limit` IS NULL OR `coupons`.`used_count` <= `coupons`.`usage_limit`)
 );
 --> statement-breakpoint
