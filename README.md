@@ -686,8 +686,15 @@ Never expose server secrets with a `VITE_` prefix — everything `VITE_`-prefixe
 ```bash
 pnpm db:create     # create the database if missing
 pnpm db:migrate    # apply Drizzle migrations
-pnpm db:seed       # load demo users, categories, products, orders, rentals, reviews
+pnpm db:seed       # full deterministic seed: demo data, 20k products, order/rental history, admin/ops
 ```
+
+`pnpm db:seed` truncates then runs four stages in order — `seed.ts` (demo users, categories,
+products, orders, rentals, reviews) → `seed-products.ts` (20k bulk products) → `seed-history.ts`
+(volume orders, rentals, reviews, carts, messages, notifications) → `seed-admin.ts` (staff, MFA,
+support tickets, refunds, disputes, coupons, CMS, payouts, audit logs, feature flags). Each stage is
+reproducible (seeded PRNG, no faker) and refuses to run when `NODE_ENV=production`. To re-run a
+single stage, use `pnpm db:seed:products`, `pnpm db:seed:history`, or `pnpm db:seed:admin`.
 
 ## Development
 
@@ -709,7 +716,10 @@ The Vite dev server proxies `/api/*` to `http://localhost:3001`.
 | `pnpm test` | Vitest unit tests |
 | `pnpm db:generate` | Generate a migration from schema changes |
 | `pnpm db:migrate` | Apply migrations |
-| `pnpm db:seed` | Seed demo data |
+| `pnpm db:seed` | Full deterministic seed (demo → products → history → admin) |
+| `pnpm db:seed:products` | Stage 2 only — append bulk products |
+| `pnpm db:seed:history` | Stage 3 only — volume order/rental history |
+| `pnpm db:seed:admin` | Stage 4 only — staff, support, growth, security, ops |
 | `pnpm db:studio` | Browse the DB in Drizzle Studio |
 | `pnpm start:api` | Run the API without Vite |
 

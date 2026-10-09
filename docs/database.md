@@ -129,6 +129,10 @@ reproduced here:
 | `user_status`     | **no column** — suspension currently overwrites `users.role` (Follow-up **F3**) |
 | `seller_status`   | **no column** — `seller_profiles.verified` only (Follow-up **F4**) |
 
+Separately, `users.must_change_password` / `users.must_enroll_mfa` (migration
+`0020`) are **booleans, not statuses** — first-login flags set by the seed on
+staff/demo accounts (see §8). Real users default both to `false`.
+
 ### PROMPT 1 vocabularies (all in `server/lib/enums.ts`, all Zod-validated)
 
 * **RBAC** — `SYSTEM_ROLES` = `SUPER_ADMIN, ADMIN, SUPPORT, FINANCE, MODERATOR, CONTENT_MANAGER`; `ALL_ROLE_NAMES` = system roles + `USER, SELLER` so every `users.role` value resolves to a row. Permission keys are `resource.action` (`PERMISSION_KEY_PATTERN`, CHECKed via `permissions_key_has_separator`).
@@ -341,6 +345,26 @@ by `tests/seed-truncate.test.ts`) and then `seedRbac()` inserts 17 permissions
 + `USER` + `SELLER`, marked `is_system`) and the grants. `USER`/`SELLER` hold
 **zero grants** by design. The seeded admin gets `ADMIN` (all permissions except
 `rbac.manage`); only `SUPER_ADMIN` can grant roles.
+
+The final `seed-admin.ts` stage adds the staff roster and wires each account to
+its RBAC row through `user_roles` (the coarse `users.role` is `ADMIN` for all
+staff; `SUPER_ADMIN` … `CONTENT_MANAGER` live in `user_roles`):
+
+| Account | `user_roles` role |
+|---|---|
+| `root@revaro.local` | `SUPER_ADMIN` |
+| `support@revaro.local` | `SUPPORT` |
+| `finance@revaro.local` | `FINANCE` |
+| `moderator@revaro.local` | `MODERATOR` |
+| `content@revaro.local` | `CONTENT_MANAGER` |
+
+Every seeded account is written with `users.must_change_password = true`; the
+demo admin and the five staff accounts also get `users.must_enroll_mfa = true`
+(sellers/buyers only force a password change). This keeps the shared dev
+credentials from being usable indefinitely: a first login is expected to rotate
+the password and, for staff, complete MFA enrolment. The flags are plain
+`boolean NOT NULL DEFAULT false` columns (migration `0020`), so they are inert
+for real users created outside the seed.
 
 ---
 

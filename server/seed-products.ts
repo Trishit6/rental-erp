@@ -391,6 +391,10 @@ function pickImages(rnd: () => number, pool: ImageEntry[], n: number): ImageEntr
 /* ----------------------------------- main ---------------------------------- */
 
 async function main() {
+  if (process.env.NODE_ENV === "production") {
+    console.error("Refusing to seed: NODE_ENV is 'production'. There is no override for this.");
+    process.exit(1);
+  }
   if (!Number.isFinite(COUNT) || COUNT <= 0) {
     throw new Error(`Invalid PRODUCT_COUNT: ${process.env.PRODUCT_COUNT}`);
   }

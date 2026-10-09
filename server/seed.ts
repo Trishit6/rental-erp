@@ -78,6 +78,10 @@ function paise(rupees: number): number {
  * exists.
  */
 import { IMG, IMAGE_POOLS, pick } from "./lib/demo-images";
+// The same mulberry32 the volume seeders use, so the demo world is reproducible
+// too — a `Math.random()` counter or rating here is a row that differs on every
+// run and makes "seed twice, compare counts" impossible to reason about.
+import { mulberry32 } from "./data/seed-realistic";
 
 /* ------------------------------- seed accounts ------------------------------ */
 
@@ -212,12 +216,25 @@ async function seedRbac(adminUserId: number): Promise<void> {
 }
 
 async function seed() {
+  // `db:seed` TRUNCATEs every table; running it against production would erase
+  // real data with no way back. Refuse outright rather than trust an operator
+  // to remember — the same rule `db-reset` follows.
+  if (process.env.NODE_ENV === "production") {
+    console.error("Refusing to seed: NODE_ENV is 'production'. There is no override for this.");
+    process.exit(1);
+  }
+
   console.log("Clearing existing data...");
   await db.execute(sql`SET FOREIGN_KEY_CHECKS = 0`);
   for (const table of TRUNCATED_TABLES) {
     await db.execute(sql.raw(`TRUNCATE TABLE ${table}`));
   }
   await db.execute(sql`SET FOREIGN_KEY_CHECKS = 1`);
+
+  // One seeded generator for the whole run: every "random" demo value below is
+  // reproducible from this constant, so two seeds produce the same rows.
+  const rand = mulberry32(0x5eed);
+  const randInt = (min: number, max: number) => min + Math.floor(rand() * (max - min + 1));
 
   console.log("Seeding users...");
   const passwordHash = await bcrypt.hash(DEV_PASSWORD, 10);
@@ -232,6 +249,10 @@ async function seed() {
         passwordHash: adminPasswordHash,
         role: "ADMIN",
         verified: true,
+        // Staff credentials are shared demo values with an MFA enrolment still
+        // outstanding, so the account says so instead of looking production-ready.
+        mustChangePassword: true,
+        mustEnrollMfa: true,
       },
       {
         name: "Maya Sharma",
@@ -240,6 +261,7 @@ async function seed() {
         role: "SELLER",
         verified: true,
         avatarUrl: null,
+        mustChangePassword: true,
       },
       {
         name: "Daniel Kapoor",
@@ -247,6 +269,7 @@ async function seed() {
         passwordHash,
         role: "SELLER",
         verified: true,
+        mustChangePassword: true,
       },
       {
         name: "Priya Verma",
@@ -254,6 +277,7 @@ async function seed() {
         passwordHash,
         role: "SELLER",
         verified: false,
+        mustChangePassword: true,
       },
       {
         name: "Arjun Mehta",
@@ -261,8 +285,16 @@ async function seed() {
         passwordHash,
         role: "USER",
         verified: true,
+        mustChangePassword: true,
       },
-      { name: "Sara Iyer", email: "sara@revaro.local", passwordHash, role: "USER", verified: true },
+      {
+        name: "Sara Iyer",
+        email: "sara@revaro.local",
+        passwordHash,
+        role: "USER",
+        verified: true,
+        mustChangePassword: true,
+      },
     ])
     .$returningId();
 
@@ -379,6 +411,13 @@ async function seed() {
       description: "Bikes, scooters and rides",
       icon: "bike",
       sortOrder: 9,
+    },
+    {
+      slug: "books",
+      name: "Books",
+      description: "Textbooks, fiction and reference you can read and pass on",
+      icon: "book",
+      sortOrder: 10,
     },
     // Subcategories.
     {
@@ -897,10 +936,10 @@ async function seed() {
         rentCreditCap: p.rentCreditCap ? paise(p.rentCreditCap) : null,
         quantity: p.quantity ?? 1,
         availableQuantity: p.quantity ?? 1,
-        viewCount: Math.floor(Math.random() * 400) + 40,
+        viewCount: randInt(40, 440),
         favoriteCount: 0,
-        ratingAverage: 4.2 + Math.random() * 0.7,
-        ratingCount: Math.floor(Math.random() * 30) + 3,
+        ratingAverage: Math.round((4.2 + rand() * 0.7) * 10) / 10,
+        ratingCount: randInt(3, 32),
       })),
     )
     .$returningId();

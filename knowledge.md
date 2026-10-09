@@ -84,9 +84,11 @@ pnpm generate:routes  # regenerate src/routeTree.gen.ts (tsr generate) — auto-
 pnpm db:create      # create the reloop database (server/db-create.ts)
 pnpm db:generate    # drizzle-kit generate (migrations into drizzle/)
 pnpm db:migrate     # apply migrations
-pnpm db:seed        # reset + seed demo data (TRUNCATEs all tables first)
+pnpm db:seed        # full deterministic pipeline: demo -> 20k products -> history -> admin (TRUNCATEs first)
 pnpm db:harvest-images   # refresh real Unsplash URLs -> server/data/product-images.json
-pnpm db:seed:products    # append 20k bulk products (PRODUCT_COUNT / CLEAR_PRODUCTS / SEED env)
+pnpm db:seed:products    # stage 2 only: append 20k bulk products (PRODUCT_COUNT / CLEAR_PRODUCTS / SEED env)
+pnpm db:seed:history     # stage 3 only: additive volume orders/rentals/reviews (needs products first)
+pnpm db:seed:admin       # stage 4 only: staff, support, growth, security, ops data
 pnpm db:studio      # drizzle studio
 pnpm start:api      # API only, no Vite
 ```Verify in this order — **typecheck → lint → test**. `pnpm build` type-checks both tsconfigs before
@@ -115,6 +117,9 @@ writes *no* migration file, so it silently diverges from the committed `drizzle/
    adds the parents/children, icons, images and featured flags — and it TRUNCATEs everything.
 4. Demo logins (seeded): `admin@revaro.local`, `seller@revaro.local`, `buyer@revaro.local`,
    `daniel@`, `priya@`, `sara@revaro.local` — password `revaro-dev-2026` (dev only, in README).
+   `pnpm db:seed` also seeds staff accounts (`root@`, `support@`, `finance@`, `moderator@`,
+   `content@revaro.local`) and flags every seeded account `must_change_password` /
+   `must_enroll_mfa` so dev logins cannot silently persist.
 
 ## Migration history (`drizzle/`)
 - `0000_*` initial schema · `0001_*` `sessions.lastUsedAt`.
@@ -721,7 +726,11 @@ Schema change flow: edit `server/schema.ts` → `pnpm db:generate` → `pnpm db:
   that file and deterministically (seeded mulberry32) generates products on top of the base seed —
   it needs the existing sellers + categories, so run `pnpm db:seed` first. Image 0 = primary, rest =
   alt images with `altText`. `CLEAR_PRODUCTS=1` deletes products but FAILS on the demo products
-  referenced by `order_items`/`rentals` (FK `restrict`) — just append instead.
+  referenced by `order_items`/`rentals` (FK `restrict`) — just append instead. The full
+  `pnpm db:seed` pipeline then runs `seed-history.ts` (volume buyers/sellers/orders/rentals/reviews)
+  and `seed-admin.ts` (staff, MFA, sessions, tickets, refunds, disputes, coupons, CMS, audit,
+  payouts, feature flags); every stage is deterministic and refuses to run under
+  `NODE_ENV=production`.
 - When adding a route: create the feature module first, then a thin file in `src/routes/`; the
   routeTree regenerates on `pnpm dev`/`pnpm build` (or run `pnpm generate:routes`).
 - A file or folder in `src/routes/` whose name starts with **`-`** is **not** a route

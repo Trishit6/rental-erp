@@ -28,6 +28,23 @@ export const users = mysqlTable(
     avatarUrl: varchar("avatar_url", { length: 500 }),
     role: varchar("role", { length: 10 }).notNull().default("USER"),
     verified: boolean("verified").notNull().default(false),
+    /**
+     * Seeded/demo accounts must rotate the shared development password before
+     * they can be used for anything real. `pnpm db:seed` sets this on every
+     * account it creates; a later profile/security prompt is what clears it.
+     *
+     * A column rather than a convention because "this credential is temporary"
+     * has to survive the process that created it — the seed prints the password
+     * once and then exits, so nothing in memory can carry the intent forward.
+     */
+    mustChangePassword: boolean("must_change_password").notNull().default(false),
+    /**
+     * Staff accounts are seeded without a `user_mfa` row, so they cannot sign in
+     * with a second factor until they enrol. This flag makes that requirement
+     * explicit on the account rather than inferring it from a missing row, so
+     * the UI can say "enrol MFA" instead of guessing why a challenge failed.
+     */
+    mustEnrollMfa: boolean("must_enroll_mfa").notNull().default(false),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },

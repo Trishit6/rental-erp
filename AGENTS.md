@@ -24,10 +24,17 @@ pnpm start:api        # Run API only (tsx server/index.ts)
   pnpm db:create        # First run only
   pnpm db:generate      # Before migrate (Drizzle codegen)
   pnpm db:migrate       # Apply schema changes
-  pnpm db:seed          # TRUNCATEs tables
-  pnpm db:seed:products # Appends products
-  pnpm db:seed:history  # Additive volume data
+  pnpm db:seed          # Full deterministic pipeline (see below); TRUNCATEs first
+  pnpm db:seed:products # Stage 2 only — appends 20k bulk products (needs demo sellers)
+  pnpm db:seed:history  # Stage 3 only — additive volume data (needs products)
+  pnpm db:seed:admin    # Stage 4 only — admin, support, growth, security, ops data
   ```
+- **Seed pipeline:** `pnpm db:seed` = `seed.ts` (demo) → `seed-products.ts` (20k products) →
+  `seed-history.ts` (volume orders/rentals/reviews/…) → `seed-admin.ts` (staff, RBAC grants, audit,
+  tickets, refunds, disputes, coupons, CMS, payouts, sessions/security). It is deterministic
+  (hand-rolled seeded PRNG, no faker) and **refuses to run when `NODE_ENV=production`**. Seeded
+  accounts carry `users.must_change_password` / `users.must_enroll_mfa` so first-login flows can
+  force a password rotation and MFA enrolment.
 - **Migrations:** `0007_*.sql` and `0009_*.sql` rewrite `products.status`. Inspect generated SQL before applying, verify it's non-destructive, and never drop existing data. Always modify schema first, then generate → inspect → migrate.
 
 ## Architecture

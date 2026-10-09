@@ -211,6 +211,24 @@ describe("the tables the spec asks for", () => {
   });
 });
 
+describe("PROMPT 2 first-login flags on users", () => {
+  it("adds must_change_password / must_enroll_mfa as non-null booleans defaulting to false", () => {
+    // Seeded staff/demo accounts must rotate the shared password and (for staff)
+    // enrol MFA; real users default both flags off. Migration 0020 adds them.
+    expect(columnNames("users")).toEqual(
+      expect.arrayContaining(["must_change_password", "must_enroll_mfa"]),
+    );
+    for (const columnName of ["must_change_password", "must_enroll_mfa"]) {
+      const column = tableConfig("users").columns.find((entry) => entry.name === columnName);
+      expect(column, `users.${columnName} does not exist`).toBeDefined();
+      expect(column?.getSQLType(), columnName).toBe("boolean");
+      expect(column?.notNull, columnName).toBe(true);
+      expect(column?.hasDefault, columnName).toBe(true);
+      expect(column?.default, columnName).toBe(false);
+    }
+  });
+});
+
 describe("money is stored as integer paise", () => {
   const MONEY_COLUMNS: [string, string][] = [
     ["products", "purchase_price"],

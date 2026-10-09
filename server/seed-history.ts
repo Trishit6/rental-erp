@@ -57,16 +57,23 @@ const SCALE = Number(process.env.HISTORY_SCALE ?? 1);
 const RNG_SEED = Number(process.env.HISTORY_SEED ?? 20261002);
 const PASSWORD = process.env.HISTORY_PASSWORD ?? "revaro-dev-2026";
 
+/**
+ * The volume the marketplace seed targets.
+ *
+ * Sized to the PROMPT 2 brief: 200+ accounts, 500+ orders, 600+ reviews, with
+ * favourites, carts, conversations and notifications to match. `HISTORY_SCALE`
+ * shrinks every number together for iteration; the full run is the default.
+ */
 const TARGETS = {
-  buyers: Math.round(60 * SCALE),
-  sellers: Math.round(28 * SCALE),
-  orders: Math.round(340 * SCALE),
-  rentals: Math.round(150 * SCALE),
-  reviews: Math.round(200 * SCALE),
-  favorites: Math.round(300 * SCALE),
-  carts: Math.round(120 * SCALE),
-  conversations: Math.round(70 * SCALE),
-  notifications: Math.round(220 * SCALE),
+  buyers: Math.round(175 * SCALE),
+  sellers: Math.round(32 * SCALE),
+  orders: Math.round(540 * SCALE),
+  rentals: Math.round(220 * SCALE),
+  reviews: Math.round(660 * SCALE),
+  favorites: Math.round(420 * SCALE),
+  carts: Math.round(200 * SCALE),
+  conversations: Math.round(90 * SCALE),
+  notifications: Math.round(300 * SCALE),
 } as const;
 
 /**
@@ -301,6 +308,10 @@ type CatalogueProduct = Pick<
 /* ----------------------------------- main ----------------------------------- */
 
 async function main() {
+  if (process.env.NODE_ENV === "production") {
+    console.error("Refusing to seed: NODE_ENV is 'production'. There is no override for this.");
+    process.exit(1);
+  }
   console.log("Revaro history seeder");
   console.log(`  scale=${SCALE} rng=${RNG_SEED}`);
   console.log(
@@ -733,11 +744,12 @@ async function main() {
     let status: string;
     if (order.status === "CANCELLED") status = "CANCELLED";
     else if (daysIn < 0) status = "CONFIRMED";
-    else if (daysLeft < 0) status = chance(0.15) ? "OVERDUE" : "COMPLETED";
+    else if (daysLeft < 0)
+      status = chance(0.12) ? "OVERDUE" : chance(0.12) ? "RETURNED" : chance(0.04) ? "DISPUTED" : "COMPLETED";
     else if (daysLeft <= 1) status = "RETURN_PENDING";
     else status = "ACTIVE";
 
-    const returned = status === "COMPLETED";
+    const returned = status === "COMPLETED" || status === "RETURNED";
     rentalRows.push({
       orderId: order.id,
       orderItemId: Number(item.id),
@@ -753,8 +765,11 @@ async function main() {
       deliveryFee: 0,
       total: (line.rentalCharge ?? 0) + (line.securityDeposit ?? 0),
       status,
-      returnRequestedAt: status === "COMPLETED" ? new Date(end.getTime() - DAY) : null,
-      completedAt: returned ? new Date(end.getTime() + randInt(0, 2) * DAY) : null,
+      returnRequestedAt:
+        status === "COMPLETED" || status === "RETURNED" ? new Date(end.getTime() - DAY) : null,
+      // `RETURNED` means the item is back but the rental is not closed yet, so it
+      // deliberately has no completion timestamp — only `COMPLETED` is finished.
+      completedAt: status === "COMPLETED" ? new Date(end.getTime() + randInt(0, 2) * DAY) : null,
       createdAt: start,
     });
     rentalMeta.push({ start, end, status });
@@ -790,9 +805,13 @@ async function main() {
       add("DELIVERY_COMPLETED", new Date(meta.start.getTime() - 6 * 60 * 60 * 1000));
       add("STARTED", meta.start);
     }
-    if (meta.status === "COMPLETED") {
+    // `RETURNED` (item back, not yet closed) and `COMPLETED` both have a return
+    // story; only `COMPLETED` has the closing event that ends it.
+    if (meta.status === "COMPLETED" || meta.status === "RETURNED") {
       add("RETURN_REQUESTED", new Date(meta.end.getTime() - DAY));
       add("RETURNED", meta.end);
+    }
+    if (meta.status === "COMPLETED") {
       add("COMPLETED", new Date(meta.end.getTime() + DAY));
     }
   });
