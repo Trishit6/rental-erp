@@ -54,6 +54,9 @@ export const TRUNCATED_TABLES = [
   "login_attempts",
   // Before `users`.
   "security_events",
+  // Before `users`. A reset token that outlives its account is a link to nothing,
+  // but its hash must still be cleared so the next run's ids cannot resurrect it.
+  "password_reset_tokens",
   // Before `users`.
   "cms_banners",
   // Before `users`.

@@ -32,6 +32,9 @@ export const EMAIL_TEMPLATES = [
   "RENTAL_REMINDER",
   "REFUND_COMPLETED",
   "SELLER_LISTING_APPROVED",
+  // Auth-flow mail is composed by the route rather than by a notification, because
+  // a password-reset link is a standalone credential, not a nudge about a record.
+  "PASSWORD_RESET",
 ] as const;
 
 export type EmailTemplate = (typeof EMAIL_TEMPLATES)[number];
@@ -49,6 +52,7 @@ export const EMAIL_TEMPLATE_LABELS: Record<EmailTemplate, string> = {
   RENTAL_REMINDER: "Rental return reminder",
   REFUND_COMPLETED: "Refund completed",
   SELLER_LISTING_APPROVED: "Listing approved",
+  PASSWORD_RESET: "Password reset",
 };
 
 export type EmailMessage = {

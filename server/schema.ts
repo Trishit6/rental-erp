@@ -29,6 +29,17 @@ export const users = mysqlTable(
     role: varchar("role", { length: 10 }).notNull().default("USER"),
     verified: boolean("verified").notNull().default(false),
     /**
+     * Account state: `ACTIVE | SUSPENDED` (see `USER_STATUSES` in `lib/enums`).
+     *
+     * Added for PROMPT 3 so suspension is a first-class fact rather than the old
+     * practice of overwriting `users.role` with `SUSPENDED` — which destroyed the
+     * account's actual role and could not express "suspended seller" at all.
+     * `attachUser` and the login path both refuse a non-`ACTIVE` account, and
+     * suspending revokes every live session so the change takes effect on the
+     * next request rather than at the next token renewal.
+     */
+    status: varchar("status", { length: 16 }).notNull().default("ACTIVE"),
+    /**
      * Seeded/demo accounts must rotate the shared development password before
      * they can be used for anything real. `pnpm db:seed` sets this on every
      * account it creates; a later profile/security prompt is what clears it.
@@ -1940,6 +1951,39 @@ export const mfaRecoveryCodes = mysqlTable(
   ],
 );
 
+/* ------------------------------ password reset ----------------------------- */
+
+export const passwordResetTokens = mysqlTable(
+  "password_reset_tokens",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /**
+     * SHA-256 of the token emailed to the user — the plaintext token exists only
+     * in the link, so a dump of this table is not a set of usable reset links.
+     */
+    tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+    /**
+     * Single-use: resetting stamps this, and a second presentation of the same
+     * token is refused because the row is already spent. Kept rather than deleted
+     * so "this token was used" is answerable during an investigation.
+     */
+    usedAt: timestamp("used_at"),
+    expiresAt: timestamp("expires_at").notNull(),
+    /** The IP that requested the reset, for the security trail. Never the token. */
+    requestedIp: varchar("requested_ip", { length: 45 }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("password_reset_tokens_hash_unique").on(table.tokenHash),
+    // "spend the newest unused token for this user, then delete their other rows".
+    index("password_reset_tokens_user_created_idx").on(table.userId, table.createdAt),
+    check("password_reset_tokens_hash_not_empty", sql`LENGTH(${table.tokenHash}) > 0`),
+  ],
+);
+
 /* ---------------------------- login and security --------------------------- */
 
 export const loginAttempts = mysqlTable(
@@ -2966,6 +3010,10 @@ export const loginAttemptsRelations = relations(loginAttempts, ({ one }) => ({
 
 export const securityEventsRelations = relations(securityEvents, ({ one }) => ({
   user: one(users, { fields: [securityEvents.userId], references: [users.id] }),
+}));
+
+export const passwordResetTokensRelations = relations(passwordResetTokens, ({ one }) => ({
+  user: one(users, { fields: [passwordResetTokens.userId], references: [users.id] }),
 }));
 
 export const cmsBannersRelations = relations(cmsBanners, ({ one }) => ({

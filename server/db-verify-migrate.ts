@@ -67,6 +67,8 @@ const REQUIRED_TABLES = [
   "mfa_recovery_codes",
   "login_attempts",
   "security_events",
+  // PROMPT 3 — hashed single-use password reset tokens.
+  "password_reset_tokens",
   "cms_banners",
   "cms_blocks",
   "support_tickets",

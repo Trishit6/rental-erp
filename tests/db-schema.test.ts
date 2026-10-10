@@ -164,7 +164,7 @@ describe("the tables the spec asks for", () => {
   it("introduces no table that does not exist in MariaDB", () => {
     // The other direction: a table left behind in the schema after being dropped
     // would make every query against it fail at runtime and only at runtime.
-    expect(tablesByName.size).toBe(56);
+    expect(tablesByName.size).toBe(57);
   });
 
   it("gives every table a created_at", () => {
@@ -195,6 +195,7 @@ describe("the tables the spec asks for", () => {
       user_roles: "junction; a grant is added or removed, never edited",
       login_attempts: "one row per attempt, written at the moment it happens",
       security_events: "append-only security audit trail",
+      password_reset_tokens: "append-only; a spent token is stamped, never edited",
       ticket_messages: "append-only transcript; a message is never rewritten",
       ticket_attachments: "append-only file reference; a row is created once",
       coupon_redemptions: "append-only; one row per redemption, in the transaction that spends it",
@@ -226,6 +227,44 @@ describe("PROMPT 2 first-login flags on users", () => {
       expect(column?.hasDefault, columnName).toBe(true);
       expect(column?.default, columnName).toBe(false);
     }
+  });
+});
+
+describe("PROMPT 3 account state and password resets", () => {
+  it("suspension is a first-class users.status column, not a role overwrite", () => {
+    // PROMPT 3 makes SUSPENDED a real state (migration 0021): the login path and
+    // attachUser both refuse a non-ACTIVE account, and suspending revokes
+    // sessions. The old approach of overwriting users.role could not express a
+    // suspended seller at all.
+    const column = tableConfig("users").columns.find((entry) => entry.name === "status");
+    expect(column, "users.status does not exist").toBeDefined();
+    expect(column?.getSQLType(), "users.status").toBe("varchar(16)");
+    expect(column?.notNull, "users.status").toBe(true);
+    expect(column?.hasDefault, "users.status").toBe(true);
+    expect(String(column?.default), "users.status default").toBe("ACTIVE");
+  });
+
+  it("password_reset_tokens stores only the hash, is single-use and expiring", () => {
+    expect(columnNames("password_reset_tokens")).toEqual(
+      expect.arrayContaining(["user_id", "token_hash", "used_at", "expires_at", "requested_ip"]),
+    );
+    const hashColumn = tableConfig("password_reset_tokens").columns.find(
+      (entry) => entry.name === "token_hash",
+    );
+    expect(hashColumn?.getSQLType(), "password_reset_tokens.token_hash").toBe("varchar(64)");
+    // The hash feeds a UNIQUE index lookup that must hand back exactly one row.
+    // (`uniqueIndex` builds an index whose `config.unique` is true; it is not a
+    // `unique(...)` inline constraint, so it appears in `indexes`.)
+    expect(
+      tableConfig("password_reset_tokens").indexes.some(
+        (key) =>
+          key.config.name === "password_reset_tokens_hash_unique" && key.config.unique === true,
+      ),
+    ).toBe(true);
+    // FK to users with cascade: a deleted account takes its reset tokens with it.
+    expect(deleteRules("password_reset_tokens")).toEqual([
+      { column: "user_id", to: "users", onDelete: "cascade" },
+    ]);
   });
 });
 

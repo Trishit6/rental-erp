@@ -1,6 +1,6 @@
 import { Router } from "../lib/http";
 import { z } from "zod";
-import { ne, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, ne, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   orders,
@@ -14,9 +14,21 @@ import {
   users,
   categories,
   sellerProfiles,
+  roles,
+  rolePermissions,
+  userRoles,
+  permissions,
 } from "../schema";
 import { ok, HttpError, buildPagination, paginationQuerySchema } from "../lib/api";
-import { requireAdmin } from "../lib/auth";
+import { requireAdmin, requireStepUp, restoreUser, suspendUser } from "../lib/auth";
+import {
+  requireMfaEnrolment,
+  requirePermission,
+  resolveAccess,
+  invalidateAccess,
+  isLastActiveSuperAdmin,
+} from "../lib/permissions";
+import { recordSecurityEvent, requestIp, requestUserAgent } from "../lib/security-log";
 import {
   adminProductsQuerySchema,
   listAdminProductFacets,
@@ -57,7 +69,9 @@ export const adminRoute = new Router();
 
 adminRoute.use("*", async (c, next) => {
   requireAdmin(c);
-  await next();
+  // Staff areas are MFA-mandatory (PROMPT 3). The enrolment endpoints on the auth
+  // router stay reachable so a blocked staff member can always turn MFA on.
+  await requireMfaEnrolment()(c, next);
 });
 
 /* -------------------------------- dashboard -------------------------------- */
@@ -598,39 +612,12 @@ adminRoute.get("/users", async (c) => {
   return c.json(ok(rows, buildPagination(query.page, query.pageSize, total)));
 });
 
-adminRoute.patch("/users/:id/suspend", async (c) => {
-  const id = Number(c.req.param("id"));
-  const [row] = await db
-    .select({ id: users.id, role: users.role, name: users.name })
-    .from(users)
-    .where(eq(users.id, id))
-    .limit(1);
-  if (!row) throw new HttpError(404, "NOT_FOUND", "User not found.");
-  if (row.role !== "USER") {
-    throw new HttpError(409, "INVALID_TRANSITION", "Only regular accounts can be suspended.");
-  }
-
-  await db.update(users).set({ role: "SUSPENDED" }).where(eq(users.id, id));
-  await recordAudit(c, "USER_SUSPENDED", "user", id, `Suspended ${row.name} (#${id}).`);
-  return c.json(ok({ suspended: true }));
-});
-
-adminRoute.patch("/users/:id/unsuspend", async (c) => {
-  const id = Number(c.req.param("id"));
-  const [row] = await db
-    .select({ id: users.id, role: users.role, name: users.name })
-    .from(users)
-    .where(eq(users.id, id))
-    .limit(1);
-  if (!row) throw new HttpError(404, "NOT_FOUND", "User not found.");
-  if (row.role !== "SUSPENDED") {
-    throw new HttpError(409, "INVALID_TRANSITION", "This account is not suspended.");
-  }
-
-  await db.update(users).set({ role: "USER" }).where(eq(users.id, id));
-  await recordAudit(c, "USER_RESTORED", "user", id, `Restored ${row.name} (#${id}).`);
-  return c.json(ok({ unsuspended: true }));
-});
+/**
+ * Suspension has exactly one route: `PATCH /users/:id/status` (below, in the RBAC
+ * section). The old `/suspend` and `/unsuspend` handlers wrote `users.role`, which
+ * the auth gate no longer reads — it reads `users.status` — so they were another
+ * source of truth that silently stopped suspending anyone.
+ */
 
 /* --------------------------------- sellers ---------------------------------- */
 
@@ -1120,4 +1107,224 @@ adminRoute.patch("/reports/:id", async (c) => {
   }
   await db.update(reports).set({ status: body.status }).where(eq(reports.id, id));
   return c.json(ok({ updated: true }));
+});
+
+/* ----------------------------------- RBAC ----------------------------------- */
+
+/**
+ * `GET /api/admin/roles` — every role and the permission keys it carries.
+ *
+ * The permission resolution (`lib/permissions.ts`) reads exactly these joins at
+ * runtime, so this listing is also a dry run of the shape an auth decision sees.
+ */
+adminRoute.get("/roles", async (c) => {
+  const roleRows = await db
+    .select({
+      id: roles.id,
+      name: roles.name,
+      description: roles.description,
+      isSystem: roles.isSystem,
+    })
+    .from(roles)
+    .orderBy(asc(roles.name));
+  const grantRows = await db
+    .select({ roleId: rolePermissions.roleId, key: permissions.key })
+    .from(rolePermissions)
+    .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id));
+  const keysByRole = new Map<number, string[]>();
+  for (const row of grantRows) {
+    const keys = keysByRole.get(row.roleId) ?? [];
+    keys.push(row.key);
+    keysByRole.set(row.roleId, keys);
+  }
+  return c.json(
+    ok(
+      roleRows.map((role) => ({
+        ...role,
+        permissions: (keysByRole.get(role.id) ?? []).sort(),
+      })),
+    ),
+  );
+});
+
+/** `GET /api/admin/permissions` — the full permission vocabulary. */
+adminRoute.get("/permissions", async (c) => {
+  const rows = await db
+    .select({ key: permissions.key, description: permissions.description })
+    .from(permissions)
+    .orderBy(asc(permissions.key));
+  return c.json(ok(rows));
+});
+
+/** `GET /api/admin/users/:id/roles` — which roles a specific account holds. */
+adminRoute.get("/users/:id{[0-9]+}/roles", async (c) => {
+  const userId = Number(c.req.param("id"));
+  const rows = await db
+    .select({ name: roles.name })
+    .from(userRoles)
+    .innerJoin(roles, eq(userRoles.roleId, roles.id))
+    .where(eq(userRoles.userId, userId))
+    .orderBy(asc(roles.name));
+  return c.json(ok(rows.map((row) => row.name)));
+});
+
+const setUserRolesSchema = z
+  .object({ roles: z.array(z.string().trim().min(1).max(32)).max(12) })
+  .strict();
+
+/**
+ * `PUT /api/admin/users/:id/roles` — set an account's system roles.
+ *
+ * Only a `SUPER_ADMIN` gets here: the route requires `rbac.manage`, which the seed
+ * grants to no other role. Two structural rules are enforced on top:
+ *
+ * - **Last-super-admin protection.** Revoking `SUPER_ADMIN` from the final
+ *   non-suspended holder is refused with a 409, because no operation is worth
+ *   making the platform unadministerable.
+ * - **Step-up.** The change requires a recent second-factor verification on the
+ *   caller's session, so a hijacked-session attacker cannot hand themselves `ADMIN`
+ *   — that would be privilege escalation standing on another person's stolen cookie.
+ */
+adminRoute.put("/users/:id{[0-9]+}/roles", async (c) => {
+  const admin = await requireStepUp(c);
+  await requirePermission("rbac.manage")(c, async () => undefined);
+  const userId = Number(c.req.param("id"));
+  const input = setUserRolesSchema.parse(await c.req.json().catch(() => ({})));
+
+  const [target] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!target) throw new HttpError(404, "NOT_FOUND", "User not found.");
+
+  const requestedNames = [...new Set(input.roles)];
+  const roleRows = await db
+    .select({ id: roles.id, name: roles.name })
+    .from(roles)
+    .where(inArray(roles.name, requestedNames));
+  if (roleRows.length !== requestedNames.length) {
+    throw new HttpError(400, "BAD_REQUEST", "One or more role names are not recognised.");
+  }
+  const requestedIds = new Map(roleRows.map((role) => [role.name, role.id] as const));
+
+  const existing = await db
+    .select({ roleId: userRoles.roleId, name: roles.name })
+    .from(userRoles)
+    .innerJoin(roles, eq(userRoles.roleId, roles.id))
+    .where(eq(userRoles.userId, userId));
+  const existingByName = new Map(existing.map((row) => [row.name, row.roleId] as const));
+
+  if (
+    existingByName.has("SUPER_ADMIN") &&
+    !requestedIds.has("SUPER_ADMIN") &&
+    (await isLastActiveSuperAdmin(userId))
+  ) {
+    throw new HttpError(409, "LAST_SUPER_ADMIN", "You cannot revoke the last super administrator.");
+  }
+
+  await db.transaction(async (tx) => {
+    for (const [roleName, roleId] of requestedIds) {
+      if (!existingByName.has(roleName)) {
+        await tx.insert(userRoles).values({ userId, roleId, grantedBy: admin.id });
+      }
+    }
+    for (const [roleName, roleId] of existingByName) {
+      if (!requestedIds.has(roleName)) {
+        await tx.delete(userRoles).where(
+          and(eq(userRoles.userId, userId), eq(userRoles.roleId, roleId)),
+        );
+      }
+    }
+  });
+
+  // The next request this user makes must see the new grants.
+  invalidateAccess(userId);
+
+  const added = [...requestedIds.keys()].filter((name) => !existingByName.has(name));
+  const removed = [...existingByName.keys()].filter((name) => !requestedIds.has(name));
+  const granted = requestedNames.join(", ") || "none";
+  await recordAudit(
+    c,
+    "RBAC_ROLES_SET",
+    "user",
+    userId,
+    `Roles → ${granted}${added.length ? ` (+${added.join(",")})` : ""}${removed.length ? ` (-${removed.join(",")})` : ""}.`,
+  );
+  const ip = requestIp(c);
+  const userAgent = requestUserAgent(c);
+  if (added.length) {
+    await recordSecurityEvent({
+      userId,
+      type: "ROLE_GRANTED",
+      ip,
+      userAgent,
+      details: { roles: added, by: admin.id },
+    });
+  }
+  if (removed.length) {
+    await recordSecurityEvent({
+      userId,
+      type: "ROLE_REVOKED",
+      ip,
+      userAgent,
+      details: { roles: removed, by: admin.id },
+    });
+  }
+
+  return c.json(ok({ roles: requestedNames }));
+});
+
+const setUserStatusSchema = z.object({ status: z.enum(["ACTIVE", "SUSPENDED"]) }).strict();
+
+/**
+ * `PATCH /api/admin/users/:id/status` — suspend or restore an account.
+ *
+ * Suspension is the dangerous direction: the account's sessions die immediately
+ * (`suspendUser` deletes them) and the login path refuses the account's password
+ * until it is restored. The two structural rules are `users.manage` permission and
+ * step-up, plus the same last-super-admin protection as role changes.
+ */
+adminRoute.patch("/users/:id{[0-9]+}/status", async (c) => {
+  const admin = await requireStepUp(c);
+  await requirePermission("users.manage")(c, async () => undefined);
+  const userId = Number(c.req.param("id"));
+  const input = setUserStatusSchema.parse(await c.req.json().catch(() => ({})));
+
+  const [target] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!target) throw new HttpError(404, "NOT_FOUND", "User not found.");
+
+  if (input.status === "SUSPENDED") {
+    const targetAccess = await resolveAccess(userId);
+    if (targetAccess.roles.has("SUPER_ADMIN") && (await isLastActiveSuperAdmin(userId))) {
+      throw new HttpError(409, "LAST_SUPER_ADMIN", "You cannot suspend the last super administrator.");
+    }
+    const revokedSessions = await suspendUser(userId);
+    invalidateAccess(userId);
+    await recordAudit(c, "USER_STATUS_CHANGED", "user", userId, "Suspended the account.");
+    await recordSecurityEvent({
+      userId,
+      type: "ACCOUNT_SUSPENDED",
+      ip: requestIp(c),
+      userAgent: requestUserAgent(c),
+      details: { by: admin.id, revokedSessions },
+    });
+    return c.json(ok({ status: "SUSPENDED", revokedSessions }));
+  }
+
+  await restoreUser(userId);
+  invalidateAccess(userId);
+  await recordAudit(c, "USER_STATUS_CHANGED", "user", userId, "Restored the account.");
+  await recordSecurityEvent({
+    userId,
+    type: "ACCOUNT_UNSUSPENDED",
+    ip: requestIp(c),
+    userAgent: requestUserAgent(c),
+    details: { by: admin.id },
+  });
+  return c.json(ok({ status: "ACTIVE" }));
 });

@@ -4,19 +4,37 @@ import { clearPrivateCollections } from "@/lib/tanstack-db";
 import { publishAuthChange } from "@/lib/auth/session-sync";
 import {
   changePassword,
+  completeMfaChallenge,
+  disableMfa,
+  forgotPassword,
   getCurrentUser,
+  getMfaStatus,
+  getSessions,
   login,
   logout,
   logoutAll,
+  regenerateRecoveryCodes,
   register,
+  resetPassword,
+  revokeSession,
+  startMfaSetup,
   updateProfile,
+  verifyMfaSetup,
 } from "./api";
 import type {
   ChangePasswordPayload,
   ChangePasswordResponse,
+  ForgotPasswordPayload,
   LoginPayload,
+  LoginResult,
+  MfaChallengePayload,
+  MfaDisableResult,
+  MfaSetupResult,
+  MfaVerifyResult,
   ProfileUpdatePayload,
   RegisterPayload,
+  ResetPasswordPayload,
+  SessionInfo,
   User,
 } from "./types";
 
@@ -81,10 +99,30 @@ export function useLoginMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: LoginPayload) => login(payload),
-    onSuccess: (user: User) => {
+    onSuccess: (result: LoginResult) => {
+      // An MFA-required answer is not an authentication event: no session exists
+      // yet, so there is nothing to cache and no tab to tell. The challenge step
+      // continues from the ticket it returned.
+      if ("mfaRequired" in result) return;
       // Seed the cache directly — no refetch needed after login.
-      queryClient.setQueryData(queryKeys.auth, user);
+      queryClient.setQueryData(queryKeys.auth, result);
       // Tell other tabs. They re-fetch `/auth/me`; no identity is broadcast.
+      publishAuthChange("signed-in");
+    },
+  });
+}
+
+/**
+ * The second half of a sign-in for an MFA-protected account. Success IS an
+ * authentication event (the server issues the session here), so the cache is
+ * seeded the same way `useLoginMutation` does for a single-factor login.
+ */
+export function useMfaChallengeMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: MfaChallengePayload) => completeMfaChallenge(payload),
+    onSuccess: (user: User) => {
+      queryClient.setQueryData(queryKeys.auth, user);
       publishAuthChange("signed-in");
     },
   });
@@ -172,6 +210,129 @@ export function useUpdateProfileMutation() {
 export function useChangePasswordMutation() {
   return useMutation({
     mutationFn: (payload: ChangePasswordPayload) => changePassword(payload),
+  });
+}
+
+/* ----------------------------------- MFA ---------------------------------- */
+
+/** The signed-in user's MFA state; also drives the profile security card. */
+export function useMfaStatusQuery() {
+  return useQuery({
+    queryKey: queryKeys.authMfaStatus,
+    queryFn: getMfaStatus,
+    staleTime: 60_000,
+  });
+}
+
+/** Begin enrolment — returns the secret (shown once) and the otpauth URL. */
+export function useMfaSetupMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (): Promise<MfaSetupResult> => startMfaSetup(),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.authMfaStatus });
+    },
+  });
+}
+
+/**
+ * Confirm enrolment with the first live code. The response carries the fresh
+ * recovery codes exactly once, so the card that rendered this mutation shows
+ * them immediately and never again.
+ */
+export function useMfaVerifyMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string): Promise<MfaVerifyResult> => verifyMfaSetup(code),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.authMfaStatus });
+    },
+  });
+}
+
+/**
+ * Turn MFA off. The session user's `mfaEnabled` is patched from the server's
+ * answer so the admin gate's precondition (staff must be re-flagged) is visible
+ * in the header/profile immediately.
+ */
+export function useMfaDisableMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { password: string; code: string }): Promise<MfaDisableResult> =>
+      disableMfa(payload),
+    onSuccess: (result) => {
+      queryClient.setQueryData<User>(queryKeys.auth, (user) =>
+        user ? { ...user, mfaEnabled: false, mustEnrollMfa: result.mustEnrollMfa } : user,
+      );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.authMfaStatus });
+    },
+  });
+}
+
+/** Regenerate recovery codes; they are shown exactly once. */
+export function useMfaRegenerateRecoveryCodesMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (password: string) => regenerateRecoveryCodes(password),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.authMfaStatus });
+    },
+  });
+}
+
+/* ------------------------------- my sessions ------------------------------- */
+
+/** The signed-in user's live sessions, newest activity first. */
+export function useSessionsQuery() {
+  return useQuery({
+    queryKey: queryKeys.authSessions,
+    queryFn: getSessions,
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Revoke one of my own sessions.
+ *
+ * Revoking the *current* session is a sign-out: the server has already deleted
+ * the row and cleared the cookies before answering, so client state is cleared
+ * exactly like `useLogoutMutation` does (same shared-machine reasoning). Any
+ * other session just refetches the list.
+ */
+export function useRevokeSessionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) => revokeSession(sessionId),
+    onSuccess: (_result, sessionId) => {
+      const rows = queryClient.getQueryData<SessionInfo[]>(queryKeys.authSessions);
+      const wasCurrent = rows?.some((row) => row.id === sessionId && row.current) ?? false;
+      if (wasCurrent) {
+        clearAuthState(queryClient);
+        publishAuthChange("signed-out");
+        return undefined;
+      }
+      return queryClient.invalidateQueries({ queryKey: queryKeys.authSessions });
+    },
+  });
+}
+
+/* ------------------------------ password reset ----------------------------- */
+
+/**
+ * Request a reset link. Answers `{ sent: true }` regardless of whether the
+ * address exists (server no-enumeration), so the form's success state says the
+ * same generic sentence to every visitor.
+ */
+export function useForgotPasswordMutation() {
+  return useMutation({
+    mutationFn: (payload: ForgotPasswordPayload) => forgotPassword(payload),
+  });
+}
+
+/** Spend the emailed token and set a new password; ends every session. */
+export function useResetPasswordMutation() {
+  return useMutation({
+    mutationFn: (payload: ResetPasswordPayload) => resetPassword(payload),
   });
 }
 

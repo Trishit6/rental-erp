@@ -30,10 +30,17 @@
  */
 
 import { SignJWT, jwtVerify } from "jose";
-import { accessTokenSecret, ACCESS_TOKEN_TTL_SECONDS } from "./env";
+import { accessTokenSecret, ACCESS_TOKEN_TTL_SECONDS, MFA_TICKET_TTL_SECONDS } from "./env";
 
 /** Who issues these tokens. Verified on the way in so a foreign token is refused. */
 export const ACCESS_TOKEN_ISSUER = "revaro";
+
+/**
+ * Who the token is *for*. Checked alongside the issuer so a token minted for a
+ * different audience of the same deployment (a future mobile client, an
+ * integration) cannot be replayed against the web API.
+ */
+export const ACCESS_TOKEN_AUDIENCE = "revaro-app";
 
 /**
  * The whole payload, by design.
@@ -83,6 +90,7 @@ export async function signAccessToken(input: AccessTokenInput): Promise<string> 
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setSubject(String(input.userId))
     .setIssuer(ACCESS_TOKEN_ISSUER)
+    .setAudience(ACCESS_TOKEN_AUDIENCE)
     .setIssuedAt()
     .setExpirationTime(`${ACCESS_TOKEN_TTL_SECONDS}s`)
     .sign(secretKey());
@@ -108,6 +116,7 @@ export async function verifyAccessToken(token: string): Promise<AccessTokenClaim
   try {
     const { payload } = await jwtVerify(token, secretKey(), {
       issuer: ACCESS_TOKEN_ISSUER,
+      audience: ACCESS_TOKEN_AUDIENCE,
       algorithms: ["HS256"],
       clockTolerance: 5,
     });
@@ -129,6 +138,56 @@ export async function verifyAccessToken(token: string): Promise<AccessTokenClaim
     // Expired, tampered, unsigned with another secret, or not a JWT at all.
     // Logged nowhere on purpose: the token itself is the credential, and writing
     // it (or a fragment of it) to a log is how "never log the JWT" gets broken.
+    return null;
+  }
+}
+
+/* ------------------------------- MFA tickets ------------------------------- */
+
+/**
+ * Audience for the short-lived ticket minted between a correct password and a
+ * correct TOTP code.
+ *
+ * A distinct audience means a ticket can never be presented as an access token or
+ * vice versa, even though both are signed by the same key: `verifyAccessToken`
+ * refuses the ticket's audience and `verifyMfaTicket` refuses the token's. The
+ * ticket names a user but no *session*, because the session does not exist until
+ * the second factor is satisfied.
+ */
+export const MFA_TICKET_AUDIENCE = "revaro-mfa";
+
+export type MfaTicketInput = {
+  userId: number;
+};
+
+/** Mint a short-lived MFA ticket. Returned to the client; never stored server-side. */
+export async function signMfaTicket(input: MfaTicketInput): Promise<string> {
+  return new SignJWT({ purpose: "mfa" })
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setSubject(String(input.userId))
+    .setIssuer(ACCESS_TOKEN_ISSUER)
+    .setAudience(MFA_TICKET_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime(`${MFA_TICKET_TTL_SECONDS}s`)
+    .sign(secretKey());
+}
+
+/** Verify an MFA ticket and return the user id it names, or `null`. */
+export async function verifyMfaTicket(token: string): Promise<number | null> {
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, secretKey(), {
+      issuer: ACCESS_TOKEN_ISSUER,
+      audience: MFA_TICKET_AUDIENCE,
+      algorithms: ["HS256"],
+      clockTolerance: 5,
+    });
+    const sub = payload.sub;
+    if (typeof sub !== "string") return null;
+    const userId = Number(sub);
+    if (!Number.isInteger(userId) || userId <= 0) return null;
+    return userId;
+  } catch {
     return null;
   }
 }

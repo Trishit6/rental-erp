@@ -1,5 +1,5 @@
 import "dotenv/config";
-import bcrypt from "bcryptjs";
+import { hashPassword } from "./lib/password";
 import { sql } from "drizzle-orm";
 import { db, pool } from "./db";
 import {
@@ -237,9 +237,9 @@ async function seed() {
   const randInt = (min: number, max: number) => min + Math.floor(rand() * (max - min + 1));
 
   console.log("Seeding users...");
-  const passwordHash = await bcrypt.hash(DEV_PASSWORD, 10);
+  const passwordHash = await hashPassword(DEV_PASSWORD);
   // Hashed separately so `ADMIN_PASSWORD` can differ from the shared demo password.
-  const adminPasswordHash = await bcrypt.hash(DEV_ADMIN_PASSWORD, 10);
+  const adminPasswordHash = await hashPassword(DEV_ADMIN_PASSWORD);
   const insertedUsers = await db
     .insert(users)
     .values([

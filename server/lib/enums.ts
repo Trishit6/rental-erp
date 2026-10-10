@@ -46,7 +46,7 @@ import { ADMIN_PRODUCT_LISTING_TYPES } from "./admin-products";
  * | `rental_status`   | stored keeps `OVERDUE` / `DISPUTED`, adds them to the brief's list; the brief's `PENDING` / `UPCOMING` / `EXPIRED` have no stored equivalent — rentals are `CONFIRMED` from the moment an order is |
  * | `payment_status`  | `transactions.status` matches the brief exactly; `orders.payment_status` is the order-level view (`PENDING` / `PAID` / `REFUNDED` / …) |
  * | `ticket_status`   | `OPEN` / `PENDING` / `IN_PROGRESS` / `RESOLVED` / `CLOSED` — new table, no stored history to reconcile |
- * | `user_status`     | **no column** — suspension currently overwrites `users.role` with `SUSPENDED` (Follow-up F3) |
+ * | `user_status`     | `users.status` (`ACTIVE` / `SUSPENDED`) — suspension is account state, never written to `users.role` |
  * | `seller_status`   | **no column** — `seller_profiles.verified` only (Follow-up F4) |
  */
 
@@ -90,15 +90,15 @@ export const USER_ROLES = ["USER", "SELLER", "ADMIN"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
 /**
- * The brief's `user_status`.
+ * The brief's `user_status`, backed by `users.status`.
  *
- * **There is no `users.status` column yet.** Suspension is stored by writing
- * `users.role = 'SUSPENDED'`, which overwrites the role the account actually
- * has — a suspended seller's seller-ness disappears from the data. That is a
- * real design debt, and it is listed as Follow-up F3 in `docs/database.md`
- * rather than fixed here, because adding the column without also changing the
- * two endpoints that suspend and unsuspend would leave two sources of truth
- * disagreeing. Exposed so the vocabulary is written down once.
+ * Suspension lives on its own column precisely so it never overwrites the role an
+ * account actually has — a suspended seller keeps `role = 'SELLER'` and carries
+ * `status = 'SUSPENDED'`. `attachUser` and the login path refuse a non-`ACTIVE`
+ * account, and suspending revokes every live session. The admin surface suspends
+ * through the single `PATCH /api/admin/users/:id/status` route (guarded by
+ * `users.manage` + step-up + last-super-admin protection), and the admin queries
+ * treat `SUSPENDED` as `users.status = 'SUSPENDED'` — never `users.role`.
  */
 export const USER_STATUSES = ["ACTIVE", "SUSPENDED"] as const;
 export type UserStatus = (typeof USER_STATUSES)[number];

@@ -179,6 +179,7 @@ const SUBJECTS: Record<EmailTemplate, (data: EmailRenderData) => string> = {
   REFUND_COMPLETED: (d) =>
     `Your refund${d.orderNumber ? ` for order ${d.orderNumber}` : ""} is on its way`.trim(),
   SELLER_LISTING_APPROVED: (d) => `Your listing is now live${d.subjectLine ? `: ${d.subjectLine}` : ""}`,
+  PASSWORD_RESET: () => "Reset your Revaro password",
 };
 
 /**

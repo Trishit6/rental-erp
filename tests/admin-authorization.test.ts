@@ -60,6 +60,10 @@ function routerAs(role: "ADMIN" | "SELLER" | "USER" | null): Router {
         email: "user@revaro.local",
         verified: true,
         avatarUrl: null,
+        status: "ACTIVE",
+        mustChangePassword: false,
+        mustEnrollMfa: false,
+        mfaEnabled: true,
       } satisfies SessionUser);
     }
     await next();

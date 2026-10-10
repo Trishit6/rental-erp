@@ -23,7 +23,7 @@
  * "today" cannot tell a sort order apart from an accident.
  */
 import "dotenv/config";
-import bcrypt from "bcryptjs";
+import { hashPassword } from "./lib/password";
 import { and, count, eq, inArray, ne, sql } from "drizzle-orm";
 import { db, pool } from "./db";
 import {
@@ -319,7 +319,7 @@ async function main() {
       `${TARGETS.rentals} rentals, ${TARGETS.reviews} reviews`,
   );
 
-  const passwordHash = await bcrypt.hash(PASSWORD, 10);
+  const passwordHash = await hashPassword(PASSWORD);
 
   /* ------------------------------- catalogue -------------------------------- */
 

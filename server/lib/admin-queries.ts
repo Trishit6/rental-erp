@@ -7,6 +7,7 @@ import {
   exists,
   inArray,
   like,
+  ne,
   or,
   sql,
   type SQL,
@@ -309,10 +310,14 @@ export async function listAdminUsers(query: AdminUsersQuery): Promise<{
     conditions.push(or(like(users.name, pattern), like(users.email, pattern))!);
   }
   if (query.role === "SUSPENDED") {
-    // "Suspended" is the role the suspend endpoint writes; see admin.ts.
-    conditions.push(eq(users.role, "SUSPENDED"));
+    // Suspension is account state, not a role: a suspended seller keeps `SELLER`
+    // in `users.role` and carries `status = 'SUSPENDED'`.
+    conditions.push(eq(users.status, "SUSPENDED"));
   } else if (query.role) {
+    // The dropdown is a single bucket, so a specific role also means an active
+    // account — "USER" and "SUSPENDED" must not both match the same row.
     conditions.push(eq(users.role, query.role));
+    conditions.push(ne(users.status, "SUSPENDED"));
   }
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -330,6 +335,7 @@ export async function listAdminUsers(query: AdminUsersQuery): Promise<{
         name: users.name,
         email: users.email,
         role: users.role,
+        status: users.status,
         verified: users.verified,
         createdAt: users.createdAt,
         orders: sql<number>`(SELECT COUNT(*) FROM orders o WHERE o.user_id = ${users.id})`,
@@ -346,8 +352,9 @@ export async function listAdminUsers(query: AdminUsersQuery): Promise<{
   ]);
 
   return {
-    rows: rows.map((row) => ({
+    rows: rows.map(({ status, ...row }) => ({
       ...row,
+      role: status === "SUSPENDED" ? "SUSPENDED" : row.role,
       orders: Number(row.orders ?? 0),
       rentals: Number(row.rentals ?? 0),
     })),
@@ -382,13 +389,10 @@ export async function listAdminSellers(query: AdminSellersQuery): Promise<{
   rows: AdminSellerRow[];
   total: number;
 }> {
-  // `SUSPENDED` joins the role list on purpose. A seller whose account was suspended
-  // keeps their seller profile but has `role = 'SUSPENDED'`, so the original
-  // `["SELLER","ADMIN"]` list made `status=suspended` return zero rows — the base role
-  // filter and the suspended filter contradicted each other, and the screen silently
-  // showed nothing instead of an error. Keeping them means "suspended" is a view an
-  // administrator can actually reach.
-  const conditions: SQL[] = [inArray(users.role, ["SELLER", "ADMIN", "SUSPENDED"])];
+  // Suspension is account state now (see `users.status`): a suspended seller keeps
+  // `role = 'SELLER'` and carries `status = 'SUSPENDED'`, so the base list is simply
+  // the seller roles — `status=suspended` filters below and cannot contradict it.
+  const conditions: SQL[] = [inArray(users.role, ["SELLER", "ADMIN"])];
   if (query.search) {
     const pattern = `%${query.search}%`;
     // Location lives on `seller_profiles`, which is not in this query's FROM list, so
@@ -405,7 +409,7 @@ export async function listAdminSellers(query: AdminSellersQuery): Promise<{
   }
   if (query.status === "verified") conditions.push(eq(users.verified, true));
   if (query.status === "unverified") conditions.push(eq(users.verified, false));
-  if (query.status === "suspended") conditions.push(eq(users.role, "SUSPENDED"));
+  if (query.status === "suspended") conditions.push(eq(users.status, "SUSPENDED"));
   const where = and(...conditions);
 
   const [rows, [totalRow]] = await Promise.all([
@@ -414,7 +418,7 @@ export async function listAdminSellers(query: AdminSellersQuery): Promise<{
         id: users.id,
         name: users.name,
         email: users.email,
-        role: users.role,
+        status: users.status,
         verified: users.verified,
         createdAt: users.createdAt,
         location: sql<string | null>`(SELECT sp.location FROM seller_profiles sp WHERE sp.user_id = ${users.id} LIMIT 1)`,
@@ -440,7 +444,7 @@ export async function listAdminSellers(query: AdminSellersQuery): Promise<{
       email: row.email,
       location: row.location,
       verified: Boolean(row.verified),
-      suspended: row.role === "SUSPENDED",
+      suspended: row.status === "SUSPENDED",
       products: Number(row.products ?? 0),
       orders: Number(row.orders ?? 0),
       rentals: Number(row.rentals ?? 0),

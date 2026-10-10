@@ -35,6 +35,10 @@ function sessionUser(role: SessionUser["role"] = "USER"): SessionUser {
     email: "user@revaro.local",
     verified: true,
     avatarUrl: null,
+    status: "ACTIVE",
+    mustChangePassword: false,
+    mustEnrollMfa: false,
+    mfaEnabled: true,
   };
 }
 

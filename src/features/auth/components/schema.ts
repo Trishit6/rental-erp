@@ -5,6 +5,19 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+/**
+ * The second step of a sign-in for an MFA-protected account.
+ *
+ * The server accepts both 6-digit TOTP codes and 8-character recovery codes
+ * (issued as `XXXX-XXXX`), so this is deliberately loose — a trimmed 6-20 char
+ * string of digits, letters and dashes. The real check happens server-side; this
+ * only keeps a clearly malformed paste from leaving the form.
+ */
+export const mfaCodeSchema = z
+  .string()
+  .trim()
+  .regex(/^[\dA-Za-z-]{6,20}$/, "Enter the code from your authenticator, or a recovery code");
+
 export const passwordSchema = z
   .string()
   .min(8, "Use at least 8 characters")

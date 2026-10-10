@@ -20,8 +20,10 @@ import { Route as HowItWorksRouteImport } from './routes/how-it-works'
 import { Route as ListRouteImport } from './routes/list'
 import { Route as PaymentRouteImport } from './routes/payment'
 import { Route as PreLovedRouteImport } from './routes/pre-loved'
+import { Route as AuthForgotPasswordRouteImport } from './routes/_auth/forgot-password'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
 import { Route as AuthRegisterRouteImport } from './routes/_auth/register'
+import { Route as AuthResetPasswordRouteImport } from './routes/_auth/reset-password'
 import { Route as AuthenticatedCartRouteImport } from './routes/_authenticated/cart'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedFavoritesRouteImport } from './routes/_authenticated/favorites'
@@ -129,6 +131,11 @@ const PreLovedRoute = PreLovedRouteImport.update({
   path: '/pre-loved',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthForgotPasswordRoute = AuthForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
+  getParentRoute: () => AuthRoute,
+} as any)
 const AuthLoginRoute = AuthLoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -137,6 +144,11 @@ const AuthLoginRoute = AuthLoginRouteImport.update({
 const AuthRegisterRoute = AuthRegisterRouteImport.update({
   id: '/register',
   path: '/register',
+  getParentRoute: () => AuthRoute,
+} as any)
+const AuthResetPasswordRoute = AuthResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => AuthRoute,
 } as any)
 const AuthenticatedCartRoute = AuthenticatedCartRouteImport.update({
@@ -423,8 +435,10 @@ export interface FileRoutesByFullPath {
   '/list': typeof ListRoute
   '/payment': typeof PaymentRoute
   '/pre-loved': typeof PreLovedRoute
+  '/forgot-password': typeof AuthForgotPasswordRoute
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
+  '/reset-password': typeof AuthResetPasswordRoute
   '/cart': typeof AuthenticatedCartRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/favorites': typeof AuthenticatedFavoritesRoute
@@ -488,8 +502,10 @@ export interface FileRoutesByTo {
   '/list': typeof ListRoute
   '/payment': typeof PaymentRoute
   '/pre-loved': typeof PreLovedRoute
+  '/forgot-password': typeof AuthForgotPasswordRoute
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
+  '/reset-password': typeof AuthResetPasswordRoute
   '/cart': typeof AuthenticatedCartRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/favorites': typeof AuthenticatedFavoritesRoute
@@ -557,8 +573,10 @@ export interface FileRoutesById {
   '/list': typeof ListRoute
   '/payment': typeof PaymentRoute
   '/pre-loved': typeof PreLovedRoute
+  '/_auth/forgot-password': typeof AuthForgotPasswordRoute
   '/_auth/login': typeof AuthLoginRoute
   '/_auth/register': typeof AuthRegisterRoute
+  '/_auth/reset-password': typeof AuthResetPasswordRoute
   '/_authenticated/cart': typeof AuthenticatedCartRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/favorites': typeof AuthenticatedFavoritesRoute
@@ -625,8 +643,10 @@ export interface FileRouteTypes {
     | '/list'
     | '/payment'
     | '/pre-loved'
+    | '/forgot-password'
     | '/login'
     | '/register'
+    | '/reset-password'
     | '/cart'
     | '/dashboard'
     | '/favorites'
@@ -690,8 +710,10 @@ export interface FileRouteTypes {
     | '/list'
     | '/payment'
     | '/pre-loved'
+    | '/forgot-password'
     | '/login'
     | '/register'
+    | '/reset-password'
     | '/cart'
     | '/dashboard'
     | '/favorites'
@@ -758,8 +780,10 @@ export interface FileRouteTypes {
     | '/list'
     | '/payment'
     | '/pre-loved'
+    | '/_auth/forgot-password'
     | '/_auth/login'
     | '/_auth/register'
+    | '/_auth/reset-password'
     | '/_authenticated/cart'
     | '/_authenticated/dashboard'
     | '/_authenticated/favorites'
@@ -923,6 +947,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PreLovedRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_auth/forgot-password': {
+      id: '/_auth/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof AuthForgotPasswordRouteImport
+      parentRoute: typeof AuthRoute
+    }
     '/_auth/login': {
       id: '/_auth/login'
       path: '/login'
@@ -935,6 +966,13 @@ declare module '@tanstack/react-router' {
       path: '/register'
       fullPath: '/register'
       preLoaderRoute: typeof AuthRegisterRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/_auth/reset-password': {
+      id: '/_auth/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof AuthResetPasswordRouteImport
       parentRoute: typeof AuthRoute
     }
     '/_authenticated/cart': {
@@ -1312,13 +1350,17 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthRouteChildren {
+  AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
   AuthLoginRoute: typeof AuthLoginRoute
   AuthRegisterRoute: typeof AuthRegisterRoute
+  AuthResetPasswordRoute: typeof AuthResetPasswordRoute
 }
 
 const AuthRouteChildren: AuthRouteChildren = {
+  AuthForgotPasswordRoute: AuthForgotPasswordRoute,
   AuthLoginRoute: AuthLoginRoute,
   AuthRegisterRoute: AuthRegisterRoute,
+  AuthResetPasswordRoute: AuthResetPasswordRoute,
 }
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)

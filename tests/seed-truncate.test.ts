@@ -118,6 +118,7 @@ describe("the demo seed truncates every table", () => {
       ["mfa_recovery_codes", "users"],
       ["login_attempts", "users"],
       ["security_events", "users"],
+      ["password_reset_tokens", "users"],
       ["cms_banners", "users"],
       ["cms_blocks", "users"],
       ["commission_rules", "categories"],

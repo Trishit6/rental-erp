@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SignJWT, decodeJwt } from "jose";
 import { accessTokenSecret } from "../server/lib/env";
-import { ACCESS_TOKEN_ISSUER, signAccessToken, verifyAccessToken } from "../server/lib/jwt";
+import { ACCESS_TOKEN_ISSUER, ACCESS_TOKEN_AUDIENCE, signAccessToken, verifyAccessToken } from "../server/lib/jwt";
 
 /**
  * The access token's contents and its refusals.
@@ -51,7 +51,7 @@ describe("an access token carries identity, session and time — nothing else", 
     // payload rather than about an empty one nobody would have shipped.
     const payload = decodeJwt(await issued);
 
-    expect(Object.keys(payload).sort()).toEqual(["exp", "iat", "iss", "role", "sid", "sub"]);
+    expect(Object.keys(payload).sort()).toEqual(["aud", "exp", "iat", "iss", "role", "sid", "sub"]);
     expect(JSON.stringify(payload)).not.toMatch(/password|email|@|hash/i);
   });
 
@@ -68,6 +68,7 @@ describe("a token this deployment did not sign never verifies", () => {
       .setProtectedHeader({ alg: "HS256" })
       .setSubject("42")
       .setIssuer(ACCESS_TOKEN_ISSUER)
+      .setAudience(ACCESS_TOKEN_AUDIENCE)
       .setIssuedAt()
       .setExpirationTime("15m")
       .sign(key("a-different-secret-that-is-long-enough-0123456789"));
@@ -83,6 +84,7 @@ describe("a token this deployment did not sign never verifies", () => {
       .setProtectedHeader({ alg: "HS256" })
       .setSubject("42")
       .setIssuer(ACCESS_TOKEN_ISSUER)
+      .setAudience(ACCESS_TOKEN_AUDIENCE)
       .setIssuedAt(now - 3600)
       .setExpirationTime(now - 60)
       .sign(key(accessTokenSecret()));
@@ -118,6 +120,7 @@ describe("a token this deployment did not sign never verifies", () => {
       .setProtectedHeader({ alg: "HS256" })
       .setSubject("42")
       .setIssuer(ACCESS_TOKEN_ISSUER)
+      .setAudience(ACCESS_TOKEN_AUDIENCE)
       .setIssuedAt()
       .setExpirationTime("15m")
       .sign(key(accessTokenSecret()));

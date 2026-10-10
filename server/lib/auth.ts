@@ -1,8 +1,8 @@
-import { and, eq, gt, isNull, not } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, not } from "drizzle-orm";
 import { createHash, randomBytes } from "crypto";
 import { z } from "zod";
 import { db } from "../db";
-import { sessions, users } from "../schema";
+import { sessions, userMfa, users } from "../schema";
 import { HttpError } from "./api";
 import {
   ACCESS_TOKEN_TTL_SECONDS,
@@ -155,9 +155,16 @@ export type SessionUser = {
   role: string;
   verified: boolean;
   avatarUrl: string | null;
+  /** `ACTIVE | SUSPENDED`. Only an active account is ever published here. */
+  status: string;
+  /** First-login flags from the seed/profile prompts. */
+  mustChangePassword: boolean;
+  mustEnrollMfa: boolean;
+  /** True when a `user_mfa` row is enrolled and enabled. */
+  mfaEnabled: boolean;
 };
 
-function toSessionUser(user: typeof users.$inferSelect): SessionUser {
+function toSessionUser(user: typeof users.$inferSelect, mfaEnabled: boolean): SessionUser {
   return {
     id: user.id,
     name: user.name,
@@ -165,6 +172,10 @@ function toSessionUser(user: typeof users.$inferSelect): SessionUser {
     role: user.role,
     verified: user.verified,
     avatarUrl: user.avatarUrl,
+    status: user.status,
+    mustChangePassword: user.mustChangePassword,
+    mustEnrollMfa: user.mustEnrollMfa,
+    mfaEnabled,
   };
 }
 
@@ -177,9 +188,14 @@ function toSessionUser(user: typeof users.$inferSelect): SessionUser {
  * indistinguishable on the wire (same cookies, same claims, same session row
  * shape), and three copies of this is how they drift.
  */
-export async function issueSession(c: Ctx, user: { id: number; role: string }): Promise<string> {
+export async function issueSession(
+  c: Ctx,
+  user: { id: number; role: string },
+  options: { mfaVerified?: boolean } = {},
+): Promise<string> {
   const sessionId = newSessionId();
   const refreshToken = newRefreshToken();
+  const device = describeDevice(c);
 
   await db.insert(sessions).values({
     id: sessionId,
@@ -187,10 +203,54 @@ export async function issueSession(c: Ctx, user: { id: number; role: string }): 
     refreshTokenHash: hashRefreshToken(refreshToken),
     rotatedAt: new Date(),
     expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000),
+    // Recorded so "my devices" can name a row without a second lookup, and so a
+    // step-up check can ask whether MFA was satisfied on *this* session.
+    ip: device.ip,
+    userAgent: device.userAgent,
+    deviceLabel: device.label,
+    mfaVerifiedAt: options.mfaVerified ? new Date() : null,
   });
 
   await setAuthCookies(c, { sessionId, userId: user.id, role: user.role, refreshToken });
   return sessionId;
+}
+
+/** A short, human-readable label for the session list, derived from the UA. */
+export function describeDevice(c: Ctx): { ip: string | null; userAgent: string | null; label: string } {
+  const userAgent = c.req.header("user-agent")?.slice(0, 400) ?? null;
+  const forwarded = c.req.header("x-forwarded-for");
+  const ip = (forwarded ? forwarded.split(",")[0]!.trim() : c.req.raw.socket?.remoteAddress) || null;
+
+  let label = "Unknown device";
+  if (userAgent) {
+    const browser = /Edg\//.test(userAgent)
+      ? "Edge"
+      : /Chrome\//.test(userAgent)
+        ? "Chrome"
+        : /Firefox\//.test(userAgent)
+          ? "Firefox"
+          : /Safari\//.test(userAgent)
+            ? "Safari"
+            : "Browser";
+    const os = /Windows/.test(userAgent)
+      ? "Windows"
+      : /Mac OS X/.test(userAgent)
+        ? "macOS"
+        : /Android/.test(userAgent)
+          ? "Android"
+          : /iPhone|iPad/.test(userAgent)
+            ? "iOS"
+            : /Linux/.test(userAgent)
+              ? "Linux"
+              : "";
+    label = os ? `${browser} on ${os}` : browser;
+  }
+  return { ip, userAgent, label };
+}
+
+/** Mark a session as having satisfied MFA (after a successful challenge). */
+export async function markSessionMfaVerified(sessionId: string): Promise<void> {
+  await db.update(sessions).set({ mfaVerifiedAt: new Date() }).where(eq(sessions.id, sessionId));
 }
 
 /** Sign the access token and write both cookies. Never writes a token to a response body. */
@@ -361,8 +421,9 @@ async function rotateFromRow(
   now: Date,
 ): Promise<typeof users.$inferSelect | null> {
   const [user] = await db.select().from(users).where(eq(users.id, session.userId)).limit(1);
-  if (!user) {
-    // The account is gone; the session is a pointer to nothing.
+  if (!user || user.status !== "ACTIVE") {
+    // The account is gone or suspended; the session is a pointer to nothing that
+    // should still work, so it is removed rather than left to be retried.
     await db.delete(sessions).where(eq(sessions.id, session.id));
     return null;
   }
@@ -474,9 +535,10 @@ export async function attachUser(c: Ctx, next: Next) {
   const claims = await readAccessClaims(c);
   if (claims) {
     const [row] = await db
-      .select({ user: users })
+      .select({ user: users, mfaEnabledAt: userMfa.enabledAt })
       .from(sessions)
       .innerJoin(users, eq(sessions.userId, users.id))
+      .leftJoin(userMfa, eq(userMfa.userId, users.id))
       .where(
         and(
           eq(sessions.id, claims.sid),
@@ -486,8 +548,12 @@ export async function attachUser(c: Ctx, next: Next) {
       )
       .limit(1);
 
-    if (row && String(row.user.id) === claims.sub) {
-      c.set(SESSION_USER_KEY, toSessionUser(row.user));
+    // A suspended account is treated exactly like a dead session: `null`, so the
+    // next `requireUser` is a 401 and suspension takes effect on the next request
+    // rather than at the next token renewal. The role in the token is irrelevant
+    // here — the row is authoritative.
+    if (row && String(row.user.id) === claims.sub && row.user.status === "ACTIVE") {
+      c.set(SESSION_USER_KEY, toSessionUser(row.user, row.mfaEnabledAt !== null));
       // Best-effort session touch; never block the request on it.
       void db
         .update(sessions)
@@ -560,6 +626,109 @@ export async function deleteOtherSessions(
   return existing.length;
 }
 
+/* ------------------------------- self-service ------------------------------ */
+
+export type SessionSummary = {
+  id: string;
+  deviceLabel: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  createdAt: Date;
+  lastSeenAt: Date;
+  expiresAt: Date;
+  mfaVerified: boolean;
+};
+
+/**
+ * The signed-in user's own live sessions, newest activity first.
+ *
+ * The refresh-token hashes are never selected — the list exists so a person can
+ * recognise a device, not so the API can hand out credentials, and a hash in a JSON
+ * body is a hash in a log, a screenshot and a bug report.
+ */
+export async function listSessions(userId: number): Promise<SessionSummary[]> {
+  const rows = await db
+    .select({
+      id: sessions.id,
+      deviceLabel: sessions.deviceLabel,
+      ip: sessions.ip,
+      userAgent: sessions.userAgent,
+      createdAt: sessions.createdAt,
+      lastSeenAt: sessions.lastUsedAt,
+      expiresAt: sessions.expiresAt,
+      mfaVerifiedAt: sessions.mfaVerifiedAt,
+    })
+    .from(sessions)
+    .where(
+      and(
+        eq(sessions.userId, userId),
+        isNull(sessions.revokedAt),
+        gt(sessions.expiresAt, new Date()),
+      ),
+    )
+    .orderBy(desc(sessions.lastUsedAt));
+
+  return rows.map((row) => ({
+    id: row.id,
+    deviceLabel: row.deviceLabel,
+    ip: row.ip,
+    userAgent: row.userAgent,
+    createdAt: row.createdAt,
+    lastSeenAt: row.lastSeenAt,
+    expiresAt: row.expiresAt,
+    mfaVerified: row.mfaVerifiedAt !== null,
+  }));
+}
+
+/**
+ * Revoke one session by id, scoped to its owner.
+ *
+ * The `userId` is part of the `where`, not a check after the fact, so a request
+ * naming someone else's session id deletes nothing and reports the same "no such
+ * session" as a made-up id. Returns whether a row was removed.
+ */
+export async function revokeSessionById(userId: number, sessionId: string): Promise<boolean> {
+  const [existing] = await db
+    .select({ id: sessions.id })
+    .from(sessions)
+    .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId)))
+    .limit(1);
+  if (!existing) return false;
+  await db.delete(sessions).where(eq(sessions.id, sessionId));
+  return true;
+}
+
+/** Refuse a non-active account. Used at the login boundary, before any session exists. */
+export function assertAccountActive(user: { status: string }): void {
+  if (user.status !== "ACTIVE") {
+    throw new HttpError(403, "ACCOUNT_SUSPENDED", "This account is suspended.");
+  }
+}
+
+/**
+ * Suspend an account and kill every session it holds, immediately.
+ *
+ * Both halves matter: setting the status refuses the *next* login, and deleting the
+ * sessions refuses the tokens already out there. Doing only the first leaves a
+ * suspended user signed in until their access token expires — up to fifteen
+ * minutes of access after the account was supposed to be locked.
+ */
+export async function suspendUser(userId: number): Promise<number> {
+  const revoked = await deleteAllSessions(userId);
+  await db
+    .update(users)
+    .set({ status: "SUSPENDED", updatedAt: new Date() })
+    .where(eq(users.id, userId));
+  return revoked;
+}
+
+export async function restoreUser(userId: number): Promise<void> {
+  await db
+    .update(users)
+    .set({ status: "ACTIVE", updatedAt: new Date() })
+    .where(eq(users.id, userId));
+}
+
 /* --------------------------------- guards ---------------------------------- */
 
 export function requireUser(c: Ctx): SessionUser {
@@ -585,6 +754,37 @@ export function requireRole(...allowed: SessionUser["role"][]) {
     }
     return user;
   };
+}
+
+/**
+ * Step-up: require that this session satisfied a second factor recently.
+ *
+ * A password sign-in on an account without MFA stamps `mfa_verified_at` at session
+ * creation, so "recent" is meaningful for everyone; on an account with MFA the
+ * stamp moves to the moment the code was accepted. A sensitive action (a refund, a
+ * payout approval, a role grant) calls this so a session hijacked long after login
+ * cannot perform it without the real owner's factor.
+ */
+export async function requireStepUp(c: Ctx, maxAgeSeconds = 15 * 60): Promise<SessionUser> {
+  const user = requireUser(c);
+  const sessionId = await currentSessionId(c);
+  if (!sessionId) {
+    throw new HttpError(401, "UNAUTHENTICATED", "Please sign in to continue.");
+  }
+  const [row] = await db
+    .select({ mfaVerifiedAt: sessions.mfaVerifiedAt })
+    .from(sessions)
+    .where(eq(sessions.id, sessionId))
+    .limit(1);
+  const verifiedAt = row?.mfaVerifiedAt;
+  if (!verifiedAt || Date.now() - verifiedAt.getTime() > maxAgeSeconds * 1000) {
+    throw new HttpError(
+      403,
+      "STEP_UP_REQUIRED",
+      "Please re-authenticate with your second factor to continue.",
+    );
+  }
+  return user;
 }
 
 /* --------------------------------- profile --------------------------------- */

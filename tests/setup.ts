@@ -18,6 +18,13 @@ process.env.JWT_ACCESS_SECRET ??= "test-access-secret-00000000000000000000000000
 process.env.JWT_REFRESH_SECRET ??= "test-refresh-secret-00000000000000000000000000000000000000000";
 
 /**
+ * AES-256-GCM key for the MFA secret-at-rest tests. 32 bytes as 64 hex characters;
+ * a value that is valid in shape but signs nothing real.
+ */
+process.env.MFA_ENCRYPTION_KEY ??=
+  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+/**
  * jsdom implements neither `matchMedia` nor `ResizeObserver`, both of which
  * framer-motion and Radix reach for. Stub them once so component tests exercise
  * behaviour instead of missing browser APIs.

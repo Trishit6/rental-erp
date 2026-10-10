@@ -419,7 +419,7 @@ export function fetchAdminUsersPage(filters: AdminUserFilters) {
 
 export function setAdminUserSuspended(id: number, suspend: boolean): Promise<void> {
   return api
-    .patch(`/admin/users/${id}/${suspend ? "suspend" : "unsuspend"}`)
+    .patch(`/admin/users/${id}/status`, { status: suspend ? "SUSPENDED" : "ACTIVE" })
     .then(() => undefined);
 }
 

@@ -3,6 +3,7 @@ import { MyReviewsSection } from "@/features/reviews";
 import { AccountCard } from "./components/AccountCard";
 import { AddressSection } from "./components/AddressSection";
 import { AvatarCard } from "./components/AvatarCard";
+import { MfaCard } from "./components/MfaCard";
 import { ProfileDetailsCard } from "./components/ProfileDetailsCard";
 import { SecurityCard } from "./components/SecurityCard";
 import { SessionsCard } from "./components/SessionsCard";
@@ -40,6 +41,11 @@ export function ProfilePage() {
       <ProfileDetailsCard user={user} />
       <AvatarCard user={user} />
       <SecurityCard />
+      {/* The second factor sits next to the password because it is the other half
+          of the same question — "what must someone know to sign in as me?" — and
+          because staff accounts are required to have one (the admin gate refuses
+          sessions without it). */}
+      <MfaCard />
       {/* Sessions sit beside the password change because they are the other half of the
           same question — "who still has access to this account?" — and because the
           control that ends *other* devices belongs next to the one that ends their

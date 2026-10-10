@@ -102,6 +102,64 @@ export function refreshTokenSecret(): string {
   return requireSecret("JWT_REFRESH_SECRET");
 }
 
+/**
+ * The AES-256-GCM key that protects TOTP secrets at rest.
+ *
+ * Not a "signing" secret, so it does not go through `requireSecret`, but held to the
+ * same standard: exactly 32 bytes, read from the environment, never defaulted. A
+ * short or predictable key makes the encryption on `user_mfa.secret_encrypted`
+ * decorative. Accepted as base64 (the `openssl rand -base64 32` shape) or as 64 hex
+ * characters, because both are what an operator reaches for.
+ */
+export function mfaEncryptionKey(): Buffer {
+  const value = process.env.MFA_ENCRYPTION_KEY?.trim();
+  if (!value) {
+    throw new Error(
+      "Missing required environment variable MFA_ENCRYPTION_KEY. Generate 32 random bytes, " +
+        'e.g. `node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'base64\'))"`.',
+    );
+  }
+  const key = /^[0-9a-f]{64}$/i.test(value)
+    ? Buffer.from(value, "hex")
+    : Buffer.from(value, "base64");
+  if (key.length !== 32) {
+    throw new Error(
+      "MFA_ENCRYPTION_KEY must be exactly 32 bytes: either base64 or 64 hex characters. " +
+        "The TOTP secrets are encrypted with it, so a short key is not a lesser setting.",
+    );
+  }
+  return key;
+}
+
+/**
+ * How long an MFA challenge ticket stays valid.
+ *
+ * The ticket is minted after a correct password and spent by a correct TOTP code —
+ * a few seconds on a normal sign-in. Five minutes is generous for a slow
+ * authenticator while keeping a captured ticket from being a durable credential.
+ */
+export const MFA_TICKET_TTL_SECONDS = readSeconds("AUTH_MFA_TICKET_TTL_SECONDS", 5 * 60, 60);
+
+/**
+ * How long a password-reset link is valid. One hour: long enough to reach an inbox
+ * and use it, short enough that a stale mail in a shared mailbox is not a standing
+ * reset credential.
+ */
+export const PASSWORD_RESET_TTL_SECONDS = readSeconds("AUTH_PASSWORD_RESET_TTL_SECONDS", 60 * 60, 300);
+
+/**
+ * Login throttling, backed by `login_attempts`.
+ *
+ * `LOGIN_WINDOW_SECONDS` is the look-back window; `LOGIN_MAX_FAILURES` is how many
+ * failures inside it move an identifier (or an IP) into lockout, and
+ * `LOGIN_LOCKOUT_SECONDS` is how long that lasts. The in-memory per-IP limiter in
+ * `lib/api.ts` is a coarse brake in front of this; this is the durable one that
+ * survives a restart and follows the *account*, not the socket.
+ */
+export const LOGIN_WINDOW_SECONDS = readSeconds("AUTH_LOGIN_WINDOW_SECONDS", 15 * 60, 60);
+export const LOGIN_LOCKOUT_SECONDS = readSeconds("AUTH_LOGIN_LOCKOUT_SECONDS", 15 * 60, 0);
+export const LOGIN_MAX_FAILURES = readInt("AUTH_LOGIN_MAX_FAILURES", 5, 1);
+
 function requireSecret(name: string): string {
   const value = process.env[name];
   if (!value || value.trim().length === 0) {
@@ -125,6 +183,10 @@ function readSeconds(name: string, fallback: number, min: number, max?: number):
   const parsed = raw === undefined || raw.trim() === "" ? fallback : Number(raw);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max ?? Number.MAX_SAFE_INTEGER, Math.max(min, Math.floor(parsed)));
+}
+
+function readInt(name: string, fallback: number, min: number, max?: number): number {
+  return readSeconds(name, fallback, min, max);
 }
 
 /**
@@ -156,6 +218,11 @@ export function assertServerEnv(): void {
   }
   try {
     refreshTokenSecret();
+  } catch (error) {
+    problems.push(error instanceof Error ? error.message : String(error));
+  }
+  try {
+    mfaEncryptionKey();
   } catch (error) {
     problems.push(error instanceof Error ? error.message : String(error));
   }

@@ -54,6 +54,18 @@ vi.mock("@/features/auth/api", () => ({
   login: vi.fn(),
   register: vi.fn(),
   getCurrentUser: vi.fn(),
+  // PROMPT 3 self-service surface. The cards render loading states from these
+  // queries; no test here drives them past a render.
+  getMfaStatus: vi.fn(),
+  startMfaSetup: vi.fn(),
+  verifyMfaSetup: vi.fn(),
+  disableMfa: vi.fn(),
+  regenerateRecoveryCodes: vi.fn(),
+  getSessions: vi.fn(),
+  revokeSession: vi.fn(),
+  completeMfaChallenge: vi.fn(),
+  forgotPassword: vi.fn(),
+  resetPassword: vi.fn(),
 }));
 
 vi.mock("@/features/reviews", () => ({

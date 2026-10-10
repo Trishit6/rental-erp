@@ -568,7 +568,7 @@ export function useAdminActions() {
   const queryClient = useQueryClient();
   return {
     async suspendUser(id: number, suspend: boolean) {
-      await api.patch(`/admin/users/${id}/${suspend ? "suspend" : "unsuspend"}`);
+      await api.patch(`/admin/users/${id}/status`, { status: suspend ? "SUSPENDED" : "ACTIVE" });
       void queryClient.invalidateQueries({ queryKey: queryKeys.adminUsers });
       toast.success(suspend ? "User suspended" : "User restored");
     },

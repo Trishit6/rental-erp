@@ -126,7 +126,7 @@ reproduced here:
 | `audit_logs`      | `admin_audit_log` |
 | `rental_status`   | stored keeps `OVERDUE` / `DISPUTED` too; the brief's `PENDING` / `UPCOMING` / `EXPIRED` have no stored equivalent — rentals are `CONFIRMED` from the moment an order is |
 | `ticket_status`   | `OPEN` / `PENDING` / `IN_PROGRESS` / `RESOLVED` / `CLOSED` — new table, no history to reconcile |
-| `user_status`     | **no column** — suspension currently overwrites `users.role` (Follow-up **F3**) |
+| `user_status`     | `users.status` (`ACTIVE` / `SUSPENDED`) — suspension is account state, never written to `users.role` |
 | `seller_status`   | **no column** — `seller_profiles.verified` only (Follow-up **F4**) |
 
 Separately, `users.must_change_password` / `users.must_enroll_mfa` (migration
@@ -381,10 +381,10 @@ states what changes and what must be true before it does.
   them.** `rentals.id = 129` and nine `order_items` rows store an
   `end <= start`. `stock_reservations` gets its `window_ordered` check; the
   seeded tables cannot. Fix the rows, then add the `CHECK`s.
-* **F3 — no `user_status` column.** Suspension currently overwrites
-  `users.role` with `SUSPENDED`, faking a role the RBAC grant tables know
-  nothing about. A real `users.user_status` column with `ACTIVE/SUSPENDED`
-  (and no overlap with `role`) is the fix.
+* **F3 — resolved.** `users.status` (`ACTIVE`/`SUSPENDED`) now carries account
+  state (added by the auth/PROMPT 3 migration) and the admin surface suspends
+  only through the single `PATCH /api/admin/users/:id/status` route, so
+  `users.role` is never used as a fake suspension flag anymore.
 * **F4 — no `seller_status` column.** `seller_profiles.verified` is boolean
   only; the brief's `PENDING/ACTIVE/RESTRICTED/SUSPENDED` needs its own column
   and a migration of the current verified state into it.

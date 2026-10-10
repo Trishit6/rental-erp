@@ -64,6 +64,10 @@ function routerAs(role: "SELLER" | "ADMIN" | "CUSTOMER", mount: Router) {
         email: "seller@revaro.local",
         verified: true,
         avatarUrl: null,
+        status: "ACTIVE",
+        mustChangePassword: false,
+        mustEnrollMfa: false,
+        mfaEnabled: true,
       } satisfies SessionUser);
     }
     await next();

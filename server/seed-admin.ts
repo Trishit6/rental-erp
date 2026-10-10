@@ -26,7 +26,6 @@
  */
 import "dotenv/config";
 import { createHash } from "node:crypto";
-import bcrypt from "bcryptjs";
 import { count, eq, sql } from "drizzle-orm";
 import { db, pool } from "./db";
 import {
@@ -71,6 +70,8 @@ import {
 } from "./schema";
 import { mulberry32 } from "./data/seed-realistic";
 import { DEV_PASSWORD, PLATFORM_RENTAL_FEE_PERCENT, PLATFORM_SALE_FEE_PERCENT } from "./lib/config";
+import { hashPassword } from "./lib/password";
+import { encryptSecretWith, hashRecoveryCode } from "./lib/mfa";
 
 /* --------------------------------- helpers --------------------------------- */
 
@@ -121,7 +122,7 @@ async function main() {
   }
 
   console.log("Revaro admin seed");
-  const passwordHash = await bcrypt.hash(DEV_PASSWORD, 10);
+  const passwordHash = await hashPassword(DEV_PASSWORD);
 
   /* ------------------------------ read the base ----------------------------- */
 
@@ -246,32 +247,71 @@ async function main() {
 
   /* ----------------------------------- MFA ---------------------------------- */
 
+  /**
+   * Demo MFA is *real* MFA: an actual AES-256-GCM-encrypted base32 secret with a
+   * plaintext derived from this run's PRNG, so the staff demo accounts can
+   * genuinely complete a challenge — the secret is printed below, once, to be
+   * loaded into an authenticator app. Two things keep the seeding deterministic:
+   *
+   * - The IV is derived from the user id (SHA-256, first 12 bytes) instead of
+   *   being random, so two `pnpm db:seed` runs write byte-identical ciphertext.
+   * - Recovery codes are generated from a per-user digest and stored with the
+   *   same `hashRecoveryCode` the runtime verifier uses.
+   */
+  const DEMO_MFA_SECRET = Array.from(
+    { length: 32 },
+    () => "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"[Math.floor(rand() * 32)],
+  ).join("");
+  const RECOVERY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const mfaEnvelope = (userId: number) =>
+    encryptSecretWith(
+      DEMO_MFA_SECRET,
+      createHash("sha256").update(`mfa-iv:${userId}`).digest().subarray(0, 12),
+    );
+  const demoRecoveryCode = (userId: number, index: number) => {
+    const digest = createHash("sha256").update(`recovery:${userId}:${index}`).digest();
+    const chars = Array.from(
+      { length: 8 },
+      (_, k) => RECOVERY_ALPHABET[digest[k]! % RECOVERY_ALPHABET.length],
+    );
+    return `${chars.slice(0, 4).join("")}-${chars.slice(4).join("")}`;
+  };
+  const mfaStaff = [adminUser.id, superAdminId] as const;
+  const mfaRecoveryByUser = new Map<number, string[]>();
+
   console.log("Seeding MFA enrolments...");
   await db.insert(userMfa).values([
     {
       userId: adminUser.id,
-      secretEncrypted: `seed:${sha256(`mfa:${adminUser.id}`)}`,
+      secretEncrypted: mfaEnvelope(adminUser.id),
       enabledAt: daysAgo(120),
       lastUsedAt: daysAgo(0),
     },
     {
       userId: superAdminId,
-      secretEncrypted: `seed:${sha256(`mfa:${superAdminId}`)}`,
+      secretEncrypted: mfaEnvelope(superAdminId),
       enabledAt: daysAgo(90),
       lastUsedAt: daysAgo(1),
     },
   ]);
   const recoveryRows: { userId: number; codeHash: string; usedAt: Date | null }[] = [];
-  for (const userId of [adminUser.id, superAdminId]) {
-    for (let i = 0; i < 6; i += 1) {
+  for (const userId of mfaStaff) {
+    const codes = Array.from({ length: 6 }, (_, i) => demoRecoveryCode(userId, i));
+    mfaRecoveryByUser.set(userId, codes);
+    codes.forEach((code, i) => {
       recoveryRows.push({
         userId,
-        codeHash: sha256(`${userId}:recovery:${i}:${rand()}`),
+        codeHash: hashRecoveryCode(code),
         usedAt: i === 5 ? daysAgo(randInt(1, 30)) : null,
       });
-    }
+    });
   }
   await db.insert(mfaRecoveryCodes).values(recoveryRows);
+  // These two accounts finish the demo with a working second factor, so the
+  // "must enrol" flag (set by `seed.ts` for every staff account) is cleared —
+  // otherwise the profile prompt and the real state would disagree forever.
+  await db.update(users).set({ mustEnrollMfa: false }).where(eq(users.id, adminUser.id));
+  await db.update(users).set({ mustEnrollMfa: false }).where(eq(users.id, superAdminId));
 
   /* --------------------------------- sessions ------------------------------- */
 
@@ -932,7 +972,11 @@ async function main() {
   console.log("\nAdmin seed complete.");
   console.log(`  staff: ${STAFF.length} (super admin ${STAFF[0]!.email})`);
   console.log(`  tickets: ${insertedTickets.length}, refunds: ${refundRows.length}, disputes: ${disputeRows.length}`);
-  console.log(`  staff password: ${DEV_PASSWORD} (change on first login; enrol MFA)`);
+  console.log(`  staff password: ${DEV_PASSWORD} (change on first login)`);
+  console.log(`  MFA secret: ${DEMO_MFA_SECRET}  (load into any authenticator app)`);
+  console.log(`  admin recovery: ${mfaRecoveryByUser.get(adminUser.id)!.join("  ")}`);
+  console.log(`  root recovery:  ${mfaRecoveryByUser.get(superAdminId)!.join("  ")}`);
+  console.log(`  other staff: enrol MFA after first login (mandatory for staff areas)`);
 }
 
 main()

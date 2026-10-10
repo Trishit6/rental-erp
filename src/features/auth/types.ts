@@ -39,7 +39,27 @@ export type User = {
   avatarUrl: string | null;
   phone?: string | null;
   createdAt?: string;
+  /**
+   * PROMPT 3 — the account lifecycle fields the server now serialises. They are
+   * optional here because `/auth/me` returns them but older typed literals (and
+   * a public profile of a user row) may not carry them; the guards treat a
+   * missing value as the safe default.
+   */
+  status?: AccountStatus;
+  /** First-login flag: the shared demo password must be rotated (PROMPT 2). */
+  mustChangePassword?: boolean;
+  /** First-login flag: a staff account must enrol MFA before admin areas (PROMPT 3). */
+  mustEnrollMfa?: boolean;
+  /** True when this session's account has a second factor enabled. */
+  mfaEnabled?: boolean;
 };
+
+/**
+ * `users.status` — the single suspension state (PROMPT 3). A `SUSPENDED` account
+ * cannot sign in and its sessions are killed immediately; the login path and the
+ * session attach both refuse anything but `ACTIVE`.
+ */
+export type AccountStatus = "ACTIVE" | "SUSPENDED";
 
 export type AuthSession = {
   user: User | null;
@@ -106,3 +126,70 @@ export type ProfileUpdatePayload = {
   /** `null` clears the picture — the server's schema allows it, the old one did not. */
   avatarUrl?: string | null;
 };
+
+/* ---------------------------------- MFA ----------------------------------- */
+
+/**
+ * The two things `POST /auth/login` can answer.
+ *
+ *  - `User` — the session was issued and the cookies are set.
+ *  - `{ mfaRequired: true; ticket }` — the password was correct but the account
+ *    has a second factor; no session exists yet. The ticket is a short-lived,
+ *    one-purpose credential that the challenge step spends.
+ */
+export type LoginResult = User | { mfaRequired: true; ticket: string };
+
+export type MfaChallengePayload = {
+  ticket: string;
+  code: string;
+};
+
+/** `GET /auth/mfa/status`. */
+export type MfaStatus = {
+  enabled: boolean;
+  mustEnrollMfa: boolean;
+  recoveryCodesRemaining: number;
+};
+
+/** `POST /auth/mfa/setup` — the secret is shown exactly once, at enrolment. */
+export type MfaSetupResult = {
+  secret: string;
+  otpauthUrl: string;
+};
+
+/** `POST /auth/mfa/verify` — enrolment confirm, returning the fresh codes. */
+export type MfaVerifyResult = {
+  enabled: boolean;
+  recoveryCodes: string[];
+};
+
+/** `POST /auth/mfa/disable` — staff accounts are re-flagged to enrol again. */
+export type MfaDisableResult = {
+  enabled: false;
+  mustEnrollMfa: boolean;
+};
+
+/** `POST /auth/mfa/recovery-codes`. */
+export type MfaRecoveryCodesResult = {
+  recoveryCodes: string[];
+};
+
+/** One row of `GET /auth/sessions`; `current` is added by the route. */
+export type SessionInfo = {
+  id: string;
+  deviceLabel: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  createdAt: string;
+  lastSeenAt: string | null;
+  expiresAt: string | null;
+  mfaVerified: boolean;
+  current: boolean;
+};
+
+/* ------------------------------ password reset ----------------------------- */
+
+export type ForgotPasswordPayload = { email: string };
+export type ForgotPasswordResult = { sent: boolean };
+export type ResetPasswordPayload = { token: string; newPassword: string };
+export type ResetPasswordResult = { reset: boolean };

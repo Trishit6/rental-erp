@@ -29,6 +29,14 @@ export const queryKeys = {
     ["product", slug, "availability", range] as const,
   auth: ["auth", "me"] as const,
   /**
+   * The signed-in user's live sessions (`GET /auth/sessions`). Private: it lists
+   * other devices' IPs and user agents, so logout eviction must clear it — a
+   * shared machine must never show the previous person's devices.
+   */
+  authSessions: ["auth", "sessions"] as const,
+  /** The signed-in user's MFA state (`GET /auth/mfa/status`). */
+  authMfaStatus: ["auth", "mfa", "status"] as const,
+  /**
    * Favourites. `["favorites"]` is the prefix every favourites entry hangs off,
    * which is also what `privateQueryKeys` evicts on logout — so no signed-in
    * user's saved items can ever be read by the next one.
@@ -297,6 +305,11 @@ export const queryKeys = {
   adminProductImages: ["admin-product-images"] as const,
   adminAuditLog: ["admin-audit-log"] as const,
   /**
+   * The RBAC surface — roles, the permission vocabulary and one user's roles.
+   * One prefix so a grant/revoke invalidates every screen at once.
+   */
+  adminRbac: ["admin-rbac"] as const,
+  /**
    * The `/api/health` probe the admin dashboard's system-status card reads. It is
    * scoped under the admin prefix so the status shown in the workspace is never
    * mistaken for storefront data.
@@ -312,6 +325,11 @@ export const queryKeys = {
  */
 export const privateQueryKeys = [
   queryKeys.auth,
+  // A user's own live sessions and MFA state are private even though they are
+  // not financial: the sessions list carries other devices' IPs, and the MFA
+  // state answers "does this account have a second factor".
+  queryKeys.authSessions,
+  queryKeys.authMfaStatus,
   queryKeys.favorites,
   queryKeys.cart,
   queryKeys.orders,
@@ -356,4 +374,5 @@ export const privateQueryKeys = [
   ["admin-product-images"],
   ["admin-audit-log"],
   ["admin-health"],
+  ["admin-rbac"],
 ] as const;
