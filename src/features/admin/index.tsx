@@ -17,7 +17,8 @@
  *  - `/admin/users`           the account directory
  *  - `/admin/sellers`         sellers and verification
  *  - `/admin/payments`        the money ledger
- *  - `/admin/refunds`         the ledger, type pinned to `REFUND`
+ *  - `/admin/refunds`         the refund review queue (PROMPT 28)
+ *  - `/admin/revenue`         commission, platform revenue and reconciliation (PROMPT 28)
  *  - `/admin/reviews`         product reviews
  *  - `/admin/reviews/sellers` reviews a seller replied to
  *  - `/admin/categories`      the taxonomy
@@ -25,6 +26,8 @@
  *  - `/admin/product-images`  photo sets
  *  - `/admin/audit-log`       who did what
  *  - `/admin/moderation`      reports, reviews and suspended accounts
+ *  - `/admin/support`         the staff support inbox (PROMPT 30)
+ *  - `/admin/coupons`         the discount codes and their redemptions (PROMPT 31)
  *
  * ## Where the authorization guard is, and why not here
  *
@@ -53,10 +56,13 @@ export { AdminDashboardPage } from "./pages/AdminDashboardPage";
 export { AdminProductsPage } from "./pages/AdminProductsPage";
 export { AdminOrdersPage } from "./pages/AdminOrdersPage";
 export { AdminRentalsPage } from "./pages/AdminRentalsPage";
+export { AdminDisputesPage } from "./pages/AdminDisputesPage";
 export { AdminReturnsPage } from "./pages/AdminReturnsPage";
 export { AdminUsersPage } from "./pages/AdminUsersPage";
 export { AdminSellersPage } from "./pages/AdminSellersPage";
 export { AdminPaymentsPage } from "./pages/AdminPaymentsPage";
+export { AdminRefundsPage } from "./pages/AdminRefundsPage";
+export { AdminRevenuePage } from "./pages/AdminRevenuePage";
 export { AdminReviewsPage } from "./pages/AdminReviewsPage";
 export { AdminCategoriesPage } from "./pages/AdminCategoriesPage";
 export { AdminContentPage } from "./pages/AdminContentPage";
@@ -66,6 +72,8 @@ export { AdminAuditPage } from "./pages/AdminAuditPage";
 export { AdminModerationPage } from "./pages/AdminModerationPage";
 export { AdminRolesPage } from "./pages/AdminRolesPage";
 export { AdminReportsPage } from "./pages/AdminReportsPage";
+export { AdminSupportPage } from "./pages/AdminSupportPage";
+export { AdminCouponsPage } from "./pages/AdminCouponsPage";
 export { AdminNotificationsPage } from "./pages/AdminNotificationsPage";
 export { AdminSettingsPage } from "./pages/AdminSettingsPage";
 export { AdminLayout } from "./components/AdminLayout";

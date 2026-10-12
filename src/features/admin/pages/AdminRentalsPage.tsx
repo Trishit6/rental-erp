@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { RefreshCcw, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Pagination } from "@/components/shared/pagination";
 import { AdminPageHeader } from "../components/AdminLayout";
 import {
@@ -10,6 +12,7 @@ import {
   TableCell,
   TableRow,
 } from "../components/AdminTableScaffold";
+import { AdminRentalDetailDialog } from "../components/AdminRentalDetailDialog";
 import { formatAdminDate, formatAdminMoney, humanizeEnum } from "../components/format";
 import { NEUTRAL_BADGE, RENTAL_STATUS_BADGE } from "../components/status-badge";
 import { useAdminRentals, useAdminSearchFilters } from "../query";
@@ -27,14 +30,13 @@ import { EMPTY_ADMIN_RENTAL_FILTERS, type AdminRentalRow } from "../api";
  * (`adminRentalsQuerySchema` forwards them to `resolveRentalFilters`), so this is a
  * filter bar, not new server behaviour.
  *
- * ## No write controls, deliberately
+ * ## Writes go through the detail dialog, not the row
  *
- * Advancing a rental's status is `POST /api/rentals/:id/return` and the lifecycle
- * rules that guard it — deposit settlement, availability release, overdue
- * notification — live in `lib/rental-lifecycle`. An admin table button that called
- * the same endpoint would work, but it would be a second, unguarded path to a state
- * machine that already has one correct caller. This screen is read-only by design;
- * the lifecycle owns the transitions.
+ * Advancing a rental's status is a change to a state machine that also settles deposits
+ * and releases availability, so the table does not carry a one-click transition — a
+ * mis-click in a list is one click from a wrong deposit. The row opens the rental, and
+ * the dialog offers only the transitions the server says are reachable (`nextStatuses`),
+ * so the button set and the enforced machine cannot disagree.
  */
 
 const BUCKET_OPTIONS = [
@@ -71,6 +73,7 @@ function isOverdue(row: AdminRentalRow): boolean {
 export function AdminRentalsPage() {
   const [filters, setFilters] = useAdminSearchFilters(EMPTY_ADMIN_RENTAL_FILTERS);
   const rentals = useAdminRentals(filters);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
 
   // A filter change resets to page 1; paging is the only thing that may move the page
   // while the other filters stay put.
@@ -90,7 +93,7 @@ export function AdminRentalsPage() {
       <AdminPageHeader
         eyebrow="Orders"
         title="Rentals"
-        description="Every rental booking with its dates, deposit and parties. Read-only — the rental lifecycle owns status changes."
+        description="Every rental booking with its dates, deposit and parties. Open one to confirm a return, settle a deposit or decide an extension — only the transitions the server allows are offered."
       />
 
       <AdminTableScaffold
@@ -154,6 +157,7 @@ export function AdminRentalsPage() {
               "Deposit",
               "Total",
               "Status",
+              "",
             ]}
           />
           <TableBody>
@@ -191,11 +195,24 @@ export function AdminRentalsPage() {
                 <TableCell>
                   <RentalStatusCell row={row} />
                 </TableCell>
+                <TableCell className="text-right">
+                  <Button type="button" variant="secondary" size="sm" onClick={() => setSelectedId(row.id)}>
+                    Manage
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </AdminTable>
       </AdminTableScaffold>
+
+      <AdminRentalDetailDialog
+        rentalId={selectedId}
+        open={selectedId !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedId(null);
+        }}
+      />
     </div>
   );
 }

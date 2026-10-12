@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, like, or, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/mysql-core";
 import { db } from "../db";
 import {
   orderItems,
@@ -235,6 +236,34 @@ export const ticketRatingSchema = z
 
 export type TicketRatingInput = z.infer<typeof ticketRatingSchema>;
 
+/** The staff ticket status/priority vocabularies, as Zod enums (PROMPT 30). */
+export const ticketStatusSchema = z.enum(TICKET_STATUSES);
+export const ticketPrioritySchema = z.enum(TICKET_PRIORITIES);
+
+/**
+ * A staff edit to a ticket's workflow fields (PROMPT 30).
+ *
+ * Deliberately narrow: the subject, the requester and the message thread are not
+ * editable here — a support agent tidies a ticket's *state*, and rewriting what a
+ * customer wrote would make the thread a lie. `assigneeId: null` releases a claim.
+ */
+export const staffTicketUpdateSchema = z
+  .object({
+    status: ticketStatusSchema.optional(),
+    priority: ticketPrioritySchema.optional(),
+    assigneeId: positiveId.nullable().optional(),
+    /** Recorded in the audit log; `withAudit({ requireReason: true })` enforces it too. */
+    reason: z.string().trim().min(3).max(300),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.status !== undefined || value.priority !== undefined || value.assigneeId !== undefined,
+    { message: "Nothing to update." },
+  );
+
+export type StaffTicketUpdateInput = z.infer<typeof staffTicketUpdateSchema>;
+
 /* -------------------------------- payloads --------------------------------- */
 
 export type TicketAttachment = {
@@ -252,6 +281,12 @@ export type TicketMessageRecord = {
   authorId: number;
   authorName: string;
   authorIsStaff: boolean;
+  /**
+   * An internal note is visible to staff only. The customer read filters these rows
+   * out in SQL, so the flag is always `false` there; the staff read needs it to label
+   * the line.
+   */
+  isInternal: boolean;
   attachments: TicketAttachment[];
 };
 
@@ -570,6 +605,7 @@ async function loadMessages(
       authorId: ticketMessages.authorId,
       authorName: users.name,
       authorRole: users.role,
+      isInternal: ticketMessages.isInternal,
     })
     .from(ticketMessages)
     .innerJoin(users, eq(users.id, ticketMessages.authorId))
@@ -619,6 +655,7 @@ async function loadMessages(
     authorId: message.authorId,
     authorName: message.authorName,
     authorIsStaff: message.authorRole === "ADMIN" || message.authorRole === "SUPPORT",
+    isInternal: message.isInternal,
     attachments: byMessage.get(message.id) ?? [],
   }));
 }
@@ -676,30 +713,69 @@ export async function findOpenTicketForOrder(
 
 /* ------------------------------- staff side -------------------------------- */
 
+/** The requester and the assignee join the same table, so the assignee is aliased. */
+const assigneeUser = alias(users, "assignee_user");
+
 export type StaffTicketSummary = TicketSummary & {
   userId: number;
   requesterName: string;
+  requesterEmail: string;
   assigneeId: number | null;
+  assigneeName: string | null;
+  slaDueAt: Date | null;
 };
 
-export async function listTicketsForStaff(options: {
+export type StaffTicketFilters = {
   page: number;
   pageSize: number;
   status?: TicketStatus;
-}): Promise<{ rows: StaffTicketSummary[]; pagination: ReturnType<typeof buildPagination> }> {
-  const where = options.status ? eq(supportTickets.status, options.status) : undefined;
+  priority?: TicketPriority;
+  /** `"me"` scopes to the viewer's claims; `"unassigned"` to the shared pool. */
+  assignee?: "me" | "unassigned";
+  search?: string;
+};
 
-  const [{ total }] = await db.select({ total: count() }).from(supportTickets).where(where);
+export async function listTicketsForStaff(
+  viewerId: number,
+  options: StaffTicketFilters,
+): Promise<{ rows: StaffTicketSummary[]; pagination: ReturnType<typeof buildPagination> }> {
+  const conditions: SQL[] = [];
+  if (options.status) conditions.push(eq(supportTickets.status, options.status));
+  if (options.priority) conditions.push(eq(supportTickets.priority, options.priority));
+  if (options.assignee === "me") conditions.push(eq(supportTickets.assigneeId, viewerId));
+  if (options.assignee === "unassigned") conditions.push(isNull(supportTickets.assigneeId));
+  if (options.search) {
+    const pattern = `%${options.search}%`;
+    conditions.push(
+      or(
+        like(supportTickets.ticketNumber, pattern),
+        like(supportTickets.subject, pattern),
+        like(users.name, pattern),
+        like(users.email, pattern),
+      )!,
+    );
+  }
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [{ total }] = await db
+    .select({ total: count() })
+    .from(supportTickets)
+    .innerJoin(users, eq(users.id, supportTickets.userId))
+    .where(where);
 
   const rows = await db
     .select({
       ...summaryColumns(),
       userId: supportTickets.userId,
       requesterName: users.name,
+      requesterEmail: users.email,
       assigneeId: supportTickets.assigneeId,
+      assigneeName: assigneeUser.name,
+      slaDueAt: supportTickets.slaDueAt,
     })
     .from(supportTickets)
     .innerJoin(users, eq(users.id, supportTickets.userId))
+    .leftJoin(assigneeUser, eq(assigneeUser.id, supportTickets.assigneeId))
     .where(where)
     .orderBy(desc(supportTickets.updatedAt))
     .limit(options.pageSize)
@@ -711,13 +787,73 @@ export async function listTicketsForStaff(options: {
   };
 }
 
-export async function getStaffTicket(ticketId: number): Promise<TicketDetail & { userId: number }> {
+/** The staff view of one ticket, with everything the agent's screen needs. */
+export type StaffTicketDetail = TicketDetail & {
+  userId: number;
+  requester: { id: number; name: string; email: string };
+  assignee: { id: number; name: string } | null;
+  slaDueAt: Date | null;
+  order: {
+    id: number;
+    orderNumber: string | null;
+    status: string;
+    paymentStatus: string;
+    total: number;
+    currency: string;
+  } | null;
+  rental: { id: number; status: string } | null;
+};
+
+export async function getStaffTicket(ticketId: number): Promise<StaffTicketDetail> {
   const [ticket] = await db
     .select()
     .from(supportTickets)
     .where(eq(supportTickets.id, ticketId))
     .limit(1);
   if (!ticket) throw new HttpError(404, "NOT_FOUND", "That ticket does not exist.");
+
+  const [requester] = await db
+    .select({ id: users.id, name: users.name, email: users.email })
+    .from(users)
+    .where(eq(users.id, ticket.userId))
+    .limit(1);
+
+  const assignee = ticket.assigneeId
+    ? (
+        await db
+          .select({ id: users.id, name: users.name })
+          .from(users)
+          .where(eq(users.id, ticket.assigneeId))
+          .limit(1)
+      )[0] ?? null
+    : null;
+
+  const order = ticket.orderId
+    ? (
+        await db
+          .select({
+            id: orders.id,
+            orderNumber: orders.orderNumber,
+            status: orders.status,
+            paymentStatus: orders.paymentStatus,
+            total: orders.total,
+            currency: orders.currency,
+          })
+          .from(orders)
+          .where(eq(orders.id, ticket.orderId))
+          .limit(1)
+      )[0] ?? null
+    : null;
+
+  const rental = ticket.rentalId
+    ? (
+        await db
+          .select({ id: rentals.id, status: rentals.status })
+          .from(rentals)
+          .where(eq(rentals.id, ticket.rentalId))
+          .limit(1)
+      )[0] ?? null
+    : null;
 
   const messages = await loadMessages(db, ticketId, true);
   return {
@@ -736,6 +872,97 @@ export async function getStaffTicket(ticketId: number): Promise<TicketDetail & {
     resolutionRating: ticket.resolutionRating,
     messageCount: messages.length,
     messages,
+    requester: requester ?? { id: ticket.userId, name: "Unknown", email: "" },
+    assignee,
+    slaDueAt: ticket.slaDueAt,
+    order,
+    rental,
+  };
+}
+
+/**
+ * Change a ticket's workflow state (PROMPT 30).
+ *
+ * Status, priority and the assignee are the fields an agent works; the subject, the
+ * requester and the thread are not editable here. Reaching a settled status stamps
+ * `resolvedAt`/`closedAt` (and reopening clears them), so the timestamps keep meaning
+ * what they say. Assigning is restricted to staff accounts — a ticket claimed by a
+ * customer would vanish from every operator's queue.
+ */
+export async function updateStaffTicket(
+  ticketId: number,
+  input: StaffTicketUpdateInput,
+): Promise<{
+  id: number;
+  status: TicketStatus;
+  priority: TicketPriority;
+  assigneeId: number | null;
+}> {
+  const [ticket] = await db
+    .select({
+      id: supportTickets.id,
+      userId: supportTickets.userId,
+      ticketNumber: supportTickets.ticketNumber,
+      status: supportTickets.status,
+      priority: supportTickets.priority,
+      assigneeId: supportTickets.assigneeId,
+      resolvedAt: supportTickets.resolvedAt,
+    })
+    .from(supportTickets)
+    .where(eq(supportTickets.id, ticketId))
+    .limit(1);
+  if (!ticket) throw new HttpError(404, "NOT_FOUND", "That ticket does not exist.");
+
+  if (input.assigneeId !== undefined && input.assigneeId !== null) {
+    const [target] = await db
+      .select({ id: users.id, role: users.role })
+      .from(users)
+      .where(eq(users.id, input.assigneeId))
+      .limit(1);
+    if (!target || target.role !== "ADMIN") {
+      throw new HttpError(400, "INVALID_ASSIGNEE", "A ticket can only be assigned to a staff account.");
+    }
+  }
+
+  const now = new Date();
+  const patch: Partial<typeof supportTickets.$inferInsert> = {};
+  if (input.status !== undefined) {
+    patch.status = input.status;
+    if (input.status === "RESOLVED") patch.resolvedAt = ticket.resolvedAt ?? now;
+    if (input.status === "CLOSED") {
+      patch.resolvedAt = ticket.resolvedAt ?? now;
+      patch.closedAt = now;
+    }
+    // Moving back to an open state clears the settled timestamps so they do not
+    // claim a ticket that is being worked is finished.
+    if (input.status === "OPEN" || input.status === "PENDING" || input.status === "IN_PROGRESS") {
+      patch.resolvedAt = null;
+      patch.closedAt = null;
+    }
+  }
+  if (input.priority !== undefined) patch.priority = input.priority;
+  if (input.assigneeId !== undefined) patch.assigneeId = input.assigneeId;
+
+  await db.update(supportTickets).set(patch).where(eq(supportTickets.id, ticketId));
+
+  // Tell the requester when their ticket reaches a settled state — the one status
+  // change they care about. Keyed on status so a retried request notifies once.
+  if (input.status === "RESOLVED" || input.status === "CLOSED") {
+    await notify(db, {
+      userId: ticket.userId,
+      type: "SUPPORT_TICKET_UPDATED",
+      title: `Your ticket ${ticket.ticketNumber} is ${input.status === "CLOSED" ? "closed" : "resolved"}`,
+      body: "Open the ticket to see the resolution.",
+      context: { ticketId },
+      eventKey: notificationEventKey("SUPPORT_TICKET_UPDATED", ticketId, input.status),
+    });
+  }
+
+  return {
+    id: ticketId,
+    status: (input.status ?? ticket.status) as TicketStatus,
+    priority: (input.priority ?? ticket.priority) as TicketPriority,
+    assigneeId: input.assigneeId !== undefined ? input.assigneeId : ticket.assigneeId,
   };
 }
 

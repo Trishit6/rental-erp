@@ -65,9 +65,37 @@ export const MODERATION_STATUS_BADGE: Record<string, string> = {
   HIDDEN: "bg-muted text-muted-foreground",
   PENDING: "bg-warning/15 text-warning",
   OPEN: "bg-warning/15 text-warning",
+  // A dispute being actively looked at is neither the alarm red of a new one nor the
+  // settled green of a decided one.
+  UNDER_REVIEW: "bg-info/15 text-info",
   RESOLVED: "bg-success/15 text-success",
   DISMISSED: "bg-muted text-muted-foreground",
 };
 
 /** The fallback, for a status no map above has classified. */
 export const NEUTRAL_BADGE = "bg-muted text-muted-foreground";
+
+/** Support ticket statuses (`support_tickets.status`, PROMPT 30). */
+export const TICKET_STATUS_BADGE: Record<string, string> = {
+  OPEN: "bg-warning/15 text-warning",
+  PENDING: "bg-info/15 text-info",
+  IN_PROGRESS: "bg-primary/12 text-primary",
+  RESOLVED: "bg-success/15 text-success",
+  CLOSED: "bg-muted text-muted-foreground",
+};
+
+/** Support ticket priorities (`support_tickets.priority`, PROMPT 30). */
+export const TICKET_PRIORITY_BADGE: Record<string, string> = {
+  LOW: "bg-muted text-muted-foreground",
+  NORMAL: "bg-info/15 text-info",
+  HIGH: "bg-warning/15 text-warning",
+  URGENT: "bg-destructive/12 text-destructive",
+};
+
+/** Coupon statuses (`coupons.status`, PROMPT 31). */
+export const COUPON_STATUS_BADGE: Record<string, string> = {
+  ACTIVE: "bg-success/15 text-success",
+  SCHEDULED: "bg-info/15 text-info",
+  PAUSED: "bg-warning/15 text-warning",
+  EXPIRED: "bg-muted text-muted-foreground",
+};

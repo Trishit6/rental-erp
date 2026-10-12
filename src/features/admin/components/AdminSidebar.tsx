@@ -9,16 +9,20 @@ import {
   Image as ImageIcon,
   KeyRound,
   LayoutDashboard,
+  LifeBuoy,
   MessageSquareQuote,
   Newspaper,
   Package,
+  Percent,
   RefreshCcw,
   RotateCcw,
+  Scale,
   Settings,
   ShieldCheck,
   ShoppingBag,
   Store,
   Tag,
+  TrendingUp,
   Undo2,
   Users,
 } from "lucide-react";
@@ -88,6 +92,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
       { label: "Products", to: "/admin/products", icon: Package, permission: "products.view" },
       { label: "Categories", to: "/admin/categories", icon: Tag, permission: "categories.view" },
       { label: "Content", to: "/admin/content", icon: Newspaper, permission: "content.manage" },
+      { label: "Coupons", to: "/admin/coupons", icon: Percent, permission: "coupons.view" },
       {
         label: "Product images",
         to: "/admin/product-images",
@@ -108,6 +113,15 @@ export const ADMIN_NAV: AdminNavSection[] = [
     ],
   },
   {
+    title: "Support",
+    items: [
+      // The agent's queue is read-gated on `support.view` and acted on with
+      // `support.reply`; the refund action inside a ticket is separately gated on
+      // `orders.refund`, so support can answer without being able to return money.
+      { label: "Inbox", to: "/admin/support", icon: LifeBuoy, permission: "support.view" },
+    ],
+  },
+  {
     title: "Finance",
     items: [
       {
@@ -117,13 +131,22 @@ export const ADMIN_NAV: AdminNavSection[] = [
         permission: "payouts.view",
       },
       { label: "Payments", to: "/admin/payments", icon: CreditCard, permission: "payouts.view" },
-      { label: "Refunds", to: "/admin/refunds", icon: RotateCcw, permission: "payouts.view" },
+      // `refunds.view` rather than `payouts.view`: support agents are deliberately
+      // left able to see that a refund is pending without being able to return money.
+      { label: "Refunds", to: "/admin/refunds", icon: RotateCcw, permission: "refunds.view" },
+      {
+        label: "Revenue & reconciliation",
+        to: "/admin/revenue",
+        icon: TrendingUp,
+        permission: "payouts.view",
+      },
     ],
   },
   {
     title: "Moderation",
     items: [
       { label: "Reports", to: "/admin/reports", icon: Flag, permission: "reports.view" },
+      { label: "Disputes", to: "/admin/disputes", icon: Scale, permission: "disputes.view" },
       {
         label: "Moderation hub",
         to: "/admin/moderation",

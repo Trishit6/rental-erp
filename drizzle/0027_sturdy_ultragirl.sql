@@ -1,0 +1,2 @@
+ALTER TABLE `payment_webhook_events` ADD `provider_payment_id` varchar(100);--> statement-breakpoint
+CREATE INDEX `payment_webhook_events_provider_payment_idx` ON `payment_webhook_events` (`provider`,`provider_payment_id`,`created_at`);

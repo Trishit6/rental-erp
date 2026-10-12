@@ -8,6 +8,8 @@ import type {
   PaymentMethodDescriptor,
   PaymentProvider,
   PaymentStatus,
+  RefundPaymentInput,
+  RefundPaymentResult,
   VerifyPaymentInput,
   VerifyPaymentResult,
 } from "./types";
@@ -103,6 +105,12 @@ export function createMockPaymentProvider(): PaymentProvider {
    */
   const intentsByIdempotencyKey = new Map<string, MockIntent>();
   const intentsByProviderId = new Map<string, MockIntent>();
+  // Successful refunds only, keyed by their idempotency key, so a retry returns
+  // the first result rather than paying the money back twice. Failures are not
+  // cached: a refund that was refused because the payment had not settled may
+  // legitimately be retried once it has.
+  const refundsByIdempotencyKey = new Map<string, RefundPaymentResult>();
+  const refundedByProviderId = new Map<string, number>();
 
   return {
     name: "dev_mock",
@@ -255,6 +263,56 @@ export function createMockPaymentProvider(): PaymentProvider {
         status: "CANCELLED",
         providerPaymentId: intent.providerPaymentId,
       };
+    },
+
+    async refundPayment(input: RefundPaymentInput): Promise<RefundPaymentResult> {
+      const cached = refundsByIdempotencyKey.get(input.idempotencyKey);
+      if (cached) return cached;
+
+      const intent = intentsByProviderId.get(input.providerPaymentId);
+      if (!intent) {
+        return {
+          refunded: false,
+          status: "FAILED",
+          providerPaymentId: input.providerPaymentId,
+          amount: input.amount,
+          failureReason: "This payment is not recognised.",
+        };
+      }
+      if (intent.status !== "SUCCEEDED") {
+        return {
+          refunded: false,
+          status: "FAILED",
+          providerPaymentId: intent.providerPaymentId,
+          amount: input.amount,
+          failureReason: "Only a settled payment can be refunded.",
+        };
+      }
+      const already = refundedByProviderId.get(input.providerPaymentId) ?? 0;
+      if (
+        !Number.isInteger(input.amount) ||
+        input.amount <= 0 ||
+        already + input.amount > intent.amount
+      ) {
+        return {
+          refunded: false,
+          status: "FAILED",
+          providerPaymentId: intent.providerPaymentId,
+          amount: input.amount,
+          failureReason: "That amount exceeds what can still be refunded on this payment.",
+        };
+      }
+
+      refundedByProviderId.set(input.providerPaymentId, already + input.amount);
+      const result: RefundPaymentResult = {
+        refunded: true,
+        status: "SUCCEEDED",
+        providerPaymentId: intent.providerPaymentId,
+        amount: input.amount,
+        providerReference: `mock_rf_${randomBytes(10).toString("hex")}`,
+      };
+      refundsByIdempotencyKey.set(input.idempotencyKey, result);
+      return result;
     },
 
     verifyWebhookSignature(rawBody, signature) {

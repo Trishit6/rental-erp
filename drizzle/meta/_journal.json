@@ -190,6 +190,20 @@
       "when": 1791732739483,
       "tag": "0026_flowery_thunderbolt_ross",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "5",
+      "when": 1791814698261,
+      "tag": "0027_sturdy_ultragirl",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "5",
+      "when": 1791816229874,
+      "tag": "0028_chief_micromacro",
+      "breakpoints": true
     }
   ]
 }

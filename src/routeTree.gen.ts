@@ -38,6 +38,8 @@ import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminAuditLogsRouteImport } from './routes/admin/audit-logs'
 import { Route as AdminCategoriesRouteImport } from './routes/admin/categories'
 import { Route as AdminContentRouteImport } from './routes/admin/content'
+import { Route as AdminCouponsRouteImport } from './routes/admin/coupons'
+import { Route as AdminDisputesRouteImport } from './routes/admin/disputes'
 import { Route as AdminFinanceRouteImport } from './routes/admin/finance'
 import { Route as AdminForbiddenRouteImport } from './routes/admin/forbidden'
 import { Route as AdminModerationRouteImport } from './routes/admin/moderation'
@@ -51,10 +53,12 @@ import { Route as AdminRefundsRouteImport } from './routes/admin/refunds'
 import { Route as AdminRentalsRouteImport } from './routes/admin/rentals'
 import { Route as AdminReportsRouteImport } from './routes/admin/reports'
 import { Route as AdminReturnsRouteImport } from './routes/admin/returns'
+import { Route as AdminRevenueRouteImport } from './routes/admin/revenue'
 import { Route as AdminReviewsRouteImport } from './routes/admin/reviews'
 import { Route as AdminRolesRouteImport } from './routes/admin/roles'
 import { Route as AdminSellersRouteImport } from './routes/admin/sellers'
 import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
+import { Route as AdminSupportRouteImport } from './routes/admin/support'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as CategoriesIndexRouteImport } from './routes/categories/index'
 import { Route as CategoriesCategorySlugRouteImport } from './routes/categories/$categorySlug'
@@ -226,6 +230,16 @@ const AdminContentRoute = AdminContentRouteImport.update({
   path: '/content',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminCouponsRoute = AdminCouponsRouteImport.update({
+  id: '/coupons',
+  path: '/coupons',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminDisputesRoute = AdminDisputesRouteImport.update({
+  id: '/disputes',
+  path: '/disputes',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminFinanceRoute = AdminFinanceRouteImport.update({
   id: '/finance',
   path: '/finance',
@@ -291,6 +305,11 @@ const AdminReturnsRoute = AdminReturnsRouteImport.update({
   path: '/returns',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminRevenueRoute = AdminRevenueRouteImport.update({
+  id: '/revenue',
+  path: '/revenue',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminReviewsRoute = AdminReviewsRouteImport.update({
   id: '/reviews',
   path: '/reviews',
@@ -309,6 +328,11 @@ const AdminSellersRoute = AdminSellersRouteImport.update({
 const AdminSettingsRoute = AdminSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminSupportRoute = AdminSupportRouteImport.update({
+  id: '/support',
+  path: '/support',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
@@ -477,6 +501,8 @@ export interface FileRoutesByFullPath {
   '/admin/audit-logs': typeof AdminAuditLogsRoute
   '/admin/categories': typeof AdminCategoriesRoute
   '/admin/content': typeof AdminContentRoute
+  '/admin/coupons': typeof AdminCouponsRoute
+  '/admin/disputes': typeof AdminDisputesRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/forbidden': typeof AdminForbiddenRoute
   '/admin/moderation': typeof AdminModerationRoute
@@ -490,10 +516,12 @@ export interface FileRoutesByFullPath {
   '/admin/rentals': typeof AdminRentalsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/returns': typeof AdminReturnsRoute
+  '/admin/revenue': typeof AdminRevenueRoute
   '/admin/reviews': typeof AdminReviewsRouteWithChildren
   '/admin/roles': typeof AdminRolesRoute
   '/admin/sellers': typeof AdminSellersRoute
   '/admin/settings': typeof AdminSettingsRoute
+  '/admin/support': typeof AdminSupportRoute
   '/admin/users': typeof AdminUsersRoute
   '/categories/$categorySlug': typeof CategoriesCategorySlugRoute
   '/product/$slug': typeof ProductSlugRoute
@@ -548,6 +576,8 @@ export interface FileRoutesByTo {
   '/admin/audit-logs': typeof AdminAuditLogsRoute
   '/admin/categories': typeof AdminCategoriesRoute
   '/admin/content': typeof AdminContentRoute
+  '/admin/coupons': typeof AdminCouponsRoute
+  '/admin/disputes': typeof AdminDisputesRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/forbidden': typeof AdminForbiddenRoute
   '/admin/moderation': typeof AdminModerationRoute
@@ -561,10 +591,12 @@ export interface FileRoutesByTo {
   '/admin/rentals': typeof AdminRentalsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/returns': typeof AdminReturnsRoute
+  '/admin/revenue': typeof AdminRevenueRoute
   '/admin/reviews': typeof AdminReviewsRouteWithChildren
   '/admin/roles': typeof AdminRolesRoute
   '/admin/sellers': typeof AdminSellersRoute
   '/admin/settings': typeof AdminSettingsRoute
+  '/admin/support': typeof AdminSupportRoute
   '/admin/users': typeof AdminUsersRoute
   '/categories/$categorySlug': typeof CategoriesCategorySlugRoute
   '/product/$slug': typeof ProductSlugRoute
@@ -623,6 +655,8 @@ export interface FileRoutesById {
   '/admin/audit-logs': typeof AdminAuditLogsRoute
   '/admin/categories': typeof AdminCategoriesRoute
   '/admin/content': typeof AdminContentRoute
+  '/admin/coupons': typeof AdminCouponsRoute
+  '/admin/disputes': typeof AdminDisputesRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/forbidden': typeof AdminForbiddenRoute
   '/admin/moderation': typeof AdminModerationRoute
@@ -636,10 +670,12 @@ export interface FileRoutesById {
   '/admin/rentals': typeof AdminRentalsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/returns': typeof AdminReturnsRoute
+  '/admin/revenue': typeof AdminRevenueRoute
   '/admin/reviews': typeof AdminReviewsRouteWithChildren
   '/admin/roles': typeof AdminRolesRoute
   '/admin/sellers': typeof AdminSellersRoute
   '/admin/settings': typeof AdminSettingsRoute
+  '/admin/support': typeof AdminSupportRoute
   '/admin/users': typeof AdminUsersRoute
   '/categories/$categorySlug': typeof CategoriesCategorySlugRoute
   '/product/$slug': typeof ProductSlugRoute
@@ -697,6 +733,8 @@ export interface FileRouteTypes {
     | '/admin/audit-logs'
     | '/admin/categories'
     | '/admin/content'
+    | '/admin/coupons'
+    | '/admin/disputes'
     | '/admin/finance'
     | '/admin/forbidden'
     | '/admin/moderation'
@@ -710,10 +748,12 @@ export interface FileRouteTypes {
     | '/admin/rentals'
     | '/admin/reports'
     | '/admin/returns'
+    | '/admin/revenue'
     | '/admin/reviews'
     | '/admin/roles'
     | '/admin/sellers'
     | '/admin/settings'
+    | '/admin/support'
     | '/admin/users'
     | '/categories/$categorySlug'
     | '/product/$slug'
@@ -768,6 +808,8 @@ export interface FileRouteTypes {
     | '/admin/audit-logs'
     | '/admin/categories'
     | '/admin/content'
+    | '/admin/coupons'
+    | '/admin/disputes'
     | '/admin/finance'
     | '/admin/forbidden'
     | '/admin/moderation'
@@ -781,10 +823,12 @@ export interface FileRouteTypes {
     | '/admin/rentals'
     | '/admin/reports'
     | '/admin/returns'
+    | '/admin/revenue'
     | '/admin/reviews'
     | '/admin/roles'
     | '/admin/sellers'
     | '/admin/settings'
+    | '/admin/support'
     | '/admin/users'
     | '/categories/$categorySlug'
     | '/product/$slug'
@@ -842,6 +886,8 @@ export interface FileRouteTypes {
     | '/admin/audit-logs'
     | '/admin/categories'
     | '/admin/content'
+    | '/admin/coupons'
+    | '/admin/disputes'
     | '/admin/finance'
     | '/admin/forbidden'
     | '/admin/moderation'
@@ -855,10 +901,12 @@ export interface FileRouteTypes {
     | '/admin/rentals'
     | '/admin/reports'
     | '/admin/returns'
+    | '/admin/revenue'
     | '/admin/reviews'
     | '/admin/roles'
     | '/admin/sellers'
     | '/admin/settings'
+    | '/admin/support'
     | '/admin/users'
     | '/categories/$categorySlug'
     | '/product/$slug'
@@ -1122,6 +1170,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminContentRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/coupons': {
+      id: '/admin/coupons'
+      path: '/coupons'
+      fullPath: '/admin/coupons'
+      preLoaderRoute: typeof AdminCouponsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/disputes': {
+      id: '/admin/disputes'
+      path: '/disputes'
+      fullPath: '/admin/disputes'
+      preLoaderRoute: typeof AdminDisputesRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/finance': {
       id: '/admin/finance'
       path: '/finance'
@@ -1213,6 +1275,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminReturnsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/revenue': {
+      id: '/admin/revenue'
+      path: '/revenue'
+      fullPath: '/admin/revenue'
+      preLoaderRoute: typeof AdminRevenueRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/reviews': {
       id: '/admin/reviews'
       path: '/reviews'
@@ -1239,6 +1308,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/admin/settings'
       preLoaderRoute: typeof AdminSettingsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/support': {
+      id: '/admin/support'
+      path: '/support'
+      fullPath: '/admin/support'
+      preLoaderRoute: typeof AdminSupportRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/users': {
@@ -1529,6 +1605,8 @@ interface AdminRouteChildren {
   AdminAuditLogsRoute: typeof AdminAuditLogsRoute
   AdminCategoriesRoute: typeof AdminCategoriesRoute
   AdminContentRoute: typeof AdminContentRoute
+  AdminCouponsRoute: typeof AdminCouponsRoute
+  AdminDisputesRoute: typeof AdminDisputesRoute
   AdminFinanceRoute: typeof AdminFinanceRoute
   AdminForbiddenRoute: typeof AdminForbiddenRoute
   AdminModerationRoute: typeof AdminModerationRoute
@@ -1542,10 +1620,12 @@ interface AdminRouteChildren {
   AdminRentalsRoute: typeof AdminRentalsRoute
   AdminReportsRoute: typeof AdminReportsRoute
   AdminReturnsRoute: typeof AdminReturnsRoute
+  AdminRevenueRoute: typeof AdminRevenueRoute
   AdminReviewsRoute: typeof AdminReviewsRouteWithChildren
   AdminRolesRoute: typeof AdminRolesRoute
   AdminSellersRoute: typeof AdminSellersRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
+  AdminSupportRoute: typeof AdminSupportRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
@@ -1554,6 +1634,8 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminAuditLogsRoute: AdminAuditLogsRoute,
   AdminCategoriesRoute: AdminCategoriesRoute,
   AdminContentRoute: AdminContentRoute,
+  AdminCouponsRoute: AdminCouponsRoute,
+  AdminDisputesRoute: AdminDisputesRoute,
   AdminFinanceRoute: AdminFinanceRoute,
   AdminForbiddenRoute: AdminForbiddenRoute,
   AdminModerationRoute: AdminModerationRoute,
@@ -1567,10 +1649,12 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminRentalsRoute: AdminRentalsRoute,
   AdminReportsRoute: AdminReportsRoute,
   AdminReturnsRoute: AdminReturnsRoute,
+  AdminRevenueRoute: AdminRevenueRoute,
   AdminReviewsRoute: AdminReviewsRouteWithChildren,
   AdminRolesRoute: AdminRolesRoute,
   AdminSellersRoute: AdminSellersRoute,
   AdminSettingsRoute: AdminSettingsRoute,
+  AdminSupportRoute: AdminSupportRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
 }

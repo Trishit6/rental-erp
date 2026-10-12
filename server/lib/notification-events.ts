@@ -420,6 +420,15 @@ export const NOTIFICATION_TYPES = define({
     entity: "PAYMENT",
     destination: { kind: "order", numberFrom: "orderNumber", idFrom: "orderId" },
   },
+  // A refusal is not "processed" — saying so would tell a customer money is on its
+  // way when it is not. Separate type, separate wording, same destination.
+  REFUND_REJECTED: {
+    category: "PAYMENTS",
+    label: "Refund declined",
+    supported: true,
+    entity: "PAYMENT",
+    destination: { kind: "order", numberFrom: "orderNumber", idFrom: "orderId" },
+  },
 
   /* --------------------------------- seller -------------------------------- */
 
@@ -547,6 +556,26 @@ export const NOTIFICATION_TYPES = define({
     entity: "ACCOUNT",
     destination: { kind: "adminModeration" },
   },
+  /**
+   * The moderator's verdict on a report the user filed (PROMPT 29). Reaches the
+   * *reporter*, who is a customer rather than staff, so it is addressed to their
+   * activity feed instead of the moderation hub.
+   */
+  REPORT_DECIDED: {
+    category: "ADMIN",
+    label: "Report reviewed",
+    supported: true,
+    entity: "ACCOUNT",
+    destination: { kind: "profileActivity" },
+  },
+  /** A moderation warning delivered to the account itself (PROMPT 29). */
+  ACCOUNT_WARNED: {
+    category: "ADMIN",
+    label: "Account warning",
+    supported: true,
+    entity: "ACCOUNT",
+    destination: { kind: "profile" },
+  },
 
   /* --------------------------------- support ------------------------------- */
 
@@ -557,6 +586,17 @@ export const NOTIFICATION_TYPES = define({
   SUPPORT_TICKET_REPLY: {
     category: "ORDERS",
     label: "Support replied",
+    supported: true,
+    entity: "ACCOUNT",
+    destination: { kind: "supportTicket", idFrom: "ticketId" },
+  },
+
+  // A ticket reaching a settled state: the requester has been waiting, so the
+  // resolution is worth a nudge. Kept beside `SUPPORT_TICKET_REPLY` (same destination
+  // and category) because both are "something happened on your ticket".
+  SUPPORT_TICKET_UPDATED: {
+    category: "ORDERS",
+    label: "Support ticket updated",
     supported: true,
     entity: "ACCOUNT",
     destination: { kind: "supportTicket", idFrom: "ticketId" },

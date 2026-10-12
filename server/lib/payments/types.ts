@@ -141,6 +141,33 @@ export type CancelPaymentResult = {
   providerPaymentId: string;
 };
 
+/** How the platform asks a provider to give money back. */
+export type RefundPaymentInput = {
+  providerPaymentId: string;
+  /** Minor units (paise). Always an integer, never more than was captured. */
+  amount: number;
+  currency: string;
+  /**
+   * Same refund submitted twice must return the first result. The key is derived
+   * from the `refunds` row, so a retry after a network blip cannot move the money
+   * a second time.
+   */
+  idempotencyKey: string;
+  /** Quoted by the provider, never shown raw to a customer. */
+  reason?: string;
+};
+
+export type RefundPaymentResult = {
+  refunded: boolean;
+  /** A provider either paid it back or it did not; there is no third state. */
+  status: "SUCCEEDED" | "FAILED";
+  providerPaymentId: string;
+  amount: number;
+  /** The provider's own reference for the return leg. */
+  providerReference?: string;
+  failureReason?: string;
+};
+
 /** A provider's own event, already normalised. */
 export type WebhookEvent = {
   /** Provider's unique event id — the basis of webhook idempotency. */
@@ -182,6 +209,17 @@ export interface PaymentProvider {
   verifyWebhookSignature(rawBody: string, signature: string | undefined): boolean;
 
   parseWebhookEvent(rawBody: string): WebhookEvent | null;
+
+  /**
+   * Optional, and deliberately absent from the core contract.
+   *
+   * Most providers can refund a *settled* payment but not an intent, and some
+   * gateways do not expose refunds through the same API as charges at all. Making
+   * it required would force every adapter to pretend; making it optional means a
+   * deployment without refund support fails with a clear 501 at the moment money
+   * would be returned, rather than silently marking a refund complete.
+   */
+  refundPayment?(input: RefundPaymentInput): Promise<RefundPaymentResult>;
 }
 
 export function isPaymentMethod(value: unknown): value is PaymentMethod {

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { and, ne, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
+  disputes,
   orders,
   orderItems,
   payouts,
@@ -102,7 +103,6 @@ import { CUSTOMER_CANCELLABLE_FROM } from "../lib/order-cancellation";
 import { reconcileRentalStatuses } from "../lib/rental-lifecycle";
 import { notificationEventKey } from "../lib/notification-events";
 import { notify } from "../lib/notifications";
-import { notifyOrderProgress } from "../lib/order-notifications";
 import {
   addAdminOrderNote,
   adminOrderNextStatuses,
@@ -129,12 +129,53 @@ import {
 } from "../lib/dispute-admin";
 import { getOrderHealth } from "../lib/order-health";
 import {
+  adminRefundsQuerySchema,
+  getAdminRefundDetail,
+  listAdminRefunds,
+  processAdminRefund,
+} from "../lib/refund-admin";
+import { getAdminTransactionDetail } from "../lib/transaction-admin";
+import {
+  getCommissionBreakdown,
+  getPlatformRevenue,
+  getReconciliation,
+} from "../lib/finance-reports";
+import {
+  applyBulkModerationDecision,
+  applyModerationDecision,
+  bulkModerationDecisionSchema,
+  getFlagWords,
+  getModerationReportDetail,
+  listModerationReports,
+  moderationDecisionSchema,
+  moderationQueueQuerySchema,
+  setFlagWords,
+} from "../lib/moderation";
+import {
   addStaffMessage,
   getStaffTicket,
   listTicketsForStaff,
+  staffTicketUpdateSchema,
+  TICKET_PRIORITIES,
   TICKET_STATUSES,
+  updateStaffTicket,
+  type TicketPriority,
   type TicketStatus,
 } from "../lib/support";
+import {
+  COUPON_DISCOUNT_TYPES,
+  COUPON_STATUSES,
+  couponStatusSchema,
+  couponWriteSchema,
+  createCoupon,
+  deleteCoupon,
+  getCouponDetail,
+  listCouponsForAdmin,
+  setCouponStatus,
+  updateCoupon,
+  type CouponDiscountType,
+  type CouponStatus,
+} from "../lib/coupon-admin";
 
 export const adminRoute = new Router();
 
@@ -191,6 +232,7 @@ export const ADMIN_ROUTE_PERMISSIONS: readonly AdminRoutePermission[] = [
   { method: "GET", path: "/orders", permission: "orders.view" },
   { method: "PATCH", path: "/orders", permission: "orders.manage" },
   { method: "POST", path: "/orders/:id/notes", permission: "orders.manage" },
+  { method: "POST", path: "/orders/:id/cancel", permission: "orders.manage" },
   { method: "POST", path: "/orders/:id/refunds", permission: "orders.refund" },
   { method: "GET", path: "/order-health", permission: "orders.view" },
 
@@ -213,6 +255,21 @@ export const ADMIN_ROUTE_PERMISSIONS: readonly AdminRoutePermission[] = [
   { method: "GET", path: "/transactions", permission: "payouts.view" },
   { method: "GET", path: "/payouts", permission: "payouts.view" },
   { method: "PATCH", path: "/payouts", permission: "payouts.approve" },
+
+  // PROMPT 28. Reading a refund (and the failed-payment queue) is separate from
+  // deciding one: SUPPORT may see that a refund is pending, only FINANCE may return
+  // the money, and that decision additionally requires a step-up in the handler.
+  { method: "GET", path: "/refunds", permission: "refunds.view" },
+  { method: "POST", path: "/refunds", permission: "refunds.approve" },
+  { method: "GET", path: "/revenue", permission: "payouts.view" },
+  { method: "GET", path: "/reconciliation", permission: "payouts.view" },
+
+  // PROMPT 29. Reading the queue is separate from deciding it; deciding is a step-up
+  // + mandatory-reason action in the handler itself.
+  { method: "GET", path: "/moderation/reports", permission: "reports.view" },
+  { method: "POST", path: "/moderation/reports", permission: "reports.resolve" },
+  { method: "GET", path: "/moderation/flag-words", permission: "reports.view" },
+  { method: "PATCH", path: "/moderation/flag-words", permission: "settings.manage" },
 
   { method: "GET", path: "/reviews", permission: "reviews.view" },
   { method: "PATCH", path: "/reviews", permission: "reviews.moderate" },
@@ -241,6 +298,12 @@ export const ADMIN_ROUTE_PERMISSIONS: readonly AdminRoutePermission[] = [
 
   { method: "GET", path: "/support/tickets", permission: "support.view" },
   { method: "POST", path: "/support/tickets", permission: "support.reply" },
+  { method: "PATCH", path: "/support/tickets", permission: "support.reply" },
+
+  { method: "GET", path: "/coupons", permission: "coupons.view" },
+  { method: "POST", path: "/coupons", permission: "coupons.manage" },
+  { method: "PATCH", path: "/coupons", permission: "coupons.manage" },
+  { method: "DELETE", path: "/coupons", permission: "coupons.manage" },
 
   { method: "GET", path: "/roles", permission: "rbac.manage" },
   { method: "POST", path: "/roles", permission: "rbac.manage" },
@@ -277,6 +340,8 @@ adminRoute.get("/me", async (c) => {
   const access = await resolveAccess(admin.id);
   return c.json(
     ok({
+      id: admin.id,
+      name: admin.name,
       role: admin.role,
       roles: [...access.roles].sort(),
       permissions: [...access.permissions].sort(),
@@ -1224,6 +1289,109 @@ adminRoute.get("/transactions", async (c) => {
   return c.json(ok(rows, buildPagination(query.page, query.pageSize, total)));
 });
 
+/**
+ * `GET /api/admin/transactions/:id` — one payment with its webhook evidence.
+ *
+ * Declared after the list so `/transactions` is never captured as an id. The
+ * `payouts.view` prefix gate already covers it. The response carries the archived
+ * provider events so support can answer "the payment says failed, but did the
+ * provider ever tell us anything else?" without asking the provider.
+ */
+adminRoute.get("/transactions/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new HttpError(400, "INVALID_ID", "A transaction id must be a positive integer.");
+  }
+  const detail = await getAdminTransactionDetail(id);
+  if (!detail) throw new HttpError(404, "NOT_FOUND", "Transaction not found.");
+  return c.json(ok(detail));
+});
+
+/* --------------------------------- refunds ---------------------------------- */
+
+/**
+ * `GET /api/admin/refunds` — the refund review queue.
+ *
+ * A refund only exists once an operator has *requested* it (PROMPT 27). This lists
+ * the requests so finance can decide them; it never creates one, because a refund
+ * with no order behind it would be money leaving for no reason.
+ */
+adminRoute.get("/refunds", async (c) => {
+  const query = adminRefundsQuerySchema.parse(c.req.query());
+  const { rows, total } = await listAdminRefunds(query);
+  return c.json(ok(rows, buildPagination(query.page, query.pageSize, total)));
+});
+
+/** `GET /api/admin/refunds/:id` — one request, with the captured total it is measured against. */
+adminRoute.get("/refunds/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new HttpError(400, "INVALID_ID", "A refund id must be a positive integer.");
+  }
+  const detail = await getAdminRefundDetail(id);
+  if (!detail) throw new HttpError(404, "NOT_FOUND", "Refund not found.");
+  return c.json(ok(detail));
+});
+
+const adminRefundDecisionSchema = z.object({
+  decision: z.enum(["APPROVE", "REJECT"]),
+  /** An offline reference, used only when the provider returns none. */
+  providerReference: z.string().trim().max(100).nullish(),
+  reason: z.string().trim().min(3).max(300),
+});
+
+/**
+ * `POST /api/admin/refunds/:id/decision` — approve (and execute) or reject a refund.
+ *
+ * Three locks, in order: the route gate (`refunds.approve`, FINANCE and admins), a
+ * fresh step-up MFA assertion, and a mandatory reason recorded in the audit log.
+ * Returning money is exactly the class of action that should be hard to do by
+ * accident or with a borrowed session.
+ */
+adminRoute.post(
+  "/refunds/:id/decision",
+  withAudit(
+    { action: "REFUND_DECIDED", entityType: "refund", requireReason: true },
+    async (c, audit) => {
+      const admin = await requireStepUp(c);
+      const id = Number(c.req.param("id"));
+      if (!Number.isInteger(id) || id <= 0) {
+        throw new HttpError(400, "INVALID_ID", "A refund id must be a positive integer.");
+      }
+      const input = adminRefundDecisionSchema.parse(await c.req.json().catch(() => ({})));
+
+      const result = await processAdminRefund({ id: admin.id, role: "ADMIN" }, id, {
+        decision: input.decision,
+        providerReference: input.providerReference ?? null,
+        reason: input.reason,
+      });
+
+      c.json(ok(result));
+      return {
+        entityId: id,
+        details: `Refund ${result.refundNumber} ${
+          input.decision === "APPROVE" ? "approved" : "rejected"
+        } (${result.status}).`,
+        reason: audit.reason ?? input.reason,
+        after: { status: result.status, providerReference: result.providerReference },
+      };
+    },
+  ),
+);
+
+/* ------------------------------ finance reports ----------------------------- */
+
+/** `GET /api/admin/revenue` — commission by vendor and category, plus the platform revenue trend. */
+adminRoute.get("/revenue", async (c) => {
+  const [commission, revenue] = await Promise.all([getCommissionBreakdown(), getPlatformRevenue()]);
+  return c.json(ok({ commission, revenue }));
+});
+
+/** `GET /api/admin/reconciliation` — orders vs transactions vs payouts, with mismatches flagged. */
+adminRoute.get("/reconciliation", async (c) => {
+  return c.json(ok(await getReconciliation()));
+});
+
 /* --------------------------------- reviews ---------------------------------- */
 
 /**
@@ -1646,6 +1814,117 @@ adminRoute.patch(
   }),
 );
 
+/* -------------------------------- moderation -------------------------------- */
+
+/**
+ * `GET /api/admin/moderation/reports` — the moderation queue (PROMPT 29).
+ *
+ * Enriched with the reporter and a headline of each target so the hub can be
+ * triaged without opening every row. Declared under `/moderation` rather than
+ * reusing the legacy `/reports` endpoint so the two serve different shapes without
+ * guessing which caller wants which.
+ */
+adminRoute.get("/moderation/reports", async (c) => {
+  const query = moderationQueueQuerySchema.parse(c.req.query());
+  const { rows, total } = await listModerationReports(query);
+  return c.json(ok(rows, buildPagination(query.page, query.pageSize, total)));
+});
+
+/** `GET /api/admin/moderation/reports/:id` — one report, its target and its history. */
+adminRoute.get("/moderation/reports/:id{[0-9]+}", async (c) => {
+  const id = Number(c.req.param("id"));
+  const detail = await getModerationReportDetail(id);
+  if (!detail) throw new HttpError(404, "NOT_FOUND", "Report not found.");
+  return c.json(ok(detail));
+});
+
+const moderationBulkSchema = bulkModerationDecisionSchema;
+
+/**
+ * `POST /api/admin/moderation/reports/bulk` — one decision for many reports.
+ *
+ * Confined server-side to the two no-target actions (`RESOLVED` / `DISMISSED`): a
+ * bulk *suspension* would apply one mouse-drag to a list of different people.
+ */
+adminRoute.post(
+  "/moderation/reports/bulk",
+  guarded(
+    "admin.action",
+    withAudit(
+      { action: "MODERATION_REPORTS_BULK", entityType: "report", requireReason: true },
+      async (c, audit) => {
+        const admin = requireAdmin(c);
+        const input = moderationBulkSchema.parse(await c.req.json().catch(() => ({})));
+        const result = await applyBulkModerationDecision(
+          { id: admin.id, role: "ADMIN" },
+          input.ids,
+          { action: input.action, reason: input.reason },
+        );
+
+        c.json(ok(result));
+        return {
+          details: `${result.applied} report(s) ${input.action.toLowerCase()}, ${result.already} already decided.`,
+          reason: audit.reason ?? input.reason,
+          after: { ids: input.ids, action: input.action, applied: result.applied },
+        };
+      },
+    ),
+  ),
+);
+
+/**
+ * `POST /api/admin/moderation/reports/:id/decision` — decide one report, acting on
+ * the target when the action names it. Step-up + mandatory reason + audit, like
+ * every action that changes another person's standing.
+ */
+adminRoute.post(
+  "/moderation/reports/:id{[0-9]+}/decision",
+  guarded(
+    "admin.action",
+    withAudit(
+      { action: "MODERATION_REPORT_DECIDED", entityType: "report", requireReason: true },
+      async (c, audit) => {
+        const admin = requireAdmin(c);
+        await requireStepUp(c);
+        const id = Number(c.req.param("id"));
+        const input = moderationDecisionSchema.parse(await c.req.json().catch(() => ({})));
+
+        const result = await applyModerationDecision({ id: admin.id, role: "ADMIN" }, id, input);
+
+        c.json(ok(result));
+        return {
+          entityId: id,
+          details: `Report #${id}: ${input.action}${result.applied ? " (applied)" : " (already decided)"}.`,
+          reason: audit.reason ?? input.reason,
+          after: { status: result.status, action: result.action, applied: result.applied },
+        };
+      },
+    ),
+  ),
+);
+
+/** `GET /api/admin/moderation/flag-words` — the keyword list moderators maintain. */
+adminRoute.get("/moderation/flag-words", async (c) => {
+  return c.json(ok({ words: await getFlagWords() }));
+});
+
+/** `PATCH /api/admin/moderation/flag-words` — replace the keyword list. */
+adminRoute.patch(
+  "/moderation/flag-words",
+  withAudit({ action: "MODERATION_FLAG_WORDS_SET", entityType: "setting" }, async (c) => {
+    await requirePermission("settings.manage")(c, async () => undefined);
+    const admin = requireAdmin(c);
+    const input = z
+      .object({
+        words: z.array(z.string().trim().max(80)).max(200),
+      })
+      .parse(await c.req.json().catch(() => ({})));
+    const words = await setFlagWords(input.words, admin.id);
+    c.json(ok({ words }));
+    return { details: `Set ${words.length} moderation flag word(s).`, after: { words } };
+  }),
+);
+
 /* --------------------------------- reports ---------------------------------- */
 
 adminRoute.get("/reports", async (c) => {
@@ -1689,10 +1968,27 @@ adminRoute.patch("/reports/:id", async (c) => {
  */
 adminRoute.get("/support/tickets", async (c) => {
   const { page, pageSize } = paginationQuerySchema.parse(c.req.query());
-  const raw = c.req.query("status");
+  const rawStatus = c.req.query("status");
   const status =
-    raw && (TICKET_STATUSES as readonly string[]).includes(raw) ? (raw as TicketStatus) : undefined;
-  const { rows, pagination } = await listTicketsForStaff({ page, pageSize, status });
+    rawStatus && (TICKET_STATUSES as readonly string[]).includes(rawStatus)
+      ? (rawStatus as TicketStatus)
+      : undefined;
+  const rawPriority = c.req.query("priority");
+  const priority =
+    rawPriority && (TICKET_PRIORITIES as readonly string[]).includes(rawPriority)
+      ? (rawPriority as TicketPriority)
+      : undefined;
+  const rawAssignee = c.req.query("assignee");
+  const assignee = rawAssignee === "me" || rawAssignee === "unassigned" ? rawAssignee : undefined;
+  const search = c.req.query("search")?.trim() || undefined;
+  const { rows, pagination } = await listTicketsForStaff(requireAdmin(c).id, {
+    page,
+    pageSize,
+    status,
+    priority,
+    assignee,
+    search,
+  });
   return c.json(ok(rows, pagination));
 });
 
@@ -1727,6 +2023,142 @@ adminRoute.post(
     });
     return c.json(ok(result), 201);
   }),
+);
+
+/**
+ * `PATCH /api/admin/support/tickets/:id` — the agent's workflow edits (PROMPT 30).
+ *
+ * Status, priority and assignment. The subject, requester and thread are not
+ * editable: an agent tidies a ticket's state, they do not rewrite what a customer
+ * wrote. Every field has a mandatory reason at the audit layer (`withAudit`), which
+ * is why this route reads as one write plus one audit entry.
+ */
+adminRoute.patch(
+  "/support/tickets/:id",
+  guarded(
+    "admin.action",
+    withAudit(
+      { action: "SUPPORT_TICKET_UPDATED", entityType: "ticket", requireReason: true },
+      async (c) => {
+        const id = Number(c.req.param("id"));
+        if (!Number.isInteger(id) || id <= 0) {
+          throw new HttpError(404, "NOT_FOUND", "That ticket does not exist.");
+        }
+        const input = staffTicketUpdateSchema.parse(await c.req.json());
+        const result = await updateStaffTicket(id, input);
+        c.json(ok(result));
+        return {
+          entityId: id,
+          details: [
+            input.status ? `status → ${input.status}` : null,
+            input.priority ? `priority → ${input.priority}` : null,
+            input.assigneeId !== undefined
+              ? input.assigneeId === null
+                ? "unassigned"
+                : `assigned to #${input.assigneeId}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(", "),
+        };
+      },
+    ),
+  ),
+);
+
+/* --------------------------------- coupons ---------------------------------- */
+
+/**
+ * The coupon desk (PROMPT 31).
+ *
+ * Reads are `coupons.view`, writes are `coupons.manage`. The write schema owns the
+ * "PERCENT is basis points" and "CATEGORY needs a category" rules so the refusal is
+ * a field error rather than a constraint name.
+ */
+adminRoute.get("/coupons", async (c) => {
+  const { page, pageSize } = paginationQuerySchema.parse(c.req.query());
+  const rawStatus = c.req.query("status");
+  const status =
+    rawStatus && (COUPON_STATUSES as readonly string[]).includes(rawStatus)
+      ? (rawStatus as CouponStatus)
+      : null;
+  const rawType = c.req.query("discountType");
+  const discountType =
+    rawType && (COUPON_DISCOUNT_TYPES as readonly string[]).includes(rawType)
+      ? (rawType as CouponDiscountType)
+      : null;
+  const search = c.req.query("search")?.trim() ?? "";
+  const { rows, pagination } = await listCouponsForAdmin({
+    search,
+    status,
+    discountType,
+    page,
+    pageSize,
+  });
+  return c.json(ok(rows, pagination));
+});
+
+adminRoute.get("/coupons/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new HttpError(404, "NOT_FOUND", "That coupon does not exist.");
+  }
+  return c.json(ok(await getCouponDetail(id)));
+});
+
+adminRoute.post(
+  "/coupons",
+  withAudit({ action: "COUPON_CREATED", entityType: "coupon" }, async (c) => {
+    const admin = requireAdmin(c);
+    const input = couponWriteSchema.parse(await c.req.json().catch(() => ({})));
+    const result = await createCoupon(admin.id, input);
+    c.json(ok(result), 201);
+    return { entityId: result.id, details: `Created coupon ${result.code}.` };
+  }),
+);
+
+adminRoute.patch(
+  "/coupons/:id",
+  withAudit({ action: "COUPON_UPDATED", entityType: "coupon" }, async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new HttpError(404, "NOT_FOUND", "That coupon does not exist.");
+    }
+    const input = couponWriteSchema.parse(await c.req.json().catch(() => ({})));
+    const result = await updateCoupon(id, input);
+    c.json(ok(result));
+    return { entityId: id, details: `Updated coupon ${result.code} (${input.status}).` };
+  }),
+);
+
+adminRoute.patch(
+  "/coupons/:id/status",
+  withAudit({ action: "COUPON_STATUS_SET", entityType: "coupon" }, async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new HttpError(404, "NOT_FOUND", "That coupon does not exist.");
+    }
+    const { status } = couponStatusSchema.parse(await c.req.json().catch(() => ({})));
+    const result = await setCouponStatus(id, status);
+    c.json(ok(result));
+    return { entityId: id, details: `${result.code} → ${status}.` };
+  }),
+);
+
+adminRoute.delete(
+  "/coupons/:id",
+  withAudit(
+    { action: "COUPON_DELETED", entityType: "coupon", requireReason: true },
+    async (c) => {
+      const id = Number(c.req.param("id"));
+      if (!Number.isInteger(id) || id <= 0) {
+        throw new HttpError(404, "NOT_FOUND", "That coupon does not exist.");
+      }
+      const result = await deleteCoupon(id);
+      c.json(ok(result));
+      return { entityId: id, details: `Deleted coupon ${result.code}.` };
+    },
+  ),
 );
 
 /* ----------------------------------- RBAC ----------------------------------- */

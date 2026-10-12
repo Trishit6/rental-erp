@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Ban, CheckCircle2, Flag, ShieldAlert, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,36 +14,47 @@ import {
 import { EmptyState } from "@/components/shared/empty-state";
 import { ModerationSection } from "@/features/reviews";
 import { AdminPageHeader } from "../components/AdminLayout";
+import { AdminFlagWordsCard } from "../components/AdminFlagWordsCard";
 import { AdminReportsList } from "../components/AdminReportsList";
 import { AdminConfirmDialog } from "../components/AdminConfirmDialog";
-import { useAdminActions, useAdminUsers } from "../query";
+import { useAdminAccess, useAdminActions, useAdminUsers } from "../query";
 
 /**
- * `/admin/moderation` — reports, reviews and suspended accounts.
+ * `/admin/moderation` — the moderation hub (PROMPT 29).
  *
- * ## This is the old tabbed admin page, kept
+ * ## Reports, reviews and account access, behind one tab strip
  *
- * The previous `/admin` held user suspension, report resolution and review
- * moderation behind a tab strip. Moving the catalogue out to its own route must not
- * cost those three capabilities, so they live here, with the same behaviour and the
- * same hooks. The only thing that changed is the presentation: the hand-written
- * `<table>` elements are now the shared `Table` primitives, so the scroll container
- * and header styling match the catalogue.
+ * Three queues that share a decision-maker but not a data shape: the *reports* queue
+ * (one work item per filed report, with linked actions), the *reviews* queue (the
+ * shared review moderation surface) and the *users* queue (suspend/restore). The
+ * Reports tab is the hub's centre of gravity — it is where a report becomes an
+ * outcome — and the other two stay because moving the catalogue out to its own route
+ * must not cost capabilities that used to live on `/admin`.
  *
- * Nothing here writes to financial history — suspension and moderation status are
- * the only things these controls can change.
+ * ## Keyboard shortcuts
+ *
+ * A moderator works this screen all day, so `1`/`2`/`3` select a tab without a trip
+ * to the mouse. The keys are inert inside a text field: typing "1" into a reason must
+ * not jump tabs, so the handler ignores events from inputs and textareas.
+ *
+ * ## Account suspension here is the blunt tool
+ *
+ * The Users tab suspends and restores an account. It is audited with a mandatory
+ * reason (PROMPT 22); the row button opens a dialog that collects it rather than firing
+ * immediately. Nothing on this page writes to financial history.
  */
 
 type Tab = "reports" | "reviews" | "users";
 
-const TABS: { key: Tab; label: string; icon: typeof Flag }[] = [
-  { key: "reports", label: "Reports", icon: Flag },
-  { key: "reviews", label: "Reviews", icon: ShieldAlert },
-  { key: "users", label: "Users", icon: Users },
+const TABS: { key: Tab; label: string; icon: typeof Flag; hotkey: string }[] = [
+  { key: "reports", label: "Reports", icon: Flag, hotkey: "1" },
+  { key: "reviews", label: "Reviews", icon: ShieldAlert, hotkey: "2" },
+  { key: "users", label: "Users", icon: Users, hotkey: "3" },
 ];
 
 export function AdminModerationPage() {
   const [tab, setTab] = useState<Tab>("reports");
+  const { data: access } = useAdminAccess();
   const { data: users } = useAdminUsers(tab === "users");
   const { suspendUser } = useAdminActions();
   const [suspendTarget, setSuspendTarget] = useState<{
@@ -52,6 +63,24 @@ export function AdminModerationPage() {
     suspend: boolean;
   } | null>(null);
   const [suspending, setSuspending] = useState(false);
+
+  // `1`/`2`/`3` switch tabs, unless the keystroke is meant for a field.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName ?? "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target?.isContentEditable) {
+        return;
+      }
+      const match = TABS.find((entry) => entry.hotkey === event.key);
+      if (match) setTab(match.key);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const canManageFlagWords = access?.permissions.includes("settings.manage") ?? false;
 
   /**
    * The account actions here are audited with a mandatory reason (PROMPT 22), so
@@ -77,20 +106,29 @@ export function AdminModerationPage() {
       />
 
       <nav className="flex flex-wrap gap-2">
-        {TABS.map(({ key, label, icon: Icon }) => (
+        {TABS.map(({ key, label, icon: Icon, hotkey }) => (
           <Button
             key={key}
             size="sm"
             variant={tab === key ? "default" : "secondary"}
+            aria-pressed={tab === key}
             onClick={() => setTab(key)}
           >
             <Icon size={14} aria-hidden />
             {label}
+            <kbd className="ml-1 rounded border border-current/30 px-1 text-[10px] font-bold opacity-70">
+              {hotkey}
+            </kbd>
           </Button>
         ))}
       </nav>
 
-      {tab === "reports" && <AdminReportsList />}
+      {tab === "reports" && (
+        <div className="space-y-4">
+          {canManageFlagWords ? <AdminFlagWordsCard /> : null}
+          <AdminReportsList />
+        </div>
+      )}
 
       {tab === "reviews" && <ModerationSection />}
 

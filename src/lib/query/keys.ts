@@ -323,6 +323,14 @@ export const queryKeys = {
    */
   adminProducts: ["admin-products"] as const,
   adminReports: ["admin-reports"] as const,
+  /** The moderation hub's enriched report queue (PROMPT 29). Private. */
+  adminModeration: ["admin-moderation"] as const,
+  /** The moderation keyword flag list (PROMPT 29). Private. */
+  adminFlagWords: ["admin-flag-words"] as const,
+  /** The staff support inbox (PROMPT 30). Private: it carries other people's tickets. */
+  adminSupport: ["admin-support"] as const,
+  /** The coupon desk and its redemption history (PROMPT 31). Private. */
+  adminCoupons: ["admin-coupons"] as const,
   adminProductFacets: ["admin-products", "facets"] as const,
   /**
    * The rest of the admin workspace: one root per section, each a real prefix so
@@ -340,6 +348,16 @@ export const queryKeys = {
   adminCategories: ["admin-categories"] as const,
   adminProductImages: ["admin-product-images"] as const,
   adminAuditLog: ["admin-audit-log"] as const,
+  /** The dispute queue (PROMPT 27). Private: it names both parties to an order. */
+  adminDisputes: ["admin-disputes"] as const,
+  /** Stuck orders and overdue returns (PROMPT 27). Private. */
+  adminOrderHealth: ["admin-order-health"] as const,
+  /** The refund review queue (PROMPT 28). Private: it names the customer who is owed money. */
+  adminRefunds: ["admin-refunds"] as const,
+  /** Commission and the platform revenue report (PROMPT 28). Private. */
+  adminRevenue: ["admin-revenue"] as const,
+  /** The orders/transactions/payouts reconciliation view (PROMPT 28). Private. */
+  adminReconciliation: ["admin-reconciliation"] as const,
   /** The CMS workspace: banners, blocks and the block catalogue. Private. */
   adminCms: ["admin-cms"] as const,
   /**
@@ -409,6 +427,10 @@ export const privateQueryKeys = [
   ["admin-users"],
   ["admin-products"],
   ["admin-reports"],
+  ["admin-moderation"],
+  ["admin-flag-words"],
+  ["admin-support"],
+  ["admin-coupons"],
   ["admin-orders"],
   ["admin-rentals"],
   ["admin-sellers"],
@@ -418,6 +440,11 @@ export const privateQueryKeys = [
   ["admin-categories"],
   ["admin-product-images"],
   ["admin-audit-log"],
+  ["admin-disputes"],
+  ["admin-order-health"],
+  ["admin-refunds"],
+  ["admin-revenue"],
+  ["admin-reconciliation"],
   ["admin-cms"],
   ["admin-health"],
   ["admin-rbac"],

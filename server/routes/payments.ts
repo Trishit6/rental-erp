@@ -2,7 +2,7 @@ import { Router } from "../lib/http";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db";
-import { orders, transactions } from "../schema";
+import { orders, paymentWebhookEvents, transactions } from "../schema";
 import { HttpError, ok } from "../lib/api";
 import { guarded } from "../lib/rate-limit";
 import { requireUser } from "../lib/auth";
@@ -511,12 +511,20 @@ paymentsRoute.post("/webhook", async (c) => {
   // An event for a payment we do not know about is not an error worth alerting
   // on; a provider can legitimately outlive a transaction. Acknowledge it.
   if (!row) {
+    await recordWebhookEvent({
+      provider: provider.name,
+      event,
+      payload: rawBody,
+      status: "IGNORED",
+      errorMessage: "No matching transaction.",
+    });
     return c.json(ok({ received: true, handled: false }));
   }
 
   const alreadyApplied = readProcessedEventIds(row.processedEventIds);
   if (alreadyApplied.has(event.eventId)) {
     // Replay. Webhook delivery is at-least-once, so this is normal, not a bug.
+    await recordWebhookEvent({ provider: provider.name, event, payload: rawBody, status: "PROCESSED" });
     return c.json(ok({ received: true, handled: true, duplicate: true }));
   }
 
@@ -549,6 +557,14 @@ paymentsRoute.post("/webhook", async (c) => {
     })
     .where(eq(transactions.id, row.id));
 
+  await recordWebhookEvent({
+    provider: provider.name,
+    event,
+    payload: rawBody,
+    status: review ? "FAILED" : "PROCESSED",
+    errorMessage: review,
+  });
+
   // Always 2xx once the signature has been accepted. A provider retries every
   // non-2xx response, and an amount mismatch or a transient failure would then
   // be retried forever. The problem is recorded on the transaction and reported
@@ -572,6 +588,60 @@ function readProcessedEventIds(raw: string | null): Set<string> {
       : new Set();
   } catch {
     return new Set();
+  }
+}
+
+/**
+ * Archive a provider event as evidence (PROMPT 28).
+ *
+ * ## Why the raw payload is kept
+ *
+ * `transactions.processedEventIds` is enough to make delivery idempotent, but it is
+ * a list of ids with no payload — so a disputed payment could not be reconstructed
+ * from our own records. Storing the raw body means "what exactly did the provider
+ * tell us, and when" is answerable without asking the provider again.
+ *
+ * ## Why it can never fail the webhook
+ *
+ * The transaction update is what the provider is waiting on; archiving is for us. A
+ * recurring insert failure must not turn an accepted event into a retry storm, so a
+ * failure here is logged and swallowed. The `(provider, event_id)` unique index makes
+ * a redelivery update the row in place rather than duplicate it.
+ *
+ * Nothing sensitive is stored: the provider's payload carries references and
+ * amounts, never a card number (see the `payment_webhook_events` schema comment).
+ */
+async function recordWebhookEvent(input: {
+  provider: string;
+  event: { eventId: string; type: string; providerPaymentId: string };
+  payload: string;
+  status: "PROCESSED" | "FAILED" | "IGNORED";
+  errorMessage?: string | null;
+}): Promise<void> {
+  try {
+    await db
+      .insert(paymentWebhookEvents)
+      .values({
+        provider: input.provider.slice(0, 20),
+        providerEventId: input.event.eventId.slice(0, 160),
+        providerPaymentId: input.event.providerPaymentId.slice(0, 100),
+        eventType: input.event.type.slice(0, 60),
+        payload: input.payload,
+        signatureVerified: true,
+        status: input.status,
+        errorMessage: input.errorMessage ? input.errorMessage.slice(0, 300) : null,
+        processedAt: new Date(),
+      })
+      .onDuplicateKeyUpdate({
+        set: {
+          status: input.status,
+          errorMessage: input.errorMessage ? input.errorMessage.slice(0, 300) : null,
+          providerPaymentId: input.event.providerPaymentId.slice(0, 100),
+          processedAt: new Date(),
+        },
+      });
+  } catch (error) {
+    console.error("[payments] failed to record webhook event", input.event.eventId, error);
   }
 }
 

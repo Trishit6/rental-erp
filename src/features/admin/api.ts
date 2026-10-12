@@ -84,6 +84,10 @@ export async function fetchAdminOverview(): Promise<AdminOverview> {
  * the sub-role lives in `user_roles`.
  */
 export type AdminMe = {
+  /** The staff account's own id — used to offer "assign to me" on a support ticket. */
+  id: number;
+  /** The staff account's display name. */
+  name: string;
   role: string;
   roles: string[];
   permissions: string[];
@@ -315,6 +319,9 @@ export type AdminOrderFilters = {
   status: string | null;
   type: string | null;
   paymentStatus: string | null;
+  /** Order-total bounds, in rupees as typed; converted to paise for the API. */
+  minAmount: number | null;
+  maxAmount: number | null;
   page: number;
   pageSize: number;
 };
@@ -324,6 +331,8 @@ export const EMPTY_ADMIN_ORDER_FILTERS: AdminOrderFilters = {
   status: null,
   type: null,
   paymentStatus: null,
+  minAmount: null,
+  maxAmount: null,
   page: 1,
   pageSize: 20,
 };
@@ -334,6 +343,8 @@ export function adminOrdersPath(filters: AdminOrderFilters): string {
     status: filters.status,
     type: filters.type,
     paymentStatus: filters.paymentStatus,
+    minAmount: toPaise(filters.minAmount),
+    maxAmount: toPaise(filters.maxAmount),
     page: filters.page,
     pageSize: filters.pageSize,
   })}`;
@@ -599,6 +610,8 @@ export type AdminTransactionRow = {
   orderNumber: string | null;
   customerName: string;
   createdAt: string;
+  /** A one-line next step for a failed or stalled payment, or `null` when settled. */
+  retryHint: string | null;
 };
 
 export function fetchAdminTransactionsPage(filters: AdminTransactionFilters) {
@@ -972,4 +985,1070 @@ export async function fetchAdminCmsVersions(
   id: number,
 ): Promise<AdminCmsVersion[]> {
   return (await api.get<AdminCmsVersion[]>(`/admin/cms/versions/${entityType}/${id}`)).data;
+}
+
+/* --------------------- PROMPT 27: the orders and rentals desks ---------------- */
+
+/**
+ * One order line as the admin detail view sees it.
+ *
+ * Carries the seller's name and the line's fulfilment state because the point of
+ * the detail view is to answer "who is holding this up?" without opening the seller
+ * dashboard — a bare `sellerId` would make the operator do the join by hand.
+ */
+export type AdminOrderItemView = {
+  id: number;
+  productId: number;
+  sellerId: number;
+  sellerName: string;
+  mode: string;
+  quantity: number;
+  unitPrice: number;
+  rentalCharge: number;
+  securityDeposit: number;
+  lineTotal: number;
+  titleSnapshot: string;
+  slugSnapshot: string | null;
+  fulfillmentStatus: string | null;
+  cancellationReason: string | null;
+  startDate: string | null;
+  endDate: string | null;
+};
+
+export type AdminOrderTimelineEntry = {
+  id: number;
+  type: string;
+  fromStatus: string | null;
+  toStatus: string;
+  actorId: number | null;
+  actorRole: string | null;
+  note: string | null;
+  metadata: string | null;
+  createdAt: string;
+};
+
+export type AdminOrderDetail = {
+  order: {
+    id: number;
+    orderNumber: string | null;
+    status: string;
+    paymentStatus: string;
+    orderType: string;
+    subtotal: number;
+    deliveryFee: number;
+    depositTotal: number;
+    discount: number;
+    tax: number;
+    total: number;
+    currency: string;
+    deliveryMethod: string;
+    deliveryAddress: string | null;
+    trackingNumber: string | null;
+    paymentProvider: string;
+    paymentReference: string | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+  customer: { id: number; name: string; email: string; phone: string | null };
+  items: AdminOrderItemView[];
+  sellerSplit: {
+    sellerId: number;
+    sellerName: string;
+    lines: number;
+    goods: number;
+    deposit: number;
+    total: number;
+  }[];
+  transactions: {
+    id: number;
+    type: string;
+    amount: number;
+    currency: string;
+    status: string;
+    provider: string;
+    providerTransactionId: string | null;
+    createdAt: string;
+  }[];
+  rentals: {
+    id: number;
+    status: string;
+    startDate: string;
+    endDate: string;
+    actualReturnDate: string | null;
+    securityDeposit: number;
+    total: number;
+    itemTitle: string;
+  }[];
+  refunds: {
+    id: number;
+    refundNumber: string;
+    amount: number;
+    status: string;
+    reason: string | null;
+    createdAt: string;
+  }[];
+  disputes: { id: number; disputeNumber: string; status: string; reason: string; createdAt: string }[];
+  timeline: AdminOrderTimelineEntry[];
+  /** The moves the state machine allows from the current status. */
+  nextStatuses: string[];
+  /** Whether cancellation is still possible (goods have not left). */
+  canCancel: boolean;
+};
+
+export async function fetchAdminOrderDetail(id: number): Promise<AdminOrderDetail> {
+  return (await api.get<AdminOrderDetail>(`/admin/orders/${id}`)).data;
+}
+
+/** The admin override, which forces any status but demands a reason. */
+export async function overrideAdminOrderStatus(
+  id: number,
+  status: string,
+  reason: string,
+): Promise<void> {
+  await api.patch(`/admin/orders/${id}/override`, { status, reason });
+}
+
+export async function cancelAdminOrder(id: number, reason: string): Promise<void> {
+  await api.post(`/admin/orders/${id}/cancel`, { reason });
+}
+
+export async function addAdminOrderNote(id: number, note: string): Promise<void> {
+  await api.post(`/admin/orders/${id}/notes`, { note });
+}
+
+export type AdminRefundRequest = {
+  amount: number;
+  reason: string;
+  orderItemId?: number | null;
+  idempotencyKey?: string | null;
+};
+
+export type AdminRefundResult = {
+  id: number;
+  refundNumber: string;
+  amount: number;
+  status: string;
+  duplicate: boolean;
+};
+
+export async function requestAdminOrderRefund(
+  id: number,
+  input: AdminRefundRequest,
+): Promise<AdminRefundResult> {
+  return (await api.post<AdminRefundResult>(`/admin/orders/${id}/refunds`, input)).data;
+}
+
+/** Stuck orders and overdue returns — the dashboard's operations panel. */
+export type AdminOrderHealth = {
+  generatedAt: string;
+  stuck: {
+    id: number;
+    orderNumber: string | null;
+    status: string;
+    customerName: string;
+    total: number;
+    ageMs: number;
+    thresholdMs: number;
+  }[];
+  overdueReturns: {
+    id: number;
+    orderNumber: string | null;
+    status: string;
+    title: string;
+    renterName: string;
+    ownerName: string;
+    endDate: string;
+    daysOverdue: number;
+    securityDeposit: number;
+  }[];
+  pendingRefunds: number;
+  openDisputes: number;
+};
+
+export async function fetchAdminOrderHealth(): Promise<AdminOrderHealth> {
+  return (await api.get<AdminOrderHealth>("/admin/order-health")).data;
+}
+
+/** A rental's recorded timeline step, as `buildRentalTimeline` returns it. */
+export type AdminRentalTimelineStep = {
+  key: string;
+  label: string;
+  description?: string;
+  at: string | null;
+  state: "done" | "current" | "pending" | "failed" | "cancelled";
+};
+
+export type AdminRentalDetail = {
+  rental: {
+    id: number;
+    status: string;
+    startDate: string;
+    endDate: string;
+    actualReturnDate: string | null;
+    returnRequestedAt: string | null;
+    completedAt: string | null;
+    dailyRate: number;
+    rentalSubtotal: number;
+    securityDeposit: number;
+    deliveryFee: number;
+    total: number;
+    currency: string;
+    extensionRequestedAt: string | null;
+    extensionRequestedDays: number | null;
+    createdAt: string;
+  };
+  product: { id: number; title: string; slug: string };
+  order: { id: number; orderNumber: string | null; status: string; paymentStatus: string };
+  renter: { id: number; name: string; email: string };
+  owner: { id: number; name: string; email: string };
+  events: { type: string; createdAt: string }[];
+  timeline: AdminRentalTimelineStep[];
+  deposit: { held: number; settled: boolean; released: number | null };
+  nextStatuses: string[];
+};
+
+export async function fetchAdminRentalDetail(id: number): Promise<AdminRentalDetail> {
+  return (await api.get<AdminRentalDetail>(`/admin/rentals/${id}`)).data;
+}
+
+export async function forceAdminRentalStatus(id: number, status: string): Promise<void> {
+  await api.patch(`/admin/rentals/${id}/status`, { status });
+}
+
+export async function confirmAdminRentalReturn(id: number): Promise<void> {
+  await api.post(`/admin/rentals/${id}/return`);
+}
+
+export async function settleAdminRentalDeposit(
+  id: number,
+  input: { deduction: number; reason: string },
+): Promise<{ refundNumber: string | null; released: number; deduction: number }> {
+  return (
+    await api.post<{ refundNumber: string | null; released: number; deduction: number }>(
+      `/admin/rentals/${id}/deposit`,
+      input,
+    )
+  ).data;
+}
+
+export async function decideAdminRentalExtension(
+  id: number,
+  input: { decision: "APPROVE" | "REJECT"; days?: number; reason: string },
+): Promise<{ days: number; newEndDate: string | null }> {
+  return (
+    await api.post<{ days: number; newEndDate: string | null }>(
+      `/admin/rentals/${id}/extension`,
+      input,
+    )
+  ).data;
+}
+
+export type AdminDisputeFilters = {
+  status: string | null;
+  search: string;
+  from: string;
+  to: string;
+  page: number;
+  pageSize: number;
+};
+
+export const EMPTY_ADMIN_DISPUTE_FILTERS: AdminDisputeFilters = {
+  status: null,
+  search: "",
+  from: "",
+  to: "",
+  page: 1,
+  pageSize: 20,
+};
+
+export function adminDisputesPath(filters: AdminDisputeFilters): string {
+  return `/admin/disputes${adminQueryString({
+    status: filters.status,
+    search: filters.search,
+    from: filters.from,
+    to: filters.to,
+    page: filters.page,
+    pageSize: filters.pageSize,
+  })}`;
+}
+
+export type AdminDisputeRow = {
+  id: number;
+  disputeNumber: string;
+  status: string;
+  reason: string;
+  orderId: number;
+  orderNumber: string | null;
+  openerId: number;
+  openerName: string;
+  againstName: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+};
+
+export function fetchAdminDisputesPage(filters: AdminDisputeFilters) {
+  return fetchAdminPage<AdminDisputeRow>(adminDisputesPath(filters));
+}
+
+export type AdminDisputeDetail = {
+  dispute: {
+    id: number;
+    disputeNumber: string;
+    status: string;
+    reason: string;
+    description: string | null;
+    resolution: string | null;
+    createdAt: string;
+    resolvedAt: string | null;
+    resolvedBy: number | null;
+  };
+  order: {
+    id: number;
+    orderNumber: string | null;
+    status: string;
+    paymentStatus: string;
+    total: number;
+    currency: string;
+    createdAt: string;
+  };
+  opener: { id: number; name: string; email: string };
+  against: { id: number; name: string; email: string } | null;
+};
+
+export async function fetchAdminDisputeDetail(id: number): Promise<AdminDisputeDetail> {
+  return (await api.get<AdminDisputeDetail>(`/admin/disputes/${id}`)).data;
+}
+
+export async function decideAdminDispute(
+  id: number,
+  input: {
+    status: "UNDER_REVIEW" | "RESOLVED" | "DISMISSED";
+    resolution: string;
+    refund?: { amount: number; reason: string; idempotencyKey?: string | null } | null;
+  },
+): Promise<{ appliedRefund: boolean }> {
+  return (await api.patch<{ appliedRefund: boolean }>(`/admin/disputes/${id}`, input)).data;
+}
+
+/* ------------------------- PROMPT 28: transaction detail -------------------- */
+
+/** The archived provider events behind one payment, plus what it refunded. */
+export type AdminTransactionDetail = {
+  transaction: {
+    id: number;
+    type: string;
+    amount: number;
+    currency: string;
+    status: string;
+    provider: string;
+    providerTransactionId: string | null;
+    paymentMethod: string | null;
+    failureReason: string | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+  order: {
+    id: number;
+    orderNumber: string | null;
+    status: string;
+    paymentStatus: string;
+    total: number;
+    currency: string;
+  } | null;
+  customer: { id: number; name: string; email: string };
+  webhookEvents: {
+    id: number;
+    provider: string;
+    providerEventId: string;
+    eventType: string;
+    status: string;
+    signatureVerified: boolean;
+    errorMessage: string | null;
+    payload: string;
+    processedAt: string | null;
+    createdAt: string;
+  }[];
+  refunds: {
+    id: number;
+    refundNumber: string;
+    amount: number;
+    status: string;
+    providerReference: string | null;
+    createdAt: string;
+  }[];
+  retryHint: string | null;
+};
+
+export async function fetchAdminTransactionDetail(id: number): Promise<AdminTransactionDetail> {
+  return (await api.get<AdminTransactionDetail>(`/admin/transactions/${id}`)).data;
+}
+
+/* ------------------------- PROMPT 28: refund review ------------------------- */
+
+export type AdminRefundFilters = {
+  search: string;
+  status: string | null;
+  page: number;
+  pageSize: number;
+};
+
+export const EMPTY_ADMIN_REFUND_FILTERS: AdminRefundFilters = {
+  search: "",
+  status: null,
+  page: 1,
+  pageSize: 20,
+};
+
+export function adminRefundsPath(filters: AdminRefundFilters): string {
+  return `/admin/refunds${adminQueryString({
+    search: filters.search,
+    status: filters.status,
+    page: filters.page,
+    pageSize: filters.pageSize,
+  })}`;
+}
+
+export type AdminRefundRow = {
+  id: number;
+  refundNumber: string;
+  status: string;
+  amount: number;
+  currency: string;
+  reason: string | null;
+  orderId: number;
+  orderNumber: string | null;
+  customerName: string;
+  providerReference: string | null;
+  createdAt: string;
+};
+
+export function fetchAdminRefundsPage(filters: AdminRefundFilters) {
+  return fetchAdminPage<AdminRefundRow>(adminRefundsPath(filters));
+}
+
+export type AdminRefundDetail = {
+  refund: {
+    id: number;
+    refundNumber: string;
+    status: string;
+    amount: number;
+    currency: string;
+    reason: string | null;
+    providerReference: string | null;
+    createdAt: string;
+    updatedAt: string;
+    createdByName: string | null;
+  };
+  order: {
+    id: number;
+    orderNumber: string | null;
+    status: string;
+    paymentStatus: string;
+    total: number;
+    currency: string;
+    createdAt: string;
+  };
+  customer: { id: number; name: string; email: string };
+  transaction: {
+    id: number;
+    provider: string;
+    providerTransactionId: string | null;
+    amount: number;
+    status: string;
+    createdAt: string;
+  } | null;
+  /** Total settled against the order, in paise. */
+  captured: number;
+  /** Still refundable beyond this request, in paise. */
+  remaining: number;
+  nextStatuses: string[];
+};
+
+export async function fetchAdminRefundDetail(id: number): Promise<AdminRefundDetail> {
+  return (await api.get<AdminRefundDetail>(`/admin/refunds/${id}`)).data;
+}
+
+export type AdminRefundDecisionResult = {
+  id: number;
+  refundNumber: string;
+  status: string;
+  providerReference: string | null;
+  applied: boolean;
+};
+
+export async function decideAdminRefund(
+  id: number,
+  input: { decision: "APPROVE" | "REJECT"; providerReference?: string | null; reason: string },
+): Promise<AdminRefundDecisionResult> {
+  return (await api.post<AdminRefundDecisionResult>(`/admin/refunds/${id}/decision`, input)).data;
+}
+
+/* --------------------- PROMPT 28: commission + reconciliation ---------------- */
+
+export type AdminCommissionByVendor = {
+  sellerId: number;
+  sellerName: string;
+  sales: number;
+  commission: number;
+  feeCount: number;
+};
+
+export type AdminCommissionByCategory = {
+  categoryId: number;
+  categoryName: string;
+  sales: number;
+  commission: number;
+};
+
+export type AdminRevenueMonth = {
+  month: string;
+  gross: number;
+  commission: number;
+  orders: number;
+};
+
+export type AdminRevenueReport = {
+  commission: {
+    currency: string;
+    byVendor: AdminCommissionByVendor[];
+    byCategory: AdminCommissionByCategory[];
+    totals: { sales: number; commission: number };
+  };
+  revenue: {
+    currency: string;
+    grossCollected: number;
+    commission: number;
+    sellerEarnings: number;
+    refunded: number;
+    netRevenueAfterRefunds: number;
+    byMonth: AdminRevenueMonth[];
+  };
+};
+
+export async function fetchAdminRevenue(): Promise<AdminRevenueReport> {
+  return (await api.get<AdminRevenueReport>("/admin/revenue")).data;
+}
+
+export type AdminReconciliationMismatch = {
+  kind: string;
+  severity: "HIGH" | "MEDIUM";
+  entityType: string;
+  entityId: number | null;
+  reference: string | null;
+  detail: string;
+  amount: number | null;
+};
+
+export type AdminReconciliation = {
+  generatedAt: string;
+  currency: string;
+  totals: {
+    ordersCollected: number;
+    capturedPayments: number;
+    refunded: number;
+    completedPayouts: number;
+  };
+  mismatches: AdminReconciliationMismatch[];
+};
+
+export async function fetchAdminReconciliation(): Promise<AdminReconciliation> {
+  return (await api.get<AdminReconciliation>("/admin/reconciliation")).data;
+}
+
+/* -------------------------- PROMPT 29: moderation hub ----------------------- */
+
+/**
+ * The decisions a moderator can record. Mirrors `MODERATION_ACTIONS` in
+ * `server/lib/moderation.ts` the way the listing vocabulary is mirrored — the two
+ * are asserted to agree in `tests/admin-moderation.test.ts`, rather than sharing a
+ * module across the app/server tsconfigs.
+ */
+export const MODERATION_ACTIONS = [
+  "RESOLVED",
+  "DISMISSED",
+  "REVIEW_HIDDEN",
+  "REVIEW_RESTORED",
+  "PRODUCT_HIDDEN",
+  "PRODUCT_RESTORED",
+  "USER_WARNED",
+  "USER_SUSPENDED",
+  "USER_RESTORED",
+  "MESSAGE_DELETED",
+] as const;
+
+export type ModerationAction = (typeof MODERATION_ACTIONS)[number];
+
+/** What each action does, in the words the button carries. */
+export const MODERATION_ACTION_LABELS: Record<ModerationAction, string> = {
+  RESOLVED: "Resolve — no action needed",
+  DISMISSED: "Dismiss the report",
+  REVIEW_HIDDEN: "Hide the review",
+  REVIEW_RESTORED: "Restore the review",
+  PRODUCT_HIDDEN: "Hide the listing",
+  PRODUCT_RESTORED: "Restore the listing",
+  USER_WARNED: "Warn the account",
+  USER_SUSPENDED: "Suspend the account",
+  USER_RESTORED: "Restore the account",
+  MESSAGE_DELETED: "Delete the message",
+};
+
+/**
+ * Which actions make sense for a target, most severe first.
+ *
+ * The server rejects an action that does not match the report's target, so this is
+ * presentational: it keeps the moderator from being offered "hide the listing" on a
+ * report about a person. A target with no linked action (an order or rental) can
+ * still be resolved or dismissed.
+ */
+const ACTIONS_BY_TARGET: Record<string, ModerationAction[]> = {
+  review: ["REVIEW_HIDDEN", "REVIEW_RESTORED", "RESOLVED", "DISMISSED"],
+  product: ["PRODUCT_HIDDEN", "PRODUCT_RESTORED", "RESOLVED", "DISMISSED"],
+  user: ["USER_WARNED", "USER_SUSPENDED", "USER_RESTORED", "RESOLVED", "DISMISSED"],
+  message: ["MESSAGE_DELETED", "RESOLVED", "DISMISSED"],
+  order: ["RESOLVED", "DISMISSED"],
+  rental: ["RESOLVED", "DISMISSED"],
+};
+
+export function moderationActionsForTarget(targetType: string): ModerationAction[] {
+  return ACTIONS_BY_TARGET[targetType] ?? ["RESOLVED", "DISMISSED"];
+}
+
+/**
+ * Which configured keywords a piece of text contains. Mirrors the pure helper on
+ * the server; kept here so the queue can badge a flagged review without a round
+ * trip per row.
+ */
+export function flagWordMatches(
+  text: string | null | undefined,
+  words: readonly string[],
+): string[] {
+  const haystack = (text ?? "").toLowerCase();
+  return words
+    .map((word) => word.trim().toLowerCase())
+    .filter((word) => word.length > 0 && haystack.includes(word));
+}
+
+export type AdminModerationFilters = {
+  search: string;
+  status: string | null;
+  target: string | null;
+  page: number;
+  pageSize: number;
+};
+
+export const EMPTY_ADMIN_MODERATION_FILTERS: AdminModerationFilters = {
+  search: "",
+  status: null,
+  target: null,
+  page: 1,
+  pageSize: 20,
+};
+
+export function adminModerationPath(filters: AdminModerationFilters): string {
+  return `/admin/moderation/reports${adminQueryString({
+    search: filters.search,
+    status: filters.status,
+    target: filters.target,
+    page: filters.page,
+    pageSize: filters.pageSize,
+  })}`;
+}
+
+export type AdminModerationReportRow = {
+  id: number;
+  status: string;
+  action: string | null;
+  actionNote: string | null;
+  reason: string;
+  details: string | null;
+  targetType: string;
+  targetId: number;
+  targetLabel: string;
+  reporterName: string;
+  resolvedByName: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+};
+
+export function fetchAdminModerationReports(filters: AdminModerationFilters) {
+  return fetchAdminPage<AdminModerationReportRow>(adminModerationPath(filters));
+}
+
+export type AdminModerationHistoryEntry = {
+  id: number;
+  action: string;
+  details: string | null;
+  reason: string | null;
+  adminName: string | null;
+  actorRole: string | null;
+  createdAt: string;
+};
+
+export type AdminModerationReportDetail = {
+  report: {
+    id: number;
+    status: string;
+    action: string | null;
+    actionNote: string | null;
+    reason: string;
+    details: string | null;
+    createdAt: string;
+    resolvedAt: string | null;
+  };
+  reporter: { id: number; name: string; email: string };
+  resolvedBy: { id: number; name: string } | null;
+  target: { type: string; id: number; headline: string };
+  history: AdminModerationHistoryEntry[];
+};
+
+export async function fetchAdminModerationReportDetail(
+  id: number,
+): Promise<AdminModerationReportDetail> {
+  return (await api.get<AdminModerationReportDetail>(`/admin/moderation/reports/${id}`)).data;
+}
+
+export type AdminModerationDecisionResult = {
+  id: number;
+  status: string;
+  action: ModerationAction;
+  outcomeLabel: string;
+  applied: boolean;
+};
+
+export async function decideAdminModeration(
+  id: number,
+  input: { action: ModerationAction; reason: string },
+): Promise<AdminModerationDecisionResult> {
+  return (await api.post<AdminModerationDecisionResult>(
+    `/admin/moderation/reports/${id}/decision`,
+    input,
+  )).data;
+}
+
+export type AdminModerationBulkResult = { applied: number; already: number };
+
+export async function bulkDecideAdminModeration(input: {
+  ids: number[];
+  action: "RESOLVED" | "DISMISSED";
+  reason: string;
+}): Promise<AdminModerationBulkResult> {
+  return (await api.post<AdminModerationBulkResult>("/admin/moderation/reports/bulk", input)).data;
+}
+
+export async function fetchAdminFlagWords(): Promise<string[]> {
+  return (await api.get<{ words: string[] }>("/admin/moderation/flag-words")).data.words;
+}
+
+export async function setAdminFlagWords(words: string[]): Promise<string[]> {
+  return (await api.patch<{ words: string[] }>("/admin/moderation/flag-words", { words })).data.words;
+}
+
+/* ---------------------------- PROMPT 30: support inbox ---------------------- */
+
+/**
+ * The staff ticket vocabularies. Mirrors `TICKET_STATUSES` / `TICKET_PRIORITIES` in
+ * `server/lib/support.ts`; the server decides what a transition may be, and these are
+ * what the filter dropdowns and the status editor offer.
+ */
+export const TICKET_STATUSES = ["OPEN", "PENDING", "IN_PROGRESS", "RESOLVED", "CLOSED"] as const;
+export type AdminTicketStatus = (typeof TICKET_STATUSES)[number];
+
+export const TICKET_PRIORITIES = ["LOW", "NORMAL", "HIGH", "URGENT"] as const;
+export type AdminTicketPriority = (typeof TICKET_PRIORITIES)[number];
+
+export const TICKET_STATUS_LABELS: Record<AdminTicketStatus, string> = {
+  OPEN: "Open",
+  PENDING: "Awaiting customer",
+  IN_PROGRESS: "In progress",
+  RESOLVED: "Resolved",
+  CLOSED: "Closed",
+};
+
+export const TICKET_PRIORITY_LABELS: Record<AdminTicketPriority, string> = {
+  LOW: "Low",
+  NORMAL: "Normal",
+  HIGH: "High",
+  URGENT: "Urgent",
+};
+
+export type AdminSupportFilters = {
+  search: string;
+  status: string | null;
+  priority: string | null;
+  /** `"me"` for the viewer's claims, `"unassigned"` for the shared pool. */
+  assignee: string | null;
+  page: number;
+  pageSize: number;
+};
+
+export const EMPTY_ADMIN_SUPPORT_FILTERS: AdminSupportFilters = {
+  search: "",
+  status: null,
+  priority: null,
+  assignee: null,
+  page: 1,
+  pageSize: 20,
+};
+
+export function adminSupportPath(filters: AdminSupportFilters): string {
+  return `/admin/support/tickets${adminQueryString({
+    search: filters.search,
+    status: filters.status,
+    priority: filters.priority,
+    assignee: filters.assignee,
+    page: filters.page,
+    pageSize: filters.pageSize,
+  })}`;
+}
+
+export type AdminSupportTicketRow = {
+  id: number;
+  ticketNumber: string;
+  subject: string;
+  status: string;
+  priority: string;
+  orderId: number | null;
+  rentalId: number | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+  closedAt: string | null;
+  resolutionRating: number | null;
+  messageCount: number;
+  userId: number;
+  requesterName: string;
+  requesterEmail: string;
+  assigneeId: number | null;
+  assigneeName: string | null;
+  slaDueAt: string | null;
+};
+
+export function fetchAdminSupportTickets(filters: AdminSupportFilters) {
+  return fetchAdminPage<AdminSupportTicketRow>(adminSupportPath(filters));
+}
+
+export type AdminSupportMessage = {
+  id: number;
+  body: string;
+  createdAt: string;
+  authorId: number;
+  authorName: string;
+  authorIsStaff: boolean;
+  /** Staff-only note; filtered from every customer read but shown here. */
+  isInternal: boolean;
+  attachments: {
+    id: number;
+    fileName: string;
+    url: string;
+    mimeType: string | null;
+    sizeBytes: number | null;
+  }[];
+};
+
+export type AdminSupportTicketDetail = AdminSupportTicketRow & {
+  requester: { id: number; name: string; email: string };
+  assignee: { id: number; name: string } | null;
+  order: {
+    id: number;
+    orderNumber: string | null;
+    status: string;
+    paymentStatus: string;
+    total: number;
+    currency: string;
+  } | null;
+  rental: { id: number; status: string } | null;
+  messages: AdminSupportMessage[];
+};
+
+export async function fetchAdminSupportTicket(id: number): Promise<AdminSupportTicketDetail> {
+  return (await api.get<AdminSupportTicketDetail>(`/admin/support/tickets/${id}`)).data;
+}
+
+export async function replyAdminSupportTicket(
+  id: number,
+  input: { body: string; isInternal: boolean },
+): Promise<{ messageId: number; status: string }> {
+  return (await api.post<{ messageId: number; status: string }>(
+    `/admin/support/tickets/${id}/messages`,
+    input,
+  )).data;
+}
+
+export type AdminSupportTicketUpdate = {
+  status?: AdminTicketStatus;
+  priority?: AdminTicketPriority;
+  assigneeId?: number | null;
+  reason: string;
+};
+
+export async function updateAdminSupportTicket(
+  id: number,
+  input: AdminSupportTicketUpdate,
+): Promise<{
+  id: number;
+  status: AdminTicketStatus;
+  priority: AdminTicketPriority;
+  assigneeId: number | null;
+}> {
+  return (await api.patch<{
+    id: number;
+    status: AdminTicketStatus;
+    priority: AdminTicketPriority;
+    assigneeId: number | null;
+  }>(`/admin/support/tickets/${id}`, input)).data;
+}
+
+/* ------------------------------ PROMPT 31: coupons --------------------------- */
+
+/**
+ * The coupon desk's vocabularies. Mirrors `COUPON_STATUSES` / `COUPON_DISCOUNT_TYPES`
+ * and the two writable scopes in `server/lib/coupon-admin.ts`.
+ */
+export const COUPON_STATUSES = ["ACTIVE", "PAUSED", "SCHEDULED", "EXPIRED"] as const;
+export type AdminCouponStatus = (typeof COUPON_STATUSES)[number];
+
+export const COUPON_DISCOUNT_TYPES = ["PERCENT", "FLAT"] as const;
+export type AdminCouponDiscountType = (typeof COUPON_DISCOUNT_TYPES)[number];
+
+/** `ALL` or `CATEGORY`: the table has no product column, so those are the real scopes. */
+export const COUPON_SCOPES = ["ALL", "CATEGORY"] as const;
+export type AdminCouponScope = (typeof COUPON_SCOPES)[number];
+
+export const COUPON_STATUS_LABELS: Record<AdminCouponStatus, string> = {
+  ACTIVE: "Active",
+  PAUSED: "Paused",
+  SCHEDULED: "Scheduled",
+  EXPIRED: "Expired",
+};
+
+export const COUPON_DISCOUNT_TYPE_LABELS: Record<AdminCouponDiscountType, string> = {
+  PERCENT: "Percentage",
+  FLAT: "Flat amount",
+};
+
+export const COUPON_SCOPE_LABELS: Record<AdminCouponScope, string> = {
+  ALL: "Whole catalogue",
+  CATEGORY: "One category",
+};
+
+export type AdminCouponFilters = {
+  search: string;
+  status: string | null;
+  discountType: string | null;
+  page: number;
+  pageSize: number;
+};
+
+export const EMPTY_ADMIN_COUPON_FILTERS: AdminCouponFilters = {
+  search: "",
+  status: null,
+  discountType: null,
+  page: 1,
+  pageSize: 20,
+};
+
+export function adminCouponsPath(filters: AdminCouponFilters): string {
+  return `/admin/coupons${adminQueryString({
+    search: filters.search,
+    status: filters.status,
+    discountType: filters.discountType,
+    page: filters.page,
+    pageSize: filters.pageSize,
+  })}`;
+}
+
+export type AdminCouponRow = {
+  id: number;
+  code: string;
+  description: string | null;
+  discountType: string;
+  /** `FLAT` = paise; `PERCENT` = basis points. */
+  discountValue: number;
+  maxDiscountPaise: number | null;
+  minimumOrderPaise: number;
+  usageLimit: number | null;
+  perUserLimit: number | null;
+  usedCount: number;
+  redemptionCount: number;
+  startsAt: string | null;
+  endsAt: string | null;
+  status: string;
+  appliesTo: string;
+  categoryId: number | null;
+  categoryName: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export function fetchAdminCoupons(filters: AdminCouponFilters) {
+  return fetchAdminPage<AdminCouponRow>(adminCouponsPath(filters));
+}
+
+export type AdminCouponRedemption = {
+  id: number;
+  orderId: number;
+  orderNumber: string | null;
+  userId: number;
+  userName: string;
+  discountPaise: number;
+  createdAt: string;
+};
+
+export type AdminCouponDetail = {
+  coupon: AdminCouponRow;
+  redemptionCount: number;
+  totalDiscountPaise: number;
+  redemptions: AdminCouponRedemption[];
+};
+
+export async function fetchAdminCouponDetail(id: number): Promise<AdminCouponDetail> {
+  return (await api.get<AdminCouponDetail>(`/admin/coupons/${id}`)).data;
+}
+
+export type AdminCouponWriteInput = {
+  code: string;
+  description?: string | null;
+  discountType: AdminCouponDiscountType;
+  discountValue: number;
+  maxDiscountPaise?: number | null;
+  minimumOrderPaise?: number;
+  usageLimit?: number | null;
+  perUserLimit?: number | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  status: AdminCouponStatus;
+  appliesTo: AdminCouponScope;
+  categoryId?: number | null;
+};
+
+export async function createAdminCoupon(
+  input: AdminCouponWriteInput,
+): Promise<{ id: number; code: string }> {
+  return (await api.post<{ id: number; code: string }>("/admin/coupons", input)).data;
+}
+
+export async function updateAdminCoupon(
+  id: number,
+  input: AdminCouponWriteInput,
+): Promise<{ id: number; code: string }> {
+  return (await api.patch<{ id: number; code: string }>(`/admin/coupons/${id}`, input)).data;
+}
+
+export async function deleteAdminCoupon(
+  id: number,
+  reason: string,
+): Promise<{ id: number; code: string }> {
+  return (await api.delete<{ id: number; code: string }>(`/admin/coupons/${id}`, { reason })).data;
+}
+
+export async function setAdminCouponStatus(
+  id: number,
+  status: AdminCouponStatus,
+): Promise<{ id: number; code: string; status: AdminCouponStatus }> {
+  return (
+    await api.patch<{ id: number; code: string; status: AdminCouponStatus }>(
+      `/admin/coupons/${id}/status`,
+      { status },
+    )
+  ).data;
 }

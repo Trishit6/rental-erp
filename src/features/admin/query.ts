@@ -63,20 +63,80 @@ import {
   updateAdminBanner,
   updateAdminCategory,
 } from "./api";
+// PROMPT 27 additions: the order, rental and dispute desks, and order health.
+import {
+  addAdminOrderNote,
+  cancelAdminOrder,
+  confirmAdminRentalReturn,
+  decideAdminDispute,
+  decideAdminRentalExtension,
+  fetchAdminDisputeDetail,
+  fetchAdminDisputesPage,
+  fetchAdminOrderDetail,
+  fetchAdminOrderHealth,
+  fetchAdminRentalDetail,
+  forceAdminRentalStatus,
+  overrideAdminOrderStatus,
+  requestAdminOrderRefund,
+  settleAdminRentalDeposit,
+} from "./api";
+// PROMPT 28 additions: refund decisions, transaction evidence and the finance reports.
+import {
+  decideAdminRefund,
+  fetchAdminReconciliation,
+  fetchAdminRefundDetail,
+  fetchAdminRefundsPage,
+  fetchAdminRevenue,
+  fetchAdminTransactionDetail,
+} from "./api";
+// PROMPT 29 additions: the moderation queue, its decisions and the flag-word list.
+import {
+  bulkDecideAdminModeration,
+  decideAdminModeration,
+  fetchAdminFlagWords,
+  fetchAdminModerationReportDetail,
+  fetchAdminModerationReports,
+  setAdminFlagWords,
+} from "./api";
+// PROMPT 30 additions: the support inbox.
+import {
+  fetchAdminSupportTicket,
+  fetchAdminSupportTickets,
+  replyAdminSupportTicket,
+  updateAdminSupportTicket,
+} from "./api";
+// PROMPT 31 additions: the coupon desk.
+import {
+  createAdminCoupon,
+  deleteAdminCoupon,
+  fetchAdminCouponDetail,
+  fetchAdminCoupons,
+  setAdminCouponStatus,
+  updateAdminCoupon,
+} from "./api";
 import type {
   AdminAuditFilters,
   AdminBulkStatusInput,
+  AdminDisputeFilters,
+  AdminModerationFilters,
   AdminOrderFilters,
   AdminProductEditInput,
+  AdminRefundFilters,
   AdminRentalFilters,
   AdminReviewFilters,
   AdminRoleUpdateInput,
   AdminRoleWriteInput,
   AdminSellerFilters,
+  AdminSupportFilters,
+  AdminSupportTicketUpdate,
   AdminTransactionFilters,
   AdminUserFilters,
   AdminBannerWriteInput,
   AdminCategoryWriteInput,
+  AdminCouponFilters,
+  AdminCouponStatus,
+  AdminCouponWriteInput,
+  ModerationAction,
 } from "./api";
 import type { AdminProductFilters } from "./types";
 
@@ -309,8 +369,13 @@ export function useAdminOrderStatusMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) => setAdminOrderStatus(id, status),
-    onSuccess: (_result, { status }) => {
+    onSuccess: (_result, { id, status }) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.adminOrders });
+      // The open detail panel and the health panel both read this order, so both
+      // have to hear about the move — otherwise the timeline below the buttons
+      // describes a status the badge above them disagrees with.
+      void queryClient.invalidateQueries({ queryKey: [...queryKeys.adminOrders, "detail", id] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminOrderHealth });
       toast.success(`Order set to ${status.toLowerCase().replace(/_/g, " ")}.`);
     },
     onError: (error: Error) => toast.error(error.message || "Couldn't update the order."),
@@ -684,13 +749,6 @@ export type AdminUser = {
   verified: boolean;
 };
 
-export type AdminReport = {
-  id: number;
-  reason: string;
-  details: string | null;
-  status: string;
-};
-
 /**
  * The moderation queue's account list.
  *
@@ -710,14 +768,6 @@ export function useAdminUsers(enabled: boolean) {
   });
 }
 
-export function useAdminReports(enabled: boolean) {
-  return useQuery({
-    queryKey: queryKeys.adminReports,
-    queryFn: async () => (await api.get<AdminReport[]>("/admin/reports")).data,
-    enabled,
-  });
-}
-
 export function useAdminActions() {
   const queryClient = useQueryClient();
   return {
@@ -728,10 +778,6 @@ export function useAdminActions() {
       });
       void queryClient.invalidateQueries({ queryKey: queryKeys.adminUsers });
       toast.success(suspend ? "User suspended" : "User restored");
-    },
-    async resolveReport(id: number, status: string) {
-      await api.patch(`/admin/reports/${id}`, { status });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.adminReports });
     },
   };
 }
@@ -989,5 +1035,565 @@ export function useAdminCmsVersions(
     queryKey: [...queryKeys.adminCms, "versions", entityType, id] as const,
     queryFn: () => fetchAdminCmsVersions(entityType, id as number),
     enabled: id !== null,
+  });
+}
+
+/* ---------------------- PROMPT 27: orders, rentals, disputes ------------------- */
+
+export function adminOrderDetailKey(id: number) {
+  return [...queryKeys.adminOrders, "detail", id] as const;
+}
+
+export function adminRentalDetailKey(id: number) {
+  return [...queryKeys.adminRentals, "detail", id] as const;
+}
+
+export function adminDisputeDetailKey(id: number) {
+  return [...queryKeys.adminDisputes, "detail", id] as const;
+}
+
+/**
+ * The full order view. `staleTime` is short — the detail screen carries buttons
+ * that change the record, so treating it as long-lived would let an action's own
+ * result be masked by a stale read.
+ */
+export function useAdminOrderDetail(id: number | null) {
+  return useQuery({
+    queryKey: adminOrderDetailKey(id ?? 0),
+    queryFn: () => fetchAdminOrderDetail(id as number),
+    enabled: id !== null,
+    staleTime: 0,
+  });
+}
+
+/**
+ * The order desk's write actions.
+ *
+ * Every one invalidates the order's own list prefix (a status change reorders the
+ * table), the health panel (a stuck order stops being stuck once moved) and the
+ * transaction list (a refund request adds a payment-shaped row). Grouping them into
+ * one hook keeps that rule in a single place rather than repeated per button.
+ */
+export function useAdminOrderActions() {
+  const queryClient = useQueryClient();
+
+  function invalidateOrder(id: number) {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.adminOrders });
+    void queryClient.invalidateQueries({ queryKey: adminOrderDetailKey(id) });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.adminOrderHealth });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.adminTransactions });
+  }
+
+  const onError = (error: Error) => toast.error(error.message || "Couldn't update the order.");
+
+  const note = useMutation({
+    mutationFn: ({ id, note: text }: { id: number; note: string }) =>
+      addAdminOrderNote(id, text),
+    onSuccess: (_result, { id }) => {
+      invalidateOrder(id);
+      toast.success("Note added to the timeline.");
+    },
+    onError,
+  });
+
+  const override = useMutation({
+    mutationFn: ({ id, status, reason }: { id: number; status: string; reason: string }) =>
+      overrideAdminOrderStatus(id, status, reason),
+    onSuccess: (_result, { id }) => {
+      invalidateOrder(id);
+      toast.success("Order status overridden.");
+    },
+    onError,
+  });
+
+  const cancel = useMutation({
+    mutationFn: ({ id, reason }: { id: number; reason: string }) => cancelAdminOrder(id, reason),
+    onSuccess: (_result, { id }) => {
+      invalidateOrder(id);
+      toast.success("Order cancelled.");
+    },
+    onError,
+  });
+
+  const refund = useMutation({
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: number;
+      input: { amount: number; reason: string; orderItemId?: number | null };
+    }) => requestAdminOrderRefund(id, input),
+    onSuccess: (result, { id }) => {
+      invalidateOrder(id);
+      toast.success(
+        result.duplicate
+          ? `Refund ${result.refundNumber} was already requested.`
+          : `Refund ${result.refundNumber} requested.`,
+      );
+    },
+    onError,
+  });
+
+  return {
+    addNote: note.mutateAsync,
+    override: override.mutateAsync,
+    cancel: cancel.mutateAsync,
+    requestRefund: refund.mutateAsync,
+    isPending: note.isPending || override.isPending || cancel.isPending || refund.isPending,
+  };
+}
+
+export function useAdminOrderHealth() {
+  return useQuery({
+    queryKey: queryKeys.adminOrderHealth,
+    queryFn: fetchAdminOrderHealth,
+    // Operational, like the health probe: a stale "nothing is stuck" is exactly the
+    // reassurance that hides the problem.
+    staleTime: 20_000,
+  });
+}
+
+export function useAdminRentalDetail(id: number | null) {
+  return useQuery({
+    queryKey: adminRentalDetailKey(id ?? 0),
+    queryFn: () => fetchAdminRentalDetail(id as number),
+    enabled: id !== null,
+    staleTime: 0,
+  });
+}
+
+export function useAdminRentalActions() {
+  const queryClient = useQueryClient();
+
+  function invalidateRental(id: number) {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.adminRentals });
+    void queryClient.invalidateQueries({ queryKey: adminRentalDetailKey(id) });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.adminOrderHealth });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.adminTransactions });
+  }
+
+  const onError = (error: Error) => toast.error(error.message || "Couldn't update the rental.");
+
+  const force = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: string }) =>
+      forceAdminRentalStatus(id, status),
+    onSuccess: (_result, { id }) => {
+      invalidateRental(id);
+      toast.success("Rental status updated.");
+    },
+    onError,
+  });
+
+  const confirmReturn = useMutation({
+    mutationFn: (id: number) => confirmAdminRentalReturn(id),
+    onSuccess: (_result, id) => {
+      invalidateRental(id);
+      toast.success("Return confirmed.");
+    },
+    onError,
+  });
+
+  const settleDeposit = useMutation({
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: number;
+      input: { deduction: number; reason: string };
+    }) => settleAdminRentalDeposit(id, input),
+    onSuccess: (result, { id }) => {
+      invalidateRental(id);
+      toast.success(
+        result.deduction > 0
+          ? `Deposit settled — released ₹${(result.released / 100).toFixed(2)}.`
+          : "Deposit released in full.",
+      );
+    },
+    onError,
+  });
+
+  const decideExtension = useMutation({
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: number;
+      input: { decision: "APPROVE" | "REJECT"; days?: number; reason: string };
+    }) => decideAdminRentalExtension(id, input),
+    onSuccess: (_result, { id, input }) => {
+      invalidateRental(id);
+      toast.success(input.decision === "APPROVE" ? "Extension approved." : "Extension declined.");
+    },
+    onError,
+  });
+
+  return {
+    forceStatus: force.mutateAsync,
+    confirmReturn: confirmReturn.mutateAsync,
+    settleDeposit: settleDeposit.mutateAsync,
+    decideExtension: decideExtension.mutateAsync,
+    isPending:
+      force.isPending ||
+      confirmReturn.isPending ||
+      settleDeposit.isPending ||
+      decideExtension.isPending,
+  };
+}
+
+export function useAdminDisputes(filters: AdminDisputeFilters) {
+  return useQuery({
+    queryKey: [...queryKeys.adminDisputes, "list", filters] as const,
+    queryFn: () => fetchAdminDisputesPage(filters),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useAdminDisputeDetail(id: number | null) {
+  return useQuery({
+    queryKey: adminDisputeDetailKey(id ?? 0),
+    queryFn: () => fetchAdminDisputeDetail(id as number),
+    enabled: id !== null,
+  });
+}
+
+export function useAdminDisputeDecision() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: number;
+      input: {
+        status: "UNDER_REVIEW" | "RESOLVED" | "DISMISSED";
+        resolution: string;
+        refund?: { amount: number; reason: string; idempotencyKey?: string | null } | null;
+      };
+    }) => decideAdminDispute(id, input),
+    onSuccess: (_result, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminDisputes });
+      void queryClient.invalidateQueries({ queryKey: adminDisputeDetailKey(id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminOrders });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminOrderHealth });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminTransactions });
+      toast.success("Dispute decision recorded; both parties notified.");
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't record the decision."),
+  });
+}
+
+/* ---------------------- PROMPT 28: refunds and finance reports ---------------- */
+
+export function adminRefundDetailKey(id: number) {
+  return [...queryKeys.adminRefunds, "detail", id] as const;
+}
+
+export function adminTransactionDetailKey(id: number) {
+  return [...queryKeys.adminTransactions, "detail", id] as const;
+}
+
+export function useAdminRefunds(filters: AdminRefundFilters) {
+  return useQuery({
+    queryKey: [...queryKeys.adminRefunds, "list", filters] as const,
+    queryFn: () => fetchAdminRefundsPage(filters),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useAdminRefundDetail(id: number | null) {
+  return useQuery({
+    queryKey: adminRefundDetailKey(id ?? 0),
+    queryFn: () => fetchAdminRefundDetail(id as number),
+    enabled: id !== null,
+    // A decided refund is final, but an open one is the thing this screen exists to
+    // act on, so freshness beats caching here.
+    staleTime: 0,
+  });
+}
+
+/** One payment with its archived provider events — read from the payments table. */
+export function useAdminTransactionDetail(id: number | null) {
+  return useQuery({
+    queryKey: adminTransactionDetailKey(id ?? 0),
+    queryFn: () => fetchAdminTransactionDetail(id as number),
+    enabled: id !== null,
+  });
+}
+
+/**
+ * Approving or rejecting a refund moves money, so it invalidates more than its own
+ * queue: the ledger gains a row, the order's payment status changes, and both the
+ * revenue report and the reconciliation view stop being true.
+ */
+export function useAdminRefundDecision() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: number;
+      input: { decision: "APPROVE" | "REJECT"; providerReference?: string | null; reason: string };
+    }) => decideAdminRefund(id, input),
+    onSuccess: (result, { id, input }) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminRefunds });
+      void queryClient.invalidateQueries({ queryKey: adminRefundDetailKey(id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminTransactions });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminOrders });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminFinance });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminRevenue });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminReconciliation });
+      toast.success(
+        input.decision === "APPROVE"
+          ? `Refund ${result.refundNumber} ${result.status === "SUCCEEDED" ? "was returned" : `is ${result.status.toLowerCase()}`}.`
+          : `Refund ${result.refundNumber} declined.`,
+      );
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't record the refund decision."),
+  });
+}
+
+export function useAdminRevenue() {
+  return useQuery({
+    queryKey: queryKeys.adminRevenue,
+    queryFn: fetchAdminRevenue,
+  });
+}
+
+export function useAdminReconciliation() {
+  return useQuery({
+    queryKey: queryKeys.adminReconciliation,
+    queryFn: fetchAdminReconciliation,
+    // Reconciliation is a "right now" claim; a cached clean bill of health is exactly
+    // the answer that must not be trusted twice.
+    staleTime: 15_000,
+  });
+}
+
+/* ---------------------------- PROMPT 29: moderation -------------------------- */
+
+export function adminModerationDetailKey(id: number) {
+  return [...queryKeys.adminModeration, "detail", id] as const;
+}
+
+export function useAdminModerationReports(filters: AdminModerationFilters) {
+  return useQuery({
+    queryKey: [...queryKeys.adminModeration, "list", filters] as const,
+    queryFn: () => fetchAdminModerationReports(filters),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useAdminModerationReportDetail(id: number | null) {
+  return useQuery({
+    queryKey: adminModerationDetailKey(id ?? 0),
+    queryFn: () => fetchAdminModerationReportDetail(id as number),
+    enabled: id !== null,
+    // A decision is final but an open report is the thing this screen exists to act
+    // on, so freshness beats caching here.
+    staleTime: 0,
+  });
+}
+
+/**
+ * Deciding a report can change a listing's visibility, an account's access, a
+ * review's contribution to a product's rating and the report's own queue, so it
+ * invalidates every surface a decision can move.
+ */
+export function useAdminModerationDecision() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: number; input: { action: ModerationAction; reason: string } }) =>
+      decideAdminModeration(id, input),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminModeration });
+      void queryClient.invalidateQueries({ queryKey: adminModerationDetailKey(result.id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminReports });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminProducts });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminUsers });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminReviews });
+      toast.success(
+        result.applied ? `Report #${result.id} decided.` : `Report #${result.id} was already decided.`,
+      );
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || "Couldn't record the moderation decision."),
+  });
+}
+
+export function useAdminModerationBulkDecision() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { ids: number[]; action: "RESOLVED" | "DISMISSED"; reason: string }) =>
+      bulkDecideAdminModeration(input),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminModeration });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminReports });
+      toast.success(
+        `${result.applied} report${result.applied === 1 ? "" : "s"} decided${
+          result.already > 0 ? `, ${result.already} already closed` : ""
+        }.`,
+      );
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't decide the reports."),
+  });
+}
+
+export function useAdminFlagWords() {
+  return useQuery({
+    queryKey: queryKeys.adminFlagWords,
+    queryFn: fetchAdminFlagWords,
+  });
+}
+
+export function useSetAdminFlagWords() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (words: string[]) => setAdminFlagWords(words),
+    onSuccess: (words) => {
+      queryClient.setQueryData(queryKeys.adminFlagWords, words);
+      toast.success("Flag words saved");
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't save the flag words."),
+  });
+}
+
+/* ---------------------------- PROMPT 30: support inbox ----------------------- */
+
+export function adminSupportDetailKey(id: number) {
+  return [...queryKeys.adminSupport, "detail", id] as const;
+}
+
+export function useAdminSupportTickets(filters: AdminSupportFilters) {
+  return useQuery({
+    queryKey: [...queryKeys.adminSupport, "list", filters] as const,
+    queryFn: () => fetchAdminSupportTickets(filters),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useAdminSupportTicketDetail(id: number | null) {
+  return useQuery({
+    queryKey: adminSupportDetailKey(id ?? 0),
+    queryFn: () => fetchAdminSupportTicket(id as number),
+    enabled: id !== null,
+    // A live thread is the thing this screen exists to work, so freshness beats
+    // caching away a reply that just arrived.
+    staleTime: 0,
+  });
+}
+
+/**
+ * Sending a reply writes to the ticket and re-reads both the open thread and the
+ * queue: a reply moves the ticket's status (and `updatedAt`), which reorders the list.
+ */
+export function useAdminSupportReply() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: number; input: { body: string; isInternal: boolean } }) =>
+      replyAdminSupportTicket(id, input),
+    onSuccess: (_result, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: adminSupportDetailKey(id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminSupport });
+      toast.success("Reply sent.");
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't send the reply."),
+  });
+}
+
+export function useAdminSupportUpdate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: number; input: AdminSupportTicketUpdate }) =>
+      updateAdminSupportTicket(id, input),
+    onSuccess: (_result, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: adminSupportDetailKey(id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminSupport });
+      toast.success("Ticket updated.");
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't update the ticket."),
+  });
+}
+
+/* ------------------------------ PROMPT 31: coupons --------------------------- */
+
+export function adminCouponDetailKey(id: number) {
+  return [...queryKeys.adminCoupons, "detail", id] as const;
+}
+
+export function useAdminCoupons(filters: AdminCouponFilters) {
+  return useQuery({
+    queryKey: [...queryKeys.adminCoupons, "list", filters] as const,
+    queryFn: () => fetchAdminCoupons(filters),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useAdminCouponDetail(id: number | null) {
+  return useQuery({
+    queryKey: adminCouponDetailKey(id ?? 0),
+    queryFn: () => fetchAdminCouponDetail(id as number),
+    enabled: id !== null,
+  });
+}
+
+/** A write re-reads the list and the open detail, since both show `usedCount`. */
+function useCouponInvalidate(id?: number) {
+  const queryClient = useQueryClient();
+  return () => {
+    if (id !== undefined) {
+      void queryClient.invalidateQueries({ queryKey: adminCouponDetailKey(id) });
+    }
+    void queryClient.invalidateQueries({ queryKey: queryKeys.adminCoupons });
+  };
+}
+
+export function useCreateAdminCoupon() {
+  const invalidate = useCouponInvalidate();
+  return useMutation({
+    mutationFn: (input: AdminCouponWriteInput) => createAdminCoupon(input),
+    onSuccess: (result) => {
+      invalidate();
+      toast.success(`Coupon ${result.code} created.`);
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't create the coupon."),
+  });
+}
+
+export function useUpdateAdminCoupon(id: number) {
+  const invalidate = useCouponInvalidate(id);
+  return useMutation({
+    mutationFn: (input: AdminCouponWriteInput) => updateAdminCoupon(id, input),
+    onSuccess: (result) => {
+      invalidate();
+      toast.success(`Coupon ${result.code} saved.`);
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't save the coupon."),
+  });
+}
+
+export function useDeleteAdminCoupon(id: number) {
+  const invalidate = useCouponInvalidate(id);
+  return useMutation({
+    mutationFn: (reason: string) => deleteAdminCoupon(id, reason),
+    onSuccess: (result) => {
+      invalidate();
+      toast.success(`Coupon ${result.code} deleted.`);
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't delete the coupon."),
+  });
+}
+
+/** The quick pause/activate on a listing: one status field, not a full re-save. */
+export function useAdminCouponStatusMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, status }: { id: number; status: AdminCouponStatus }) =>
+      setAdminCouponStatus(id, status),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminCoupons });
+      toast.success(`${result.code} is now ${result.status.toLowerCase()}.`);
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't change the coupon's status."),
   });
 }

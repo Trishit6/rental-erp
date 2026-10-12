@@ -1,18 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { AdminPaymentsPage } from "@/features/admin";
+import { AdminRefundsPage } from "@/features/admin";
 
 /**
- * `/admin/refunds` — the payments table with the type filter pinned to `REFUND`.
+ * `/admin/refunds` — the refund review queue (PROMPT 28).
  *
- * Refunds are a *view of the ledger*, not a separate resource: they are rows in
- * `transactions`, written when the refund flow called the provider. A dedicated refunds
- * page with its own queries would be a second source of truth about money that could
- * disagree with the payments table.
+ * This used to render the payments ledger with its type pinned to `REFUND`. That was
+ * a view of money that had *already* moved. A refund request is a different fact —
+ * money somebody has asked to move and an operator has to decide — so it needs its
+ * own queue rather than being folded into the ledger. The ledger itself is still at
+ * `/admin/payments`.
  *
- * There is deliberately no "Refund" button here. Issuing one is the order/payment flow's
- * job, and an admin table that merely flipped a status would report a refund the payment
- * provider never made. Guarded by the parent layout's `requireAdmin`.
+ * Guarded by the parent layout's `requireAdmin`; the approval inside additionally
+ * requires `refunds.approve` and a step-up, both enforced server-side.
  */
 export const Route = createFileRoute("/admin/refunds")({
-  component: () => <AdminPaymentsPage mode="refunds" />,
+  component: AdminRefundsPage,
 });

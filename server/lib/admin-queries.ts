@@ -40,6 +40,7 @@ import {
 } from "./order-queries";
 import { normalizePriceRange } from "./product-filters";
 import { buildRentalFilters, buildRentalSort, resolveRentalFilters } from "./rental-queries";
+import { retryHint as paymentRetryHint } from "./transaction-admin";
 
 /**
  * The admin workspace's server-side queries.
@@ -544,6 +545,8 @@ export type AdminTransactionRow = {
   orderNumber: string | null;
   customerName: string;
   createdAt: Date;
+  /** A one-line next step for a failed or stalled payment, or `null` when settled. */
+  retryHint: string | null;
 };
 
 const TRANSACTION_STATUSES = [
@@ -610,7 +613,13 @@ export async function listAdminTransactions(query: AdminTransactionsQuery): Prom
       .where(where),
   ]);
 
-  return { rows, total: Number(totalRow.value) };
+  return {
+    rows: rows.map((row) => ({
+      ...row,
+      retryHint: paymentRetryHint(row.status, row.failureReason),
+    })),
+    total: Number(totalRow.value),
+  };
 }
 
 /* --------------------------------- reviews ---------------------------------- */

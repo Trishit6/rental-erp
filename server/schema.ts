@@ -1145,6 +1145,18 @@ export const reports = mysqlTable(
     details: varchar("details", { length: 1000 }),
     // OPEN | IN_REVIEW | RESOLVED | DISMISSED — see docs/database.md.
     status: varchar("status", { length: 12 }).notNull().default("OPEN"),
+    /**
+     * The moderation decision (PROMPT 29). `action` names what was done to the
+     * reported thing (`REVIEW_HIDDEN`, `USER_SUSPENDED`, `DISMISSED`, …),
+     * `actionNote` is the moderator's one-line why, and `resolvedById`/`resolvedAt`
+     * attribute the decision separately from `updatedAt` — the row can be moved
+     * between OPEN and IN_REVIEW without being decided, and the attribution must
+     * not blur that.
+     */
+    action: varchar("action", { length: 24 }),
+    actionNote: varchar("action_note", { length: 500 }),
+    resolvedById: int("resolved_by_id").references(() => users.id, { onDelete: "set null" }),
+    resolvedAt: timestamp("resolved_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },
@@ -1820,6 +1832,16 @@ export const paymentWebhookEvents = mysqlTable(
     provider: varchar("provider", { length: 20 }).notNull(),
     /** The provider's event id. Unique *per provider*. */
     providerEventId: varchar("event_id", { length: 160 }).notNull(),
+    /**
+     * The provider's payment id the event refers to (`transactions.provider_transaction_id`).
+     *
+     * Stored separately from the event id because the two answer different questions:
+     * the event id guards against replay, the payment id is the key an operator uses
+     * to pull up "every webhook this payment produced" from the transaction detail.
+     * Nullable because a provider may send an event about something we never
+     * recorded a transaction for.
+     */
+    providerPaymentId: varchar("provider_payment_id", { length: 100 }),
     eventType: varchar("event_type", { length: 60 }).notNull(),
     payload: text("payload").notNull(),
     signatureVerified: boolean("signature_verified").notNull().default(false),
@@ -1838,6 +1860,12 @@ export const paymentWebhookEvents = mysqlTable(
     ),
     // The retry/inspection queue: failed first, newest first within a state.
     index("payment_webhook_events_status_created_idx").on(table.status, table.createdAt),
+    // The transaction detail reads the events for one provider payment, newest first.
+    index("payment_webhook_events_provider_payment_idx").on(
+      table.provider,
+      table.providerPaymentId,
+      table.createdAt,
+    ),
     check("payment_webhook_events_event_not_empty", sql`LENGTH(${table.providerEventId}) > 0`),
   ],
 );

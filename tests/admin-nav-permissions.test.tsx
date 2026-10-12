@@ -78,22 +78,31 @@ describe("a SUPPORT account", () => {
     expect(screen.getByRole("link", { name: /Customers/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Reports/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Notifications/ })).toBeInTheDocument();
+    // Support's own queue (PROMPT 30).
+    expect(screen.getByRole("link", { name: /Inbox/ })).toBeInTheDocument();
 
-    // Refused: no product moderation, no finance, no RBAC/admin settings.
+    // Refused: no product moderation, no money, no RBAC/admin settings.
     expect(screen.queryByRole("link", { name: /Products/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Categories/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Summary/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Payments/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Audit logs/ })).not.toBeInTheDocument();
+
+    // The one Finance row it may use: seeing that a refund is pending is support's job,
+    // returning the money is not (PROMPT 28).
+    expect(screen.getByRole("link", { name: /Refunds/ })).toBeInTheDocument();
   });
+});
 
-  it("drops a section left with no visible row rather than a bare heading", () => {
-    renderSidebar(accessFor("SUPPORT"));
+describe("a section with nothing to show", () => {
+  it("drops the heading rather than leaving a bare label", () => {
+    renderSidebar(accessFor("FINANCE"));
 
-    // Finance has three rows and SUPPORT may use none, so the heading goes too.
-    expect(screen.queryByRole("heading", { name: "Finance" })).not.toBeInTheDocument();
-    // The Marketplace section survives because orders and rentals remain.
-    expect(screen.getByRole("heading", { name: "Marketplace" })).toBeInTheDocument();
+    // FINANCE has no `users.view` and no `vendors.view`, so the whole Users section
+    // goes; a heading with no rows under it reads as a broken workspace.
+    expect(screen.queryByRole("heading", { name: "Users" })).not.toBeInTheDocument();
+    // The Finance section survives because its money rows remain.
+    expect(screen.getByRole("heading", { name: "Finance" })).toBeInTheDocument();
   });
 });
 

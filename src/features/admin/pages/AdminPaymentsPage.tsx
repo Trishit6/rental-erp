@@ -1,5 +1,7 @@
-import { CreditCard, RotateCcw } from "lucide-react";
+import { useState } from "react";
+import { CreditCard } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Pagination } from "@/components/shared/pagination";
 import { AdminPageHeader } from "../components/AdminLayout";
 import {
@@ -10,26 +12,23 @@ import {
   TableCell,
   TableRow,
 } from "../components/AdminTableScaffold";
+import { AdminTransactionDetailDialog } from "../components/AdminTransactionDetailDialog";
 import { formatAdminDateTime, formatAdminMoney, humanizeEnum } from "../components/format";
 import { NEUTRAL_BADGE, PAYMENT_STATUS_BADGE } from "../components/status-badge";
 import { useAdminSearchFilters, useAdminTransactions } from "../query";
 import { EMPTY_ADMIN_TRANSACTION_FILTERS, type AdminTransactionRow } from "../api";
 
 /**
- * `/admin/payments` — the money ledger, and `/admin/refunds` pinned to refunds.
+ * `/admin/payments` — the money ledger.
  *
  * ## Read-only, and that is a design decision
  *
- * Every row here is a `transactions` record: a provider's view of money moving. The
- * brief asks for refunds in the admin workspace, and the honest form of that is a
- * *filter on the ledger*, not a "Refund" button. A button that marked a transaction
- * REFUNDED would be a lie — the money would not have moved, the provider would not know,
- * and the ledger would disagree with the bank. Refunds are initiated through the order
- * or payment flow that owns them (which calls the provider first), and this table is how
- * an administrator confirms the result.
- *
- * So refunds are a pinned `type=REFUND` on the same table: one implementation, and the
- * refund view can never show a payment that the payments view hides.
+ * Every row here is a `transactions` record: a provider's view of money moving. This
+ * table is how an administrator confirms what actually happened at the provider; it
+ * never *initiates* a refund. A button that marked a transaction REFUNDED would be a
+ * lie — the money would not have moved, the provider would not know, and the ledger
+ * would disagree with the bank. Refund *requests* and their approval live at
+ * `/admin/refunds` (PROMPT 28), and executing one goes through the provider.
  *
  * ## Why the provider id is the searchable field
  *
@@ -76,33 +75,28 @@ function ProviderCell({ row }: { row: AdminTransactionRow }) {
   );
 }
 
-export function AdminPaymentsPage({ mode = "all" }: { mode?: "all" | "refunds" }) {
+export function AdminPaymentsPage() {
   const [filters, setFilters] = useAdminSearchFilters(EMPTY_ADMIN_TRANSACTION_FILTERS);
-  const refundsOnly = mode === "refunds";
-  const effective = refundsOnly ? { ...filters, type: "REFUND" } : filters;
-  const transactions = useAdminTransactions(effective);
+  const transactions = useAdminTransactions(filters);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const update = (patch: Partial<typeof filters>) =>
     setFilters((current) => ({ ...current, ...patch, page: 1 }));
 
   const rows = transactions.data?.rows ?? [];
   const hasFilters =
-    filters.search !== "" || filters.status !== null || (!refundsOnly && filters.type !== null);
+    filters.search !== "" || filters.status !== null || filters.type !== null;
 
   return (
     <div className="space-y-5 pb-10">
       <AdminPageHeader
         eyebrow="Finance"
-        title={refundsOnly ? "Refunds" : "Payments"}
-        description={
-          refundsOnly
-            ? "Every refund recorded against a payment. Refunds are issued through the order flow; this is the record of what it produced."
-            : "Payments, refunds and payouts as the provider reported them. Searchable by provider reference, order number or email."
-        }
+        title="Payments"
+        description="Payments, refunds and payouts as the provider reported them. Searchable by provider reference, order number or email."
       />
 
       <AdminTableScaffold
-        icon={refundsOnly ? RotateCcw : CreditCard}
+        icon={CreditCard}
         search={filters.search}
         onSearch={(search) => update({ search })}
         isSearching={transactions.isFetching && !transactions.isLoading}
@@ -116,34 +110,28 @@ export function AdminPaymentsPage({ mode = "all" }: { mode?: "all" | "refunds" }
             onChange: (value) => update({ status: value || null }),
             options: STATUS_OPTIONS,
           },
-          ...(refundsOnly
-            ? []
-            : [
-                {
-                  key: "type",
-                  label: "Type",
-                  value: filters.type ?? "",
-                  onChange: (value: string) => update({ type: value || null }),
-                  options: TYPE_OPTIONS,
-                },
-              ]),
+          {
+            key: "type",
+            label: "Type",
+            value: filters.type ?? "",
+            onChange: (value: string) => update({ type: value || null }),
+            options: TYPE_OPTIONS,
+          },
         ]}
         count={transactions.data?.total ?? 0}
         shownCount={rows.length}
         isLoading={transactions.isLoading && !transactions.data}
         isError={transactions.isError}
         onRetry={() => void transactions.refetch()}
-        emptyTitle={hasFilters ? "Nothing matches" : refundsOnly ? "No refunds yet" : "No transactions yet"}
+        emptyTitle={hasFilters ? "Nothing matches" : "No transactions yet"}
         emptyDescription={
           hasFilters
             ? "Nothing matches these filters. Try clearing one."
-            : refundsOnly
-              ? "Refunds appear here once an order is refunded."
-              : "Payments appear here once a customer completes checkout."
+            : "Payments appear here once a customer completes checkout."
         }
         pager={
           <Pagination
-            page={effective.page}
+            page={filters.page}
             totalPages={transactions.data?.totalPages ?? 1}
             onPageChange={(page) => setFilters((current) => ({ ...current, page }))}
           />
@@ -151,7 +139,17 @@ export function AdminPaymentsPage({ mode = "all" }: { mode?: "all" | "refunds" }
       >
         <AdminTable>
           <AdminTableHead
-            labels={["Reference", "Type", "Order", "Customer", "Provider", "Amount", "Status", "When"]}
+            labels={[
+              "Reference",
+              "Type",
+              "Order",
+              "Customer",
+              "Provider",
+              "Amount",
+              "Status",
+              "When",
+              "",
+            ]}
           />
           <TableBody>
             {rows.map((row) => (
@@ -180,16 +178,37 @@ export function AdminPaymentsPage({ mode = "all" }: { mode?: "all" | "refunds" }
                     {row.failureReason ? (
                       <p className="max-w-56 text-xs text-destructive">{row.failureReason}</p>
                     ) : null}
+                    {row.retryHint ? (
+                      <p className="max-w-64 text-xs text-muted-foreground">{row.retryHint}</p>
+                    ) : null}
                   </div>
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                   {formatAdminDateTime(row.createdAt)}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setSelectedId(row.id)}
+                  >
+                    View
+                  </Button>
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </AdminTable>
       </AdminTableScaffold>
+
+      <AdminTransactionDetailDialog
+        transactionId={selectedId}
+        open={selectedId !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedId(null);
+        }}
+      />
     </div>
   );
 }
