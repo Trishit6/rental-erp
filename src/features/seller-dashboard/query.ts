@@ -5,6 +5,7 @@ import {
   becomeSeller,
   fetchOwnSellerProfile,
   fetchPublicSeller,
+  fetchSellerAlerts,
   fetchSellerAnalytics,
   fetchSellerEarnings,
   fetchSellerStatus,
@@ -77,6 +78,21 @@ export function useSellerSummary() {
   return useQuery({
     queryKey: queryKeys.sellerSummary,
     queryFn: fetchSellerSummary,
+  });
+}
+
+/* --------------------------------- alerts ---------------------------------- */
+
+/**
+ * The dashboard's two nudges. A short `staleTime` because stock and return dates
+ * move under the seller's feet, but not zero: a dashboard re-render should not
+ * re-fetch a list that changed only because a sibling card did.
+ */
+export function useSellerAlerts() {
+  return useQuery({
+    queryKey: queryKeys.sellerAlerts,
+    queryFn: fetchSellerAlerts,
+    staleTime: 30_000,
   });
 }
 

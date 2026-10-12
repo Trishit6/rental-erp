@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -44,6 +45,9 @@ export function AdminConfirmDialog({
   tone = "default",
   isSubmitting,
   onConfirm,
+  requireReason = false,
+  reasonLabel = "Reason (recorded in the audit log)",
+  reasonPlaceholder = "Say why, so the log explains itself later.",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -56,10 +60,28 @@ export function AdminConfirmDialog({
   /** `destructive` for anything that takes access, money or data away. */
   tone?: "default" | "destructive";
   isSubmitting: boolean;
-  onConfirm: () => void;
+  /** Receives the typed reason when `requireReason` is set, else an empty string. */
+  onConfirm: (reason: string) => void;
+  /**
+   * When set, the dialog refuses to submit until a reason is typed. Used by the
+   * sensitive actions the server audits with a mandatory reason (PROMPT 22) — the
+   * input here is the same value the API validates, so the two cannot diverge.
+   */
+  requireReason?: boolean;
+  reasonLabel?: string;
+  reasonPlaceholder?: string;
 }) {
+  const [reason, setReason] = useState("");
+  const reasonMissing = requireReason && reason.trim() === "";
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setReason("");
+        onOpenChange(next);
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{title ?? `${confirmLabel}?`}</DialogTitle>
@@ -67,6 +89,22 @@ export function AdminConfirmDialog({
         </DialogHeader>
 
         <div className="mt-4 text-sm text-muted-foreground">{body}</div>
+
+        {requireReason ? (
+          <label className="mt-4 block space-y-1.5 text-left">
+            <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+              {reasonLabel}
+            </span>
+            <Textarea
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder={reasonPlaceholder}
+              maxLength={300}
+              rows={2}
+              autoFocus
+            />
+          </label>
+        ) : null}
 
         <DialogFooter className="mt-5">
           <Button
@@ -80,8 +118,8 @@ export function AdminConfirmDialog({
           <Button
             type="button"
             variant={tone === "destructive" ? "destructive" : "default"}
-            disabled={isSubmitting}
-            onClick={onConfirm}
+            disabled={isSubmitting || reasonMissing}
+            onClick={() => onConfirm(reason.trim())}
           >
             {isSubmitting ? <Loader2 size={15} aria-hidden className="animate-spin" /> : null}
             {isSubmitting ? "Working…" : confirmLabel}

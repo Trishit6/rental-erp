@@ -1,87 +1,106 @@
-import { useMemo } from "react";
-import { CircleSlash, Tag } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ArrowDown, ArrowUp, CircleSlash, Loader2, Pencil, Plus, Tag, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { AdminPageHeader } from "../components/AdminLayout";
+import { AdminField as Field } from "../components/AdminField";
 import { AdminConfirmDialog, useConfirmTarget } from "../components/AdminConfirmDialog";
 import { formatAdminCount } from "../components/format";
-import { useAdminCategories, useAdminCategoryActiveMutation } from "../query";
-import type { AdminCategoryRow } from "../api";
+import {
+  useAdminCategories,
+  useAdminCategoryActiveMutation,
+  useCreateAdminCategory,
+  useDeleteAdminCategory,
+  useReorderAdminCategories,
+  useUpdateAdminCategory,
+} from "../query";
+import type { AdminCategoryRow, AdminCategoryWriteInput } from "../api";
 
 /**
- * `/admin/categories` — the taxonomy, and whether it is offered to customers.
+ * `/admin/categories` — the taxonomy, and how it is ordered and offered.
  *
- * ## Retire, never delete
+ * ## Why this page now edits rather than only retires
  *
- * `products.category_id` references these rows, so deleting a category would either
- * fail or orphan every listing filed under it. The endpoint exposes one toggle —
- * `isActive` — and that is the honest set of changes available. An inactive category
- * disappears from the customer-facing category filter and from the category pages, but
- * its listings stay filed under it and still resolve, which is what an administrator
- * wants when they reorganise the taxonomy rather than clean up after it.
+ * The first cut exposed one toggle (`isActive`), on the reasoning that a category is
+ * referenced by products and must never be deleted. That is true, but it left three
+ * ordinary jobs undone: renaming, reordering, and merging a duplicate away. PROMPT 26
+ * adds them, and the delete flow asks *where the listings should move* — so the
+ * FK-restrict that made deletion unsafe becomes a question the administrator answers,
+ * not an error they discover.
  *
- * ## The product count is shown because it is the answer to "can I retire this?"
+ * ## Order is a whole-list operation
  *
- * `productCount` comes from the same query that lists the categories, so the number in
- * the confirmation is the number the customer would lose access to.
+ * `sortOrder` is contiguous and shared by roots and children (`GET /categories` reads
+ * them together, ordered by it). Moving a row is therefore "send the new order of the
+ * visible ids", not "patch this row's number" — a partial renumber leaves duplicates
+ * and the next read disagrees with the last.
  */
-
 export function AdminCategoriesPage() {
   const categories = useAdminCategories();
   const setActive = useAdminCategoryActiveMutation();
-  const confirm = useConfirmTarget<AdminCategoryRow>();
+  const createCategory = useCreateAdminCategory();
+  const updateCategory = useUpdateAdminCategory();
+  const deleteCategory = useDeleteAdminCategory();
+  const reorder = useReorderAdminCategories();
 
-  /**
-   * Categories arrive flat with a `parentId`. Rendering them flat with an indent is
-   * chosen over building a tree because the schema allows exactly two levels and a
-   * tree would be a second, untested code path for a two-level structure. The indent
-   * shows the relationship; the parent name is spelled out so the row is readable
-   * without the indent.
-   */
-  const byParent = useMemo(() => {
-    const parents = new Map<number, AdminCategoryRow>();
-    const children: AdminCategoryRow[] = [];
-    for (const row of categories.data ?? []) {
-      if (row.parentId === null) parents.set(row.id, row);
-      else children.push(row);
-    }
-    const ordered: (AdminCategoryRow & { parentName: string | null })[] = [];
-    for (const parent of [...parents.values()].sort((a, b) => a.sortOrder - b.sortOrder)) {
-      ordered.push({ ...parent, parentName: null });
-      for (const child of children
-        .filter((c) => c.parentId === parent.id)
-        .sort((a, b) => a.sortOrder - b.sortOrder)) {
-        ordered.push({ ...child, parentName: parent.name });
-      }
-    }
-    // A child whose parent row is missing (a deleted parent, or data from an older
-    // import) would otherwise vanish from the screen entirely, which is worse than
-    // showing it unindented — surfacing it is what makes the broken reference visible.
-    for (const orphan of children.filter((c) => !parents.has(c.parentId!))) {
-      ordered.push({ ...orphan, parentName: null });
-    }
-    return ordered;
-  }, [categories.data]);
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<AdminCategoryRow | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const remove = useConfirmTarget<AdminCategoryRow>();
+
+  const rows = useMemo(() => categories.data ?? [], [categories.data]);
+  // Display order is exactly what the server returned; reordering swaps neighbours
+  // within it and posts the whole sequence back.
+  const orderedIds = useMemo(() => rows.map((row) => row.id), [rows]);
+  const byId = useMemo(() => new Map(rows.map((row) => [row.id, row])), [rows]);
+
+  function move(id: number, direction: -1 | 1) {
+    const index = orderedIds.indexOf(id);
+    const next = index + direction;
+    if (index < 0 || next < 0 || next >= orderedIds.length) return;
+    const reordered = [...orderedIds];
+    [reordered[index], reordered[next]] = [reordered[next], reordered[index]];
+    reorder.mutate(reordered);
+  }
 
   return (
     <div className="space-y-5 pb-10">
       <AdminPageHeader
         eyebrow="Catalog"
         title="Categories"
-        description="The product taxonomy. Retiring a category hides it from customers while keeping every listing filed under it."
+        description="The taxonomy products are filed under. Order here is the order customers see; retiring hides a category without touching its listings."
+        actions={
+          <Button
+            type="button"
+            onClick={() => {
+              setFormError(null);
+              setCreating(true);
+            }}
+          >
+            <Plus size={15} aria-hidden />
+            New category
+          </Button>
+        }
       />
 
       <Card className="overflow-hidden p-0">
         {categories.isLoading && !categories.data ? (
-          <div className="space-y-3 p-4" aria-busy="true">
-            {Array.from({ length: 8 }).map((_, index) => (
-              <div key={index} className="flex items-center gap-3">
-                <Skeleton className="h-4 w-48" />
-                <Skeleton className="ml-auto h-6 w-20 rounded-full" />
-              </div>
+          <div className="space-y-2 p-4">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <Skeleton key={index} className="h-10 w-full" />
             ))}
           </div>
         ) : categories.isError ? (
@@ -89,7 +108,7 @@ export function AdminCategoriesPage() {
             <EmptyState
               icon={Tag}
               title="Unable to load categories"
-              description="We couldn't reach the server for this page. Please try again."
+              description="The taxonomy could not be fetched. Try again."
               action={
                 <Button type="button" onClick={() => void categories.refetch()}>
                   Try again
@@ -97,143 +116,381 @@ export function AdminCategoriesPage() {
               }
             />
           </div>
-        ) : byParent.length === 0 ? (
+        ) : rows.length === 0 ? (
           <div className="p-4">
             <EmptyState
               icon={Tag}
               title="No categories yet"
-              description="Categories appear here once they are added to the taxonomy."
+              description="Create the first category so sellers have somewhere to file their listings."
+              action={
+                <Button type="button" onClick={() => setCreating(true)}>
+                  <Plus size={15} aria-hidden />
+                  New category
+                </Button>
+              }
             />
           </div>
         ) : (
-          <>
-            <p className="border-b border-[var(--divider)] px-4 py-2.5 text-xs text-muted-foreground">
-              {formatAdminCount(byParent.length)} categories ·{" "}
-              {formatAdminCount(
-                byParent.reduce((total, row) => total + Number(row.productCount), 0),
-              )}{" "}
-              listings filed
-            </p>
-            <ul className="divide-y divide-[var(--divider)]">
-              {byParent.map((row) => (
-                <li
-                  key={row.id}
-                  className="flex flex-wrap items-center gap-3 px-4 py-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p
-                      className={`truncate font-semibold ${row.parentName ? "pl-4 text-sm" : ""}`}
-                    >
-                      {row.parentName ? `↳ ${row.name}` : row.name}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {row.slug} · {formatAdminCount(row.productCount)} listing
-                      {Number(row.productCount) === 1 ? "" : "s"}
-                      {row.isFeatured ? " · featured" : ""}
-                    </p>
-                  </div>
+          <ul className="divide-y divide-[var(--divider)]">
+            {rows.map((row, index) => (
+              <li key={row.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                <div className="flex flex-col">
+                  <button
+                    type="button"
+                    aria-label={`Move ${row.name} up`}
+                    disabled={index === 0 || reorder.isPending}
+                    onClick={() => move(row.id, -1)}
+                    className="rounded p-0.5 text-muted-foreground transition hover:text-foreground disabled:opacity-30"
+                  >
+                    <ArrowUp size={14} aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Move ${row.name} down`}
+                    disabled={index === rows.length - 1 || reorder.isPending}
+                    onClick={() => move(row.id, 1)}
+                    className="rounded p-0.5 text-muted-foreground transition hover:text-foreground disabled:opacity-30"
+                  >
+                    <ArrowDown size={14} aria-hidden />
+                  </button>
+                </div>
 
-                  <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-2 font-semibold">
+                    {row.name}
                     {row.isFeatured ? (
-                      <Badge className="whitespace-nowrap bg-primary/12 text-primary">
-                        Featured
-                      </Badge>
+                      <Badge className="bg-primary/15 text-primary">Featured</Badge>
                     ) : null}
-                    <Badge
-                      className={`whitespace-nowrap ${row.isActive ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"}`}
-                    >
-                      {row.isActive ? "Active" : "Retired"}
-                    </Badge>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 px-2"
-                      disabled={setActive.isPending}
-                      onClick={() => confirm.request(row)}
-                    >
-                      {row.isActive ? (
-                        <>
-                          <CircleSlash size={14} aria-hidden />
-                          Retire
-                        </>
-                      ) : (
-                        "Restore"
-                      )}
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </>
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    /{row.slug}
+                    {row.parentId ? ` · in ${byId.get(row.parentId)?.name ?? "another category"}` : ""}
+                  </p>
+                </div>
+
+                <span className="whitespace-nowrap text-xs text-muted-foreground">
+                  {formatAdminCount(row.productCount)} listing
+                  {row.productCount === 1 ? "" : "s"}
+                </span>
+
+                <Badge
+                  className={
+                    row.isActive ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
+                  }
+                >
+                  {row.isActive ? "Active" : "Retired"}
+                </Badge>
+
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2"
+                    disabled={setActive.isPending}
+                    onClick={() => setActive.mutate({ id: row.id, isActive: !row.isActive })}
+                  >
+                    <CircleSlash size={14} aria-hidden />
+                    {row.isActive ? "Retire" : "Restore"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2"
+                    onClick={() => {
+                      setFormError(null);
+                      setEditing(row);
+                    }}
+                  >
+                    <Pencil size={14} aria-hidden />
+                    <span className="sr-only">Edit {row.name}</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 text-destructive hover:bg-destructive/10"
+                    onClick={() => remove.request(row)}
+                  >
+                    <Trash2 size={14} aria-hidden />
+                    <span className="sr-only">Delete {row.name}</span>
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
       </Card>
 
-      <CategoryVisibilityDialog
-        row={confirm.target}
-        isSubmitting={setActive.isPending}
-        onCancel={confirm.close}
-        onConfirm={(isActive) => {
-          if (!confirm.target) return;
-          const id = confirm.target.id;
-          setActive.mutate({ id, isActive }, { onSettled: confirm.close });
+      <AdminCategoryFormDialog
+        open={creating || editing !== null}
+        category={editing}
+        categories={rows}
+        saving={createCategory.isPending || updateCategory.isPending}
+        serverError={formError}
+        onOpenChange={(next) => {
+          if (!next) {
+            setCreating(false);
+            setEditing(null);
+            setFormError(null);
+          }
+        }}
+        onSubmit={(input) => {
+          setFormError(null);
+          if (editing) {
+            updateCategory.mutate(
+              { id: editing.id, input },
+              {
+                onSuccess: () => setEditing(null),
+                onError: (error: Error) => setFormError(error.message),
+              },
+            );
+          } else {
+            createCategory.mutate(input, {
+              onSuccess: () => setCreating(false),
+              onError: (error: Error) => setFormError(error.message),
+            });
+          }
+        }}
+      />
+
+      <AdminCategoryDeleteDialog
+        category={remove.target}
+        categories={rows}
+        deleting={deleteCategory.isPending}
+        onOpenChange={(next) => !next && remove.close()}
+        onConfirm={(id, reason, reassignToId) => {
+          deleteCategory.mutate(
+            { id, reason, reassignToId },
+            { onSettled: remove.close },
+          );
         }}
       />
     </div>
   );
 }
 
-/**
- * The retire/restore confirmation.
- *
- * The consequence is named before the click because it is not obvious: the count of
- * listings that stop being reachable through the category filter is the number that
- * decides whether this is a tidy-up or a mistake.
- */
-function CategoryVisibilityDialog({
-  row,
-  isSubmitting,
+/* ------------------------------- create / edit ------------------------------- */
+
+export function AdminCategoryFormDialog({
+  open,
+  category,
+  categories,
+  saving,
+  serverError,
+  onOpenChange,
+  onSubmit,
+}: {
+  open: boolean;
+  category: AdminCategoryRow | null;
+  categories: AdminCategoryRow[];
+  saving: boolean;
+  serverError: string | null;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (input: AdminCategoryWriteInput) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{category ? "Edit category" : "New category"}</DialogTitle>
+          <DialogDescription>
+            {category
+              ? `Changes to ${category.name} are written to the audit log.`
+              : "A name is all that is required — the slug is derived from it and kept unique."}
+          </DialogDescription>
+        </DialogHeader>
+        {/* Keyed on the id so reopening for a different row resets the form. */}
+        <CategoryForm
+          key={category?.id ?? "new"}
+          category={category}
+          categories={categories}
+          saving={saving}
+          serverError={serverError}
+          onCancel={() => onOpenChange(false)}
+          onSubmit={onSubmit}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CategoryForm({
+  category,
+  categories,
+  saving,
+  serverError,
   onCancel,
+  onSubmit,
+}: {
+  category: AdminCategoryRow | null;
+  categories: AdminCategoryRow[];
+  saving: boolean;
+  serverError: string | null;
+  onCancel: () => void;
+  onSubmit: (input: AdminCategoryWriteInput) => void;
+}) {
+  const [name, setName] = useState(category?.name ?? "");
+  const [slug, setSlug] = useState(category?.slug ?? "");
+  const [parentId, setParentId] = useState<string>(category?.parentId ? String(category.parentId) : "");
+  const [error, setError] = useState<string | null>(null);
+
+  // A category cannot be its own parent, and the taxonomy is two levels deep — so the
+  // parent options exclude the row being edited and any row that already has a parent.
+  const parentOptions = useMemo(
+    () => [
+      { value: "", label: "Top level" },
+      ...categories
+        .filter((row) => row.id !== category?.id && row.parentId === null)
+        .map((row) => ({ value: String(row.id), label: row.name })),
+    ],
+    [categories, category?.id],
+  );
+
+  function submit() {
+    const trimmed = name.trim();
+    if (trimmed.length < 2) {
+      setError("Give the category a name of at least 2 characters.");
+      return;
+    }
+    setError(null);
+    onSubmit({
+      name: trimmed,
+      slug: slug.trim() === "" ? undefined : slug.trim().toLowerCase(),
+      parentId: parentId === "" ? null : Number(parentId),
+    });
+  }
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <div className="mt-4 space-y-4">
+        {serverError ? (
+          <p className="rounded-xl bg-destructive/10 p-3 text-xs text-destructive" role="alert">
+            {serverError}
+          </p>
+        ) : null}
+
+        <Field label="Name" error={error} htmlFor="admin-category-name">
+          <Input
+            id="admin-category-name"
+            value={name}
+            aria-invalid={!!error}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </Field>
+
+        <Field
+          label="Slug"
+          hint="Optional. Derived from the name when left blank."
+          htmlFor="admin-category-slug"
+        >
+          <Input
+            id="admin-category-slug"
+            value={slug}
+            placeholder="auto"
+            onChange={(e) => setSlug(e.target.value)}
+          />
+        </Field>
+
+        <Field label="Parent" htmlFor="admin-category-parent">
+          <NativeSelect
+            id="admin-category-parent"
+            label="Parent"
+            value={parentId}
+            onChange={(e) => setParentId(e.target.value)}
+            options={parentOptions}
+          />
+        </Field>
+      </div>
+
+      <DialogFooter className="mt-5">
+        <Button type="button" variant="secondary" disabled={saving} onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={saving}>
+          {saving ? <Loader2 size={15} aria-hidden className="animate-spin" /> : null}
+          {saving ? "Saving…" : category ? "Save changes" : "Create category"}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+/* ---------------------------------- delete ---------------------------------- */
+
+function AdminCategoryDeleteDialog({
+  category,
+  categories,
+  deleting,
+  onOpenChange,
   onConfirm,
 }: {
-  row: AdminCategoryRow | null;
-  isSubmitting: boolean;
-  onCancel: () => void;
-  onConfirm: (isActive: boolean) => void;
+  category: AdminCategoryRow | null;
+  categories: AdminCategoryRow[];
+  deleting: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: (id: number, reason: string, reassignToId?: number) => void;
 }) {
-  if (!row) return null;
-  const retiring = row.isActive;
+  const [reassignToId, setReassignToId] = useState("");
+  const needsReassign = (category?.productCount ?? 0) > 0;
+  const destinations = categories.filter((row) => row.id !== category?.id);
 
   return (
     <AdminConfirmDialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
+      open={category !== null}
+      onOpenChange={(next) => {
+        if (!next) setReassignToId("");
+        onOpenChange(next);
       }}
-      subject={`${row.name} (${row.slug})`}
-      title={retiring ? "Retire this category?" : "Restore this category?"}
+      subject={category ? `${category.name} · ${category.productCount} listing(s)` : ""}
+      title={needsReassign ? "Move listings, then delete" : "Delete this category?"}
       body={
-        retiring ? (
+        <div className="space-y-3">
           <p>
-            It disappears from the category filter and from its own page. Its{" "}
-            <strong className="text-foreground">
-              {formatAdminCount(row.productCount)} listing
-              {Number(row.productCount) === 1 ? "" : "s"}
-            </strong>{" "}
-            stay in the marketplace and stay filed under it — nothing is deleted, and this
-            can be undone from this page.
+            {needsReassign
+              ? "This category still holds listings. Choose where they should move — they are reassigned in the same transaction as the delete."
+              : "This category is empty and can be removed. This cannot be undone."}
           </p>
-        ) : (
-          <p>
-            It reappears in the category filter and its page becomes browsable again, with its{" "}
-            {formatAdminCount(row.productCount)} listing
-            {Number(row.productCount) === 1 ? "" : "s"} reachable through it.
-          </p>
+          {needsReassign && destinationOptions(destinations, reassignToId, setReassignToId)}
+        </div>
+      }
+      confirmLabel="Delete category"
+      tone="destructive"
+      requireReason
+      reasonLabel="Reason (recorded in the audit log)"
+      isSubmitting={deleting}
+      onConfirm={(reason) =>
+        category &&
+        onConfirm(
+          category.id,
+          reason,
+          reassignToId === "" ? undefined : Number(reassignToId),
         )
       }
-      confirmLabel={retiring ? "Retire category" : "Restore category"}
-      isSubmitting={isSubmitting}
-      onConfirm={() => onConfirm(!retiring)}
+    />
+  );
+}
+
+function destinationOptions(
+  destinations: AdminCategoryRow[],
+  value: string,
+  onChange: (value: string) => void,
+) {
+  return (
+    <NativeSelect
+      label="Move listings to"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      options={[
+        { value: "", label: "Choose a category…" },
+        ...destinations.map((row) => ({ value: String(row.id), label: row.name })),
+      ]}
     />
   );
 }

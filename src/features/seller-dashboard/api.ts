@@ -4,6 +4,7 @@ import type {
   OnboardingPayload,
   PublicSeller,
   SellerAnalytics,
+  SellerAlerts,
   SellerEarnings,
   SellerProfile,
   SellerStatus,
@@ -57,6 +58,12 @@ export async function becomeSeller(payload: OnboardingPayload) {
 
 export async function fetchSellerSummary(): Promise<SellerSummary> {
   return (await api.get<SellerSummary>("/seller/summary")).data;
+}
+
+/* --------------------------------- alerts ---------------------------------- */
+
+export async function fetchSellerAlerts(): Promise<SellerAlerts> {
+  return (await api.get<SellerAlerts>("/seller/alerts")).data;
 }
 
 /* ------------------------------- analytics -------------------------------- */

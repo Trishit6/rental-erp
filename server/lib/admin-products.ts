@@ -13,7 +13,17 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db";
-import { categories, productImages, products, users } from "../schema";
+import {
+  categories,
+  orderItems,
+  orders,
+  productImages,
+  products,
+  rentals,
+  reports,
+  reviews,
+  users,
+} from "../schema";
 import { paginationQuerySchema } from "./api";
 import { normalizePriceRange, PRODUCT_CONDITIONS } from "./product-filters";
 import { PRODUCT_STATUSES } from "./product-status";
@@ -73,6 +83,8 @@ export const adminProductsQuerySchema = paginationQuerySchema.extend({
   status: z.enum(PRODUCT_STATUSES).nullish(),
   condition: z.enum(PRODUCT_CONDITIONS).nullish(),
   listingType: z.enum(ADMIN_PRODUCT_LISTING_TYPES).nullish(),
+  /** "Has stock" / "out of stock" — read from `available_quantity`, not `quantity`. */
+  stock: z.enum(["ALL", "IN_STOCK", "OUT_OF_STOCK"]).nullish(),
   /** Prices are stored in paise; the UI sends and shows rupees. */
   minPrice: z.coerce.number().int().min(0).nullish(),
   maxPrice: z.coerce.number().int().min(0).nullish(),
@@ -117,6 +129,11 @@ function whereFor(query: AdminProductsQuery): SQL | undefined {
   if (query.status) clauses.push(eq(products.status, query.status));
   if (query.condition) clauses.push(eq(products.condition, query.condition));
   if (query.listingType) clauses.push(eq(products.listingType, query.listingType));
+
+  // Availability is what matters, not total stock: a listing with 5 held and 0 free
+  // is out of stock even though `quantity` says five.
+  if (query.stock === "IN_STOCK") clauses.push(sql`${products.availableQuantity} > 0`);
+  if (query.stock === "OUT_OF_STOCK") clauses.push(sql`${products.availableQuantity} <= 0`);
 
   // Either price counts: a listing is "under ₹5,000" if it sells for that or rents
   // for it, and the two columns are never both populated for a given listing type.
@@ -244,4 +261,80 @@ export async function listAdminProductFacets(limit = 100) {
     .from(categories)
     .orderBy(asc(categories.name));
   return { sellers: sellerRows, categories: categoryRows };
+}
+
+/**
+ * Everything that points at one listing: its order lines, rentals, reviews and
+ * reports (PROMPT 26's product detail).
+ *
+ * Four bounded reads rather than one join, because the four tables have nothing in
+ * common beyond the product and joining them would multiply rows against each
+ * other (a product with three orders and two reviews would return six rows). Each
+ * is capped at twenty newest — the detail view is for *recognition* ("is this the
+ * listing that keeps getting reported?") not for reporting, and a full export has
+ * its own endpoints.
+ */
+export async function listAdminProductRelations(productId: number) {
+  const [orderRows, rentalRows, reviewRows, reportRows] = await Promise.all([
+    db
+      .select({
+        orderId: orders.id,
+        orderNumber: orders.orderNumber,
+        status: orders.status,
+        paymentStatus: orders.paymentStatus,
+        quantity: orderItems.quantity,
+        unitPrice: orderItems.unitPrice,
+        buyerName: users.name,
+        createdAt: orders.createdAt,
+      })
+      .from(orderItems)
+      .innerJoin(orders, eq(orderItems.orderId, orders.id))
+      .innerJoin(users, eq(orders.userId, users.id))
+      .where(eq(orderItems.productId, productId))
+      .orderBy(desc(orders.createdAt))
+      .limit(20),
+    db
+      .select({
+        id: rentals.id,
+        status: rentals.status,
+        startDate: rentals.startDate,
+        endDate: rentals.endDate,
+        total: rentals.total,
+        renterName: users.name,
+      })
+      .from(rentals)
+      .innerJoin(users, eq(rentals.renterId, users.id))
+      .where(eq(rentals.productId, productId))
+      .orderBy(desc(rentals.createdAt))
+      .limit(20),
+    db
+      .select({
+        id: reviews.id,
+        rating: reviews.rating,
+        status: reviews.status,
+        title: reviews.title,
+        comment: reviews.comment,
+        authorName: users.name,
+        createdAt: reviews.createdAt,
+      })
+      .from(reviews)
+      .innerJoin(users, eq(reviews.userId, users.id))
+      .where(eq(reviews.productId, productId))
+      .orderBy(desc(reviews.createdAt))
+      .limit(20),
+    db
+      .select({
+        id: reports.id,
+        reason: reports.reason,
+        status: reports.status,
+        details: reports.details,
+        createdAt: reports.createdAt,
+      })
+      .from(reports)
+      .where(eq(reports.productId, productId))
+      .orderBy(desc(reports.createdAt))
+      .limit(20),
+  ]);
+
+  return { orders: orderRows, rentals: rentalRows, reviews: reviewRows, reports: reportRows };
 }

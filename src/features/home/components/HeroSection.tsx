@@ -12,7 +12,7 @@ import {
   Truck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { MarketplaceStats } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,9 @@ import { ImagePlaceholder } from "@/components/shared/product-image";
 import { HeroSearch } from "./HeroSearch";
 import { TrustPoint } from "./TrustPoint";
 import { HERO_SLIDES, useHeroSlides, useHeroSwipe } from "./schema";
+import type { HeroSlide } from "./schema";
+import { useHeroBanners } from "../query";
+import type { PublicBanner } from "../api";
 
 const fadeUp = {
   initial: { opacity: 0, y: 12 },
@@ -61,7 +64,11 @@ function FloatingBadge({
  */
 export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
   const prefersReducedMotion = useReducedMotion();
-  const slides = HERO_SLIDES;
+  const banners = useHeroBanners();
+  const bannerSlides = useMemo(() => (banners.data ?? []).map(bannerToSlide), [banners.data]);
+  // Admin-authored hero banners win; the built-in deck is the fallback, so an
+  // unconfigured deployment still shows a finished hero.
+  const slides = bannerSlides.length > 0 ? bannerSlides : HERO_SLIDES;
   const { index, next, previous, goTo, setPaused } = useHeroSlides(
     slides.length,
     prefersReducedMotion,
@@ -230,8 +237,9 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
             {/* A scrim panel over a photo: one drop shadow, so it takes a ladder rung
                 rather than Tailwind's `shadow-lg` — which is what made this read
                 as a bright bar sitting *on top of* the slide rather than as part
-                of it. */}
-            <div className="elev-floating absolute inset-x-4 bottom-4 flex items-center justify-between rounded-2xl bg-background/95 px-4 py-3 backdrop-blur">
+                of it. When the slide is a CMS banner with a link, the panel is the
+                link target. */}
+            <CaptionCard href={slide.href}>
               <div>
                 <p className="text-xs font-medium text-muted-foreground">{slide.captionLabel}</p>
                 <p className="font-heading text-sm font-extrabold">{slide.captionTitle}</p>
@@ -240,7 +248,7 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
                 <Star size={13} className="fill-primary text-primary" />
                 4.9
               </span>
-            </div>
+            </CaptionCard>
 
             {/* Manual controls — always rendered for a11y, visually revealed on
                 hover/focus and always visible on touch screens. */}
@@ -305,5 +313,53 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
         />
       </div>
     </section>
+  );
+}
+
+/**
+ * Turn a CMS banner into a hero slide.
+ *
+ * The banner's title becomes the headline (split at the first word so the second line
+ * keeps the hero's two-tone treatment) and its subtitle becomes both the supporting
+ * sentence and the caption. That is a deliberate, lossy mapping: the hero's job is to
+ * sell, and an administrator writing a banner is writing that copy.
+ */
+function bannerToSlide(banner: PublicBanner): HeroSlide {
+  const words = banner.title.trim().split(/\s+/);
+  const [first = banner.title, ...rest] = words;
+  return {
+    id: `banner-${banner.id}`,
+    headingA: rest.length > 0 ? first : banner.title,
+    headingB: rest.join(" "),
+    body: banner.subtitle ?? "",
+    image: banner.imageUrl,
+    imageAlt: banner.title,
+    captionLabel: banner.subtitle ?? "Featured",
+    captionTitle: banner.title,
+    href: banner.linkUrl ?? undefined,
+  };
+}
+
+/**
+ * The caption panel, as a link when the slide has somewhere to go.
+ *
+ * A plain `<a>` rather than a router `Link`: the destination is admin-authored and can
+ * be an arbitrary in-app path or an `https:` URL, which is exactly the case a typed route
+ * link cannot express. The server has already refused `javascript:` and `data:`, so the
+ * value is safe to place in an `href`.
+ */
+function CaptionCard({ href, children }: { href?: string; children: React.ReactNode }) {
+  const className =
+    "elev-floating absolute inset-x-4 bottom-4 flex items-center justify-between rounded-2xl bg-background/95 px-4 py-3 backdrop-blur";
+  if (!href) return <div className={className}>{children}</div>;
+  const external = href.startsWith("https://");
+  return (
+    <a
+      href={href}
+      className={className}
+      {...(external ? { target: "_blank", rel: "noreferrer noopener" } : {})}
+    >
+      {children}
+    </a>
   );
 }

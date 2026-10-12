@@ -6,6 +6,7 @@ import { RatingStars } from "./RatingStars";
 import { ReviewImageGrid } from "./ReviewImages";
 import { ReviewActions } from "./ReviewActions";
 import { ReviewReply } from "./ReviewReply";
+import { ReportButton } from "@/features/safety/components/ReportButton";
 import { authorDisplayName, editedBadge } from "./schema";
 import { PURCHASE_TYPE_LABELS } from "../types";
 import type { Review } from "../types";
@@ -95,6 +96,14 @@ export function ReviewCard({
             </time>
           </div>
         </div>
+
+        <ReportButton
+          target={{ kind: "review", id: review.id, label: "this review" }}
+          variant="ghost"
+          className="shrink-0"
+        >
+          Report
+        </ReportButton>
       </header>
 
       {showProduct && review.product.title && (

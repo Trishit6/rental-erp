@@ -84,6 +84,7 @@ const cleanupStatements = [
   `DELETE FROM reviews WHERE rating NOT BETWEEN 1 AND 5 AND comment = 'bad'`,
   `DELETE FROM cart_items WHERE quantity <= 0`,
   `DELETE FROM stock_reservations WHERE quantity <= 0 OR rental_end <= rental_start`,
+  `DELETE FROM user_blocks WHERE reason IN ('verify-probe', 'verify-probe-2')`,
   `DELETE FROM search_history WHERE TRIM(term) = ''`,
   `DELETE FROM idempotency_keys WHERE \`key\` = 'shared-key'`,
   `DELETE FROM payment_webhook_events WHERE event_id = 'evt_duplicate'`,
@@ -144,6 +145,7 @@ const REQUIRED_TABLES = [
   "feature_flags",
   "app_config",
   "export_jobs",
+  "user_blocks",
 ];
 
 for (const table of REQUIRED_TABLES) {
@@ -186,7 +188,8 @@ const fixtures = await returnsRows(
           (SELECT id FROM orders LIMIT 1) AS orderId,
           (SELECT id FROM categories LIMIT 1) AS categoryId,
           (SELECT user_id FROM favorites LIMIT 1) AS favoriteUserId,
-          (SELECT product_id FROM favorites LIMIT 1) AS favoriteProductId`,
+          (SELECT product_id FROM favorites LIMIT 1) AS favoriteProductId,
+          (SELECT id FROM users ORDER BY id LIMIT 1 OFFSET 1) AS otherUserId`,
 );
 const fixture = (fixtures as Record<string, number | null>[])[0] ?? {};
 
@@ -198,6 +201,7 @@ const orderId = fixture.orderId;
 const categoryId = fixture.categoryId;
 const favoriteUserId = fixture.favoriteUserId;
 const favoriteProductId = fixture.favoriteProductId;
+const otherUserId = fixture.otherUserId;
 
 if (!userId || !productId || !sellerId) {
   console.log("\nSKIPPED   constraint cases — database has no seed rows to build them on.");
@@ -215,6 +219,20 @@ if (!userId || !productId || !sellerId) {
     await mustBeRejected(
       "duplicate favorite (user_id, product_id)",
       `INSERT INTO favorites (user_id, product_id) SELECT user_id, product_id FROM favorites WHERE user_id = ${favoriteUserId} AND product_id = ${favoriteProductId}`,
+    );
+  }
+  if (otherUserId && otherUserId !== userId) {
+    await mustBeRejected(
+      "self-block (blocker equals blocked)",
+      `INSERT INTO user_blocks (blocker_id, blocked_id, reason) VALUES (${userId}, ${userId}, 'verify-probe')`,
+    );
+    await mustBeAccepted(
+      "first block accepted",
+      `INSERT INTO user_blocks (blocker_id, blocked_id, reason) VALUES (${userId}, ${otherUserId}, 'verify-probe')`,
+    );
+    await mustBeRejected(
+      "duplicate block (blocker, blocked)",
+      `INSERT INTO user_blocks (blocker_id, blocked_id, reason) VALUES (${userId}, ${otherUserId}, 'verify-probe-2')`,
     );
   }
   await mustBeRejected(
@@ -443,7 +461,7 @@ await cleanup();
 const [residueRows] = await db.query(
   `SELECT
      (SELECT COUNT(*) FROM idempotency_keys WHERE \`key\` = 'shared-key') AS a,
-     (SELECT COUNT(*) FROM payment_webhook_events WHERE provider = 'mock') AS b,
+     (SELECT COUNT(*) FROM payment_webhook_events WHERE event_id = 'evt_duplicate') AS b,
      (SELECT COUNT(*) FROM users WHERE password_hash = 'x') AS c,
      (SELECT COUNT(*) FROM products WHERE slug IN ('neg-price-slug', 'neg-rent-slug') OR title = 'dupe') AS d,
      (SELECT COUNT(*) FROM orders WHERE order_number = 'RV-1999-CHK0001') AS e,
@@ -459,7 +477,8 @@ const [residueRows] = await db.query(
      (SELECT COUNT(*) FROM login_attempts WHERE TRIM(identifier) = '') AS o,
      (SELECT COUNT(*) FROM seller_verifications WHERE status = 'REJECTED' AND COALESCE(rejection_reason, '') = '') AS p,
      (SELECT COUNT(*) FROM refunds WHERE refund_number = 'RF-VERIFY-1') AS q,
-     (SELECT COUNT(*) FROM permissions WHERE \`key\` IN ('verify.probe', 'noprefix')) AS r`,
+     (SELECT COUNT(*) FROM permissions WHERE \`key\` IN ('verify.probe', 'noprefix')) AS r,
+     (SELECT COUNT(*) FROM user_blocks WHERE reason IN ('verify-probe', 'verify-probe-2')) AS s`,
 );
 const residue = (residueRows as Record<string, number>[])[0];
 const residueCount = Object.values(residue ?? {}).reduce((sum, n) => sum + n, 0);

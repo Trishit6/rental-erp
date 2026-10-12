@@ -7,8 +7,10 @@ import {
   FileText,
   Flag,
   Image as ImageIcon,
+  KeyRound,
   LayoutDashboard,
   MessageSquareQuote,
+  Newspaper,
   Package,
   RefreshCcw,
   RotateCcw,
@@ -22,6 +24,7 @@ import {
 } from "lucide-react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { cn } from "@/lib/utils/cn";
+import { hasPermission, type AdminAccess } from "../access";
 
 /**
  * The admin sidebar.
@@ -55,6 +58,16 @@ export type AdminNavItem = {
   /** Present only when the destination actually exists. */
   to?: string;
   icon: LucideIcon;
+  /**
+   * The permission key the destination's main data requires (PROMPT 22).
+   *
+   * Omitted only for rows that are always available to any staff member — the
+   * administrator's own notification feed. The value mirrors the server gate in
+   * `ADMIN_ROUTE_PERMISSIONS`; a row whose key names a permission the seed never
+   * wrote would simply never appear, which `tests/admin-nav-permissions.test.ts`
+   * catches by comparing the two lists.
+   */
+  permission?: string;
 };
 
 export type AdminNavSection = {
@@ -65,50 +78,86 @@ export type AdminNavSection = {
 export const ADMIN_NAV: AdminNavSection[] = [
   {
     title: "Overview",
-    items: [{ label: "Dashboard", to: "/admin", icon: LayoutDashboard }],
+    items: [
+      { label: "Dashboard", to: "/admin", icon: LayoutDashboard, permission: "dashboard.view" },
+    ],
   },
   {
     title: "Marketplace",
     items: [
-      { label: "Products", to: "/admin/products", icon: Package },
-      { label: "Categories", to: "/admin/categories", icon: Tag },
-      { label: "Product images", to: "/admin/product-images", icon: ImageIcon },
-      { label: "All orders", to: "/admin/orders", icon: ClipboardList },
-      { label: "Purchases", to: "/admin/purchases", icon: ShoppingBag },
-      { label: "Rentals", to: "/admin/rentals", icon: RefreshCcw },
-      { label: "Returns", to: "/admin/returns", icon: Undo2 },
+      { label: "Products", to: "/admin/products", icon: Package, permission: "products.view" },
+      { label: "Categories", to: "/admin/categories", icon: Tag, permission: "categories.view" },
+      { label: "Content", to: "/admin/content", icon: Newspaper, permission: "content.manage" },
+      {
+        label: "Product images",
+        to: "/admin/product-images",
+        icon: ImageIcon,
+        permission: "products.view",
+      },
+      { label: "All orders", to: "/admin/orders", icon: ClipboardList, permission: "orders.view" },
+      { label: "Purchases", to: "/admin/purchases", icon: ShoppingBag, permission: "orders.view" },
+      { label: "Rentals", to: "/admin/rentals", icon: RefreshCcw, permission: "rentals.view" },
+      { label: "Returns", to: "/admin/returns", icon: Undo2, permission: "rentals.view" },
     ],
   },
   {
     title: "Users",
     items: [
-      { label: "Customers", to: "/admin/users", icon: Users },
-      { label: "Sellers", to: "/admin/sellers", icon: Store },
+      { label: "Customers", to: "/admin/users", icon: Users, permission: "users.view" },
+      { label: "Sellers", to: "/admin/sellers", icon: Store, permission: "vendors.view" },
     ],
   },
   {
     title: "Finance",
     items: [
-      { label: "Summary", to: "/admin/finance", icon: BadgeIndianRupee },
-      { label: "Payments", to: "/admin/payments", icon: CreditCard },
-      { label: "Refunds", to: "/admin/refunds", icon: RotateCcw },
+      {
+        label: "Summary",
+        to: "/admin/finance",
+        icon: BadgeIndianRupee,
+        permission: "payouts.view",
+      },
+      { label: "Payments", to: "/admin/payments", icon: CreditCard, permission: "payouts.view" },
+      { label: "Refunds", to: "/admin/refunds", icon: RotateCcw, permission: "payouts.view" },
     ],
   },
   {
     title: "Moderation",
     items: [
-      { label: "Reports", to: "/admin/reports", icon: Flag },
-      { label: "Moderation hub", to: "/admin/moderation", icon: ShieldCheck },
-      { label: "Product reviews", to: "/admin/reviews", icon: MessageSquareQuote },
-      { label: "Seller engagement", to: "/admin/reviews/sellers", icon: MessageSquareQuote },
+      { label: "Reports", to: "/admin/reports", icon: Flag, permission: "reports.view" },
+      {
+        label: "Moderation hub",
+        to: "/admin/moderation",
+        icon: ShieldCheck,
+        permission: "reports.view",
+      },
+      {
+        label: "Product reviews",
+        to: "/admin/reviews",
+        icon: MessageSquareQuote,
+        permission: "reviews.view",
+      },
+      {
+        label: "Seller engagement",
+        to: "/admin/reviews/sellers",
+        icon: MessageSquareQuote,
+        permission: "reviews.view",
+      },
     ],
   },
   {
     title: "Platform",
     items: [
+      // No permission: the administrator's own notification feed is available to
+      // every staff member, and it exposes only notifications addressed to them.
       { label: "Notifications", to: "/admin/notifications", icon: Bell },
-      { label: "Settings", to: "/admin/settings", icon: Settings },
-      { label: "Audit logs", to: "/admin/audit-logs", icon: FileText },
+      { label: "Settings", to: "/admin/settings", icon: Settings, permission: "settings.manage" },
+      { label: "Audit logs", to: "/admin/audit-logs", icon: FileText, permission: "audit.view" },
+      {
+        label: "Roles & permissions",
+        to: "/admin/roles",
+        icon: KeyRound,
+        permission: "rbac.manage",
+      },
     ],
   },
 ];
@@ -162,10 +211,25 @@ function NavRow({ item, onNavigate }: { item: AdminNavItem; onNavigate?: () => v
   );
 }
 
-export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
+export function AdminSidebar({
+  onNavigate,
+  access,
+}: {
+  onNavigate?: () => void;
+  /** The signed-in staff member's access; omitted only where every row is allowed. */
+  access?: AdminAccess;
+}) {
+  // PROMPT 22 — `showing ONLY modules the user's permissions allow`. A section with
+  // no visible row is dropped rather than left as a bare heading; an empty
+  // "Finance" heading over nothing reads as a rendering bug, not a boundary.
+  const sections = ADMIN_NAV.map((section) => ({
+    title: section.title,
+    items: section.items.filter((item) => hasPermission(access, item.permission)),
+  })).filter((section) => section.items.length > 0);
+
   return (
     <nav aria-label="Admin sections" className="space-y-5">
-      {ADMIN_NAV.map((section) => (
+      {sections.map((section) => (
         <div key={section.title}>
           <h2 className="px-3 text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground">
             {section.title}

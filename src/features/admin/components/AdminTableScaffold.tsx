@@ -57,6 +57,7 @@ export function AdminTableScaffold({
   onSearch,
   isSearching,
   filters = [],
+  extraFilters,
   onClearFilters,
   hasFilters,
   count,
@@ -74,6 +75,8 @@ export function AdminTableScaffold({
   onSearch: (term: string) => void;
   isSearching?: boolean;
   filters?: AdminTableFilterSelect[];
+  /** Free-form controls (date ranges, toggles) that the select list cannot express. */
+  extraFilters?: ReactNode;
   onClearFilters: () => void;
   hasFilters: boolean;
   count: number;
@@ -109,6 +112,7 @@ export function AdminTableScaffold({
               options={filter.options}
             />
           ))}
+          {extraFilters}
           {hasFilters ? (
             <Button type="button" variant="ghost" size="sm" onClick={onClearFilters}>
               Clear

@@ -14,6 +14,9 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  build: {
+    sourcemap: false,
+  },
   resolve: {
     alias: {
       "@": "/src",
@@ -27,5 +30,10 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./tests/setup.ts"],
+    // The suite runs one isolated worker per file (~90 of them). Booting them all
+    // puts the machine under real contention, and a handful of interaction-heavy
+    // component tests then overrun the 5s default through no fault of their own.
+    // 15s is still a hang detector, just not a CPU-starvation detector.
+    testTimeout: 15_000,
   },
 });

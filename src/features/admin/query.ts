@@ -7,21 +7,27 @@ import { queryKeys } from "@/lib/query/keys";
 import {
   addAdminProductImage,
   bulkSetAdminProductStatus,
+  createAdminRole,
   deleteAdminProduct,
+  deleteAdminRole,
   fetchAdminAuditPage,
   fetchAdminCategories,
   fetchAdminFinance,
   fetchAdminHealth,
+  fetchAdminMe,
   fetchAdminOrdersPage,
   fetchAdminOverview,
+  fetchAdminPermissions,
   fetchAdminProductDetail,
   fetchAdminProductFacets,
   fetchAdminProductImageDetail,
   fetchAdminProducts,
   fetchAdminRentalsPage,
   fetchAdminReviewsPage,
+  fetchAdminRoles,
   fetchAdminSellersPage,
   fetchAdminTransactionsPage,
+  fetchAdminUserRoles,
   fetchAdminUsersPage,
   removeAdminProductImage,
   setAdminCategoryActive,
@@ -30,8 +36,32 @@ import {
   setAdminProductStatus,
   setAdminReviewStatus,
   setAdminSellerVerified,
+  setAdminUserRoles,
   setAdminUserSuspended,
   updateAdminProduct,
+  updateAdminRole,
+} from "./api";
+// PROMPT 26 additions: catalogue bulk moves, category CRUD and the CMS.
+import {
+  bulkDeleteAdminProducts,
+  bulkMoveAdminProducts,
+  createAdminBanner,
+  createAdminCategory,
+  deleteAdminBanner,
+  deleteAdminBlock,
+  deleteAdminCategory,
+  fetchAdminBanners,
+  fetchAdminBlock,
+  fetchAdminBlocks,
+  fetchAdminCmsCatalogue,
+  fetchAdminCmsVersions,
+  fetchAdminProductRelations,
+  reorderAdminBanners,
+  reorderAdminCategories,
+  saveAdminBlock,
+  setAdminBlockStatus,
+  updateAdminBanner,
+  updateAdminCategory,
 } from "./api";
 import type {
   AdminAuditFilters,
@@ -40,9 +70,13 @@ import type {
   AdminProductEditInput,
   AdminRentalFilters,
   AdminReviewFilters,
+  AdminRoleUpdateInput,
+  AdminRoleWriteInput,
   AdminSellerFilters,
   AdminTransactionFilters,
   AdminUserFilters,
+  AdminBannerWriteInput,
+  AdminCategoryWriteInput,
 } from "./api";
 import type { AdminProductFilters } from "./types";
 
@@ -62,6 +96,23 @@ export function useAdminOverview() {
   return useQuery({
     queryKey: queryKeys.adminStats,
     queryFn: fetchAdminOverview,
+  });
+}
+
+/**
+ * The signed-in staff member's roles and permissions (PROMPT 22).
+ *
+ * Read once per staff session and cached for five minutes: grants change only when
+ * an administrator edits them, and the role editor invalidates this key when it
+ * does. The sidebar filters on it and the role editor's preview renders against it,
+ * so it is deliberately separate from the `adminRbac` role listing (the caller's own
+ * access is not a role table).
+ */
+export function useAdminAccess() {
+  return useQuery({
+    queryKey: queryKeys.adminMe,
+    queryFn: fetchAdminMe,
+    staleTime: 5 * 60_000,
   });
 }
 
@@ -285,8 +336,8 @@ export function useAdminWorkspaceUsers(filters: AdminUserFilters) {
 export function useAdminUserSuspension() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, suspend }: { id: number; suspend: boolean }) =>
-      setAdminUserSuspended(id, suspend),
+    mutationFn: ({ id, suspend, reason }: { id: number; suspend: boolean; reason: string }) =>
+      setAdminUserSuspended(id, suspend, reason),
     onSuccess: (_result, { suspend }) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.adminUsers });
       toast.success(suspend ? "Account suspended." : "Account restored.");
@@ -378,9 +429,9 @@ export function useAdminProductImages(page: number, pageSize: number) {
     queryKey: [...queryKeys.adminProductImages, "list", page, pageSize] as const,
     queryFn: () =>
       import("./api").then((m) =>
-        m.fetchAdminPage<
-          import("./api").AdminProductImageRow
-        >(m.adminProductImagesPath(page, pageSize)),
+        m.fetchAdminPage<import("./api").AdminProductImageRow>(
+          m.adminProductImagesPath(page, pageSize),
+        ),
       ),
     placeholderData: keepPreviousData,
   });
@@ -447,6 +498,109 @@ export function useAdminAuditLog(filters: AdminAuditFilters) {
     queryFn: () => fetchAdminAuditPage(filters),
     placeholderData: keepPreviousData,
   });
+}
+
+/**
+ * The role listing and permission vocabulary (PROMPT 22's role editor).
+ *
+ * Cached under `adminRbac`, which every grant/revoke mutation invalidates. The two
+ * are fetched together because the editor renders the matrix from the vocabulary and
+ * the checkmarks from the listing; a stale half of that pair draws the wrong picture.
+ */
+export function useAdminRoles(enabled = true) {
+  return useQuery({
+    queryKey: [...queryKeys.adminRbac, "roles"] as const,
+    queryFn: fetchAdminRoles,
+    enabled,
+  });
+}
+
+export function useAdminPermissions(enabled = true) {
+  return useQuery({
+    queryKey: [...queryKeys.adminRbac, "permissions"] as const,
+    queryFn: fetchAdminPermissions,
+    // The vocabulary changes only when the server's catalogue changes (a deploy).
+    staleTime: 30 * 60_000,
+    enabled,
+  });
+}
+
+export function useAdminUserRoles(userId: number | null) {
+  return useQuery({
+    queryKey: [...queryKeys.adminRbac, "user-roles", userId] as const,
+    queryFn: () => fetchAdminUserRoles(userId as number),
+    enabled: userId !== null,
+  });
+}
+
+/**
+ * Role editor mutations.
+ *
+ * Every one invalidates `adminRbac` (the role table changed) and `adminMe` (if the
+ * caller's own grants were involved, the sidebar must re-filter). The server is
+ * still the authority; this only keeps the screen honest without a manual reload.
+ */
+export function useAdminRoleMutations() {
+  const queryClient = useQueryClient();
+
+  function invalidate() {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.adminRbac });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.adminMe });
+  }
+
+  const create = useMutation({
+    mutationFn: (input: AdminRoleWriteInput) => createAdminRole(input),
+    onSuccess: (role) => {
+      invalidate();
+      toast.success(`Role ${role.name} created.`);
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't create the role."),
+  });
+
+  const update = useMutation({
+    mutationFn: ({ id, input }: { id: number; input: AdminRoleUpdateInput }) =>
+      updateAdminRole(id, input),
+    onSuccess: () => {
+      invalidate();
+      toast.success("Role updated.");
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't update the role."),
+  });
+
+  const remove = useMutation({
+    mutationFn: ({ id, reason }: { id: number; reason: string }) => deleteAdminRole(id, reason),
+    onSuccess: () => {
+      invalidate();
+      toast.success("Role deleted.");
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't delete the role."),
+  });
+
+  const setRoles = useMutation({
+    mutationFn: ({
+      userId,
+      roles,
+      reason,
+    }: {
+      userId: number;
+      roles: string[];
+      reason: string;
+    }) => setAdminUserRoles(userId, roles, reason),
+    onSuccess: (_result, { userId }) => {
+      invalidate();
+      void queryClient.invalidateQueries({ queryKey: [...queryKeys.adminRbac, "user-roles", userId] });
+      toast.success("Roles updated.");
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't update the roles."),
+  });
+
+  return {
+    create: create.mutateAsync,
+    update: update.mutateAsync,
+    remove: remove.mutateAsync,
+    setRoles: setRoles.mutateAsync,
+    isPending: create.isPending || update.isPending || remove.isPending || setRoles.isPending,
+  };
 }
 
 /**
@@ -567,8 +721,11 @@ export function useAdminReports(enabled: boolean) {
 export function useAdminActions() {
   const queryClient = useQueryClient();
   return {
-    async suspendUser(id: number, suspend: boolean) {
-      await api.patch(`/admin/users/${id}/status`, { status: suspend ? "SUSPENDED" : "ACTIVE" });
+    async suspendUser(id: number, suspend: boolean, reason: string) {
+      await api.patch(`/admin/users/${id}/status`, {
+        status: suspend ? "SUSPENDED" : "ACTIVE",
+        reason,
+      });
       void queryClient.invalidateQueries({ queryKey: queryKeys.adminUsers });
       toast.success(suspend ? "User suspended" : "User restored");
     },
@@ -577,4 +734,260 @@ export function useAdminActions() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.adminReports });
     },
   };
+}
+
+/* ------------------- PROMPT 26: catalogue bulk writes ------------------------ */
+
+/** Move selected listings into one category. */
+export function useBulkAdminProductCategory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids, categoryId }: { ids: number[]; categoryId: number }) =>
+      bulkMoveAdminProducts(ids, categoryId),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminProducts });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminProductFacets });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminCategories });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.categories });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.productAll });
+      toast.success(`Moved ${result.updated} listing(s).`);
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't move the listings."),
+  });
+}
+
+/**
+ * Delete selected listings. The server archives any row that order history
+ * protects, so the toast reports both numbers — "deleted" alone would imply
+ * something was removed that still exists.
+ */
+export function useBulkDeleteAdminProducts() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids, reason }: { ids: number[]; reason: string }) =>
+      bulkDeleteAdminProducts(ids, reason),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminProducts });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminProductFacets });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminCategories });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.productAll });
+      const archived =
+        result.archived > 0 ? ` ${result.archived} archived (order history kept).` : "";
+      toast.success(`Deleted ${result.deleted} listing(s).${archived}`);
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't delete the listings."),
+  });
+}
+
+export function useAdminProductRelations(id: number | null) {
+  return useQuery({
+    queryKey: [...queryKeys.adminProducts, "relations", id] as const,
+    queryFn: () => fetchAdminProductRelations(id as number),
+    enabled: id !== null,
+    staleTime: 30_000,
+  });
+}
+
+/* -------------------------- category CRUD ------------------------------------ */
+
+export function useCreateAdminCategory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AdminCategoryWriteInput) => createAdminCategory(input),
+    onSuccess: (created) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminCategories });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.categories });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminProductFacets });
+      toast.success(`Created "${created.name}".`);
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't create the category."),
+  });
+}
+
+export function useUpdateAdminCategory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: number; input: Partial<AdminCategoryWriteInput> }) =>
+      updateAdminCategory(id, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminCategories });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.categories });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminProductFacets });
+      toast.success("Category updated.");
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't update the category."),
+  });
+}
+
+export function useDeleteAdminCategory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason, reassignToId }: { id: number; reason: string; reassignToId?: number }) =>
+      deleteAdminCategory(id, { reason, reassignToId }),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminCategories });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.categories });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminProducts });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminProductFacets });
+      const moved = result.reassigned > 0 ? ` Moved ${result.reassigned} listing(s).` : "";
+      toast.success(`Category deleted.${moved}`);
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't delete the category."),
+  });
+}
+
+export function useReorderAdminCategories() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: number[]) => reorderAdminCategories(ids),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminCategories });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.categories });
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't reorder the categories."),
+  });
+}
+
+/* -------------------------------- CMS ---------------------------------------- */
+
+export function useAdminCmsCatalogue() {
+  return useQuery({
+    queryKey: [...queryKeys.adminCms, "catalogue"] as const,
+    queryFn: fetchAdminCmsCatalogue,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useAdminBanners() {
+  return useQuery({
+    queryKey: [...queryKeys.adminCms, "banners"] as const,
+    queryFn: fetchAdminBanners,
+    staleTime: 30_000,
+  });
+}
+
+/** Every CMS write invalidates `["cms"]` so the storefront picks the change up. */
+function invalidateCms(queryClient: ReturnType<typeof useQueryClient>) {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.adminCms });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.cms });
+}
+
+export function useCreateAdminBanner() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AdminBannerWriteInput) => createAdminBanner(input),
+    onSuccess: () => {
+      invalidateCms(queryClient);
+      toast.success("Banner created.");
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't create the banner."),
+  });
+}
+
+export function useUpdateAdminBanner() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: number; input: Partial<AdminBannerWriteInput> }) =>
+      updateAdminBanner(id, input),
+    onSuccess: () => {
+      invalidateCms(queryClient);
+      toast.success("Banner updated.");
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't update the banner."),
+  });
+}
+
+export function useDeleteAdminBanner() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: number; reason: string }) =>
+      deleteAdminBanner(id, reason),
+    onSuccess: () => {
+      invalidateCms(queryClient);
+      toast.success("Banner deleted.");
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't delete the banner."),
+  });
+}
+
+export function useReorderAdminBanners() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ placement, ids }: { placement: string; ids: number[] }) =>
+      reorderAdminBanners(placement, ids),
+    onSuccess: () => invalidateCms(queryClient),
+    onError: (error: Error) => toast.error(error.message || "Couldn't reorder the banners."),
+  });
+}
+
+export function useAdminBlocks() {
+  return useQuery({
+    queryKey: [...queryKeys.adminCms, "blocks"] as const,
+    queryFn: fetchAdminBlocks,
+    staleTime: 30_000,
+  });
+}
+
+export function useAdminBlock(key: string | null) {
+  return useQuery({
+    queryKey: [...queryKeys.adminCms, "block", key] as const,
+    queryFn: () => fetchAdminBlock(key as string),
+    enabled: key !== null,
+  });
+}
+
+export function useSaveAdminBlock() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      key,
+      content,
+      status,
+    }: {
+      key: string;
+      content: Record<string, unknown>;
+      status?: "DRAFT" | "PUBLISHED";
+    }) => saveAdminBlock(key, { content, status }),
+    onSuccess: () => {
+      invalidateCms(queryClient);
+      toast.success("Block saved.");
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't save the block."),
+  });
+}
+
+export function useSetAdminBlockStatus() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ key, status }: { key: string; status: "DRAFT" | "PUBLISHED" }) =>
+      setAdminBlockStatus(key, status),
+    onSuccess: (_result, { status }) => {
+      invalidateCms(queryClient);
+      toast.success(status === "PUBLISHED" ? "Block published." : "Block unpublished.");
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't change the block status."),
+  });
+}
+
+export function useDeleteAdminBlock() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ key, reason }: { key: string; reason: string }) => deleteAdminBlock(key, reason),
+    onSuccess: () => {
+      invalidateCms(queryClient);
+      toast.success("Block deleted.");
+    },
+    onError: (error: Error) => toast.error(error.message || "Couldn't delete the block."),
+  });
+}
+
+export function useAdminCmsVersions(
+  entityType: "cms_block" | "cms_banner",
+  id: number | null,
+) {
+  return useQuery({
+    queryKey: [...queryKeys.adminCms, "versions", entityType, id] as const,
+    queryFn: () => fetchAdminCmsVersions(entityType, id as number),
+    enabled: id !== null,
+  });
 }

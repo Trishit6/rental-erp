@@ -1,7 +1,7 @@
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db";
-import { orderItems, products } from "../schema";
+import { categories, orderItems, products, users } from "../schema";
 import { HttpError } from "./api";
 import { PRODUCT_STATUSES } from "./product-status";
 import { assertProductPricing } from "./product-validation";
@@ -31,10 +31,11 @@ import { assertProductPricing } from "./product-validation";
  *     the row, its images and its reviews survive, and it simply leaves the
  *     storefront. An unordered listing is removed outright, in a transaction.
  *
- *  3. **Nothing here trusts the request for identity.** The seller is read from
- *     the product row; no `sellerId`, `slug` or `createdAt` from the body is ever
- *     written. The slug is stable, because historical order items and notifications
- *     deep-link by it.
+ *  3. **Identity is validated, never trusted.** `slug` and `createdAt` from the
+ *     body are never written, and the slug is stable because historical order items
+ *     and notifications deep-link by it. `sellerId` *is* writable — PROMPT 26 asks
+ *     for seller reassignment — but only after the target is confirmed to be a real
+ *     seller account, never because the body said so.
  */
 
 /**
@@ -74,6 +75,15 @@ export const adminProductEditSchema = z
     status: z.enum(PRODUCT_STATUSES),
     allowsDelivery: z.boolean(),
     allowsPickup: z.boolean(),
+    /**
+     * Move the listing to a different seller (PROMPT 26).
+     *
+     * The one "identity" field an admin may write, because corrective reassignment
+     * is a real support task (a listing created under the wrong account). Validated
+     * against `users` in the writer — a body cannot name a non-seller and have the
+     * listing handed to it.
+     */
+    sellerId: z.number().int().positive(),
   })
   .partial()
   // "Nothing to update" is a client bug, not a no-op to accept silently.
@@ -99,6 +109,7 @@ const EDITABLE_COLUMNS = [
   "status",
   "allowsDelivery",
   "allowsPickup",
+  "sellerId",
 ] as const satisfies readonly (keyof AdminProductEdit)[];
 
 /** The `status` column, restricted back to the real vocabulary. */
@@ -106,6 +117,9 @@ export type AdminProductUpdateResult = {
   id: number;
   /** Human-readable field names, for the audit entry and the success toast. */
   changed: string[];
+  /** Curated before/after values of the changed fields, for the audit snapshot. */
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
 };
 
 /**
@@ -129,9 +143,20 @@ export async function updateAdminProduct(
   const changed = Object.keys(patch).filter(
     (key) => key in patch && patch[key as keyof AdminProductEdit] !== undefined,
   );
-  if (changed.length === 0) return { id, changed: [] };
+  if (changed.length === 0) return { id, changed: [], before: {}, after: {} };
 
   const status = patch.status ?? existing.status;
+
+  // Reassignment is validated against the account table: a body naming a buyer (or
+  // a nonexistent id) must not be able to hand a listing to them.
+  if (patch.sellerId !== undefined && patch.sellerId !== existing.sellerId) {
+    const [seller] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.id, patch.sellerId), inArray(users.role, ["SELLER", "ADMIN"])))
+      .limit(1);
+    if (!seller) throw new HttpError(400, "BAD_REQUEST", "That seller account does not exist.");
+  }
 
   const merged = {
     listingType: patch.listingType ?? existing.listingType,
@@ -176,12 +201,20 @@ export async function updateAdminProduct(
   if (patch.title !== undefined) values.title = patch.title;
   if (patch.description !== undefined) values.description = patch.description;
   if (patch.categoryId !== undefined) values.categoryId = patch.categoryId;
+  if (patch.sellerId !== undefined) values.sellerId = patch.sellerId;
   if (patch.allowsDelivery !== undefined) values.allowsDelivery = patch.allowsDelivery;
   if (patch.allowsPickup !== undefined) values.allowsPickup = patch.allowsPickup;
 
   await db.update(products).set(values).where(eq(products.id, id));
 
-  return { id, changed: changed.filter((key) => (EDITABLE_COLUMNS as readonly string[]).includes(key)) };
+  const audited = changed.filter((key) => (EDITABLE_COLUMNS as readonly string[]).includes(key));
+  const before: Record<string, unknown> = {};
+  const after: Record<string, unknown> = {};
+  for (const key of audited) {
+    before[key] = (existing as Record<string, unknown>)[key];
+    after[key] = (values as Record<string, unknown>)[key];
+  }
+  return { id, changed: audited, before, after };
 }
 
 export type AdminProductDeleteResult = {
@@ -314,4 +347,119 @@ export async function bulkSetAdminProductStatus(
   }
 
   return { requested: unique.length, updated: present.length, missing, status };
+}
+
+/* ----------------------- bulk move category (PROMPT 26) --------------------- */
+
+export const bulkCategorySchema = z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(200),
+  categoryId: z.number().int().positive(),
+});
+
+export type AdminBulkCategoryResult = {
+  requested: number;
+  updated: number;
+  missing: number[];
+  categoryId: number;
+};
+
+/**
+ * Move many listings into one category.
+ *
+ * The destination is confirmed to exist first, because a `category_id` pointing at
+ * a missing row would fail the foreign key *after* some rows had already moved —
+ * the partial write this whole module exists to avoid.
+ */
+export async function bulkMoveAdminProductCategory(
+  ids: number[],
+  categoryId: number,
+): Promise<AdminBulkCategoryResult> {
+  const unique = [...new Set(ids.filter((id) => Number.isInteger(id) && id > 0))];
+  if (unique.length === 0) throw new HttpError(400, "BAD_REQUEST", "No products selected.");
+
+  const [category] = await db
+    .select({ id: categories.id })
+    .from(categories)
+    .where(eq(categories.id, categoryId))
+    .limit(1);
+  if (!category) throw new HttpError(400, "BAD_REQUEST", "That category does not exist.");
+
+  const existing = await db
+    .select({ id: products.id })
+    .from(products)
+    .where(inArray(products.id, unique));
+  const present = existing.map((row) => row.id);
+  const presentSet = new Set(present);
+  const missing = unique.filter((id) => !presentSet.has(id));
+
+  if (present.length > 0) {
+    await db
+      .update(products)
+      .set({ categoryId, updatedAt: new Date() })
+      .where(inArray(products.id, present));
+  }
+
+  return { requested: unique.length, updated: present.length, missing, categoryId };
+}
+
+/* ------------------------ bulk delete / archive (PROMPT 26) ----------------- */
+
+export type AdminBulkDeleteResult = {
+  requested: number;
+  deleted: number;
+  archived: number;
+  missing: number[];
+};
+
+/**
+ * Remove many listings, archiving the ones that order history protects.
+ *
+ * The single-delete endpoint already decides archive-vs-delete from `order_items`;
+ * doing the same per row here keeps the two paths honest with each other, and the
+ * result names both counts so the toast can say *what* happened rather than
+ * implying a clean delete that was partly an archive. Listings in the selection are
+ * partitioned by one `GROUP BY`, so this is two statements, not two per row.
+ */
+export async function bulkDeleteAdminProducts(ids: number[]): Promise<AdminBulkDeleteResult> {
+  const unique = [...new Set(ids.filter((id) => Number.isInteger(id) && id > 0))];
+  if (unique.length === 0) throw new HttpError(400, "BAD_REQUEST", "No products selected.");
+
+  const existing = await db
+    .select({ id: products.id })
+    .from(products)
+    .where(inArray(products.id, unique));
+  const present = existing.map((row) => row.id);
+  const presentSet = new Set(present);
+  const missing = unique.filter((id) => !presentSet.has(id));
+  if (present.length === 0) {
+    return { requested: unique.length, deleted: 0, archived: 0, missing };
+  }
+
+  const withHistory = await db
+    .select({ productId: orderItems.productId })
+    .from(orderItems)
+    .where(inArray(orderItems.productId, present))
+    .groupBy(orderItems.productId);
+  const protectedIds = new Set(withHistory.map((row) => row.productId));
+  const deletable = present.filter((id) => !protectedIds.has(id));
+  const archivable = present.filter((id) => protectedIds.has(id));
+
+  await db.transaction(async (tx) => {
+    if (archivable.length > 0) {
+      await tx
+        .update(products)
+        .set({ status: "ARCHIVED", updatedAt: new Date() })
+        .where(inArray(products.id, archivable));
+    }
+    if (deletable.length > 0) {
+      await tx.delete(products).where(inArray(products.id, deletable));
+    }
+  });
+
+  return {
+    requested: unique.length,
+    deleted: deletable.length,
+    archived: archivable.length,
+    missing,
+  };
 }

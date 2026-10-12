@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Router } from "../lib/http";
 import { ok } from "../lib/api";
+import { guarded } from "../lib/rate-limit";
 import { db } from "../db";
 import { requireUser } from "../lib/auth";
 import {
@@ -37,6 +38,14 @@ import { notify } from "../lib/notifications";
  * from the listing. A client cannot name a participant, only a product and a body.
  */
 export const messagesRoute = new Router();
+
+// Messaging is throttled per account as well as per address, because a spammer
+// with many addresses is exactly the shape messaging abuse takes. The budget is
+// applied only to the two *send* paths (`guarded("messages.send", ...)` below)
+// rather than to the whole router: a read of one's own transcript is not the
+// abusive action, and charging it to the same budget would make the limit feel
+// arbitrary. (`rateLimit` at router scope was applied twice here and counted
+// each send twice — the effective budget was half the registry's.)
 
 messagesRoute.use("*", async (c, next) => {
   requireUser(c);
@@ -104,7 +113,7 @@ const sendMessageSchema = z
   })
   .strict();
 
-messagesRoute.post("/:id{[0-9]+}/messages", async (c) => {
+messagesRoute.post("/:id{[0-9]+}/messages", guarded("messages.send", async (c) => {
   const user = c.get("user")!;
   const { id } = conversationParams.parse(c.req.param());
   const input = sendMessageSchema.parse(await c.req.json());
@@ -132,7 +141,7 @@ messagesRoute.post("/:id{[0-9]+}/messages", async (c) => {
   }
 
   return c.json(ok(message), 201);
-});
+}));
 
 /* ---------------------------------- start ----------------------------------- */
 
@@ -155,7 +164,7 @@ const startConversationSchema = z
   })
   .strict();
 
-messagesRoute.post("/", async (c) => {
+messagesRoute.post("/", guarded("messages.send", async (c) => {
   const user = c.get("user")!;
   const input = startConversationSchema.parse(await c.req.json());
 
@@ -186,4 +195,4 @@ messagesRoute.post("/", async (c) => {
   });
 
   return c.json(ok({ conversationId, messageId: message.id }), 201);
-});
+}));

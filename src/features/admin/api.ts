@@ -1,8 +1,13 @@
 import { api } from "@/lib/api/client";
 import { PAISE_PER_RUPEE } from "@/lib/pricing";
 import type {
+  AdminBanner,
+  AdminBlock,
+  AdminCmsCatalogue,
+  AdminCmsVersion,
   AdminOverview,
   AdminProductFacets,
+  AdminProductRelations,
   AdminProductRow,
   AdminProductFilters,
 } from "./types";
@@ -54,6 +59,8 @@ export function buildAdminProductQuery(filters: AdminProductFilters): string {
   set("status", filters.status);
   set("condition", filters.condition);
   set("listingType", filters.listingType);
+  // "ALL" is the absence of a filter, so it is sent as nothing at all.
+  set("stock", filters.stock === "ALL" ? null : filters.stock);
   set("minPrice", toPaise(filters.minPrice));
   set("maxPrice", toPaise(filters.maxPrice));
   set("sort", filters.sort);
@@ -66,6 +73,25 @@ export function buildAdminProductQuery(filters: AdminProductFilters): string {
 
 export async function fetchAdminOverview(): Promise<AdminOverview> {
   return (await api.get<AdminOverview>("/admin/stats")).data;
+}
+
+/**
+ * The signed-in staff member's own access (PROMPT 22).
+ *
+ * The sidebar filters to the modules these permissions allow and the role editor's
+ * "view as role" preview renders against the same vocabulary. The set cannot be
+ * derived on the client: every staff account's coarse `users.role` is `ADMIN`, and
+ * the sub-role lives in `user_roles`.
+ */
+export type AdminMe = {
+  role: string;
+  roles: string[];
+  permissions: string[];
+  isSuperAdmin: boolean;
+};
+
+export async function fetchAdminMe(): Promise<AdminMe> {
+  return (await api.get<AdminMe>("/admin/me")).data;
 }
 
 /**
@@ -172,16 +198,20 @@ export type AdminProductEditInput = {
   status?: string;
   allowsDelivery?: boolean;
   allowsPickup?: boolean;
+  /** Reassign the listing to another seller (PROMPT 26). */
+  sellerId?: number;
 };
 
 export async function updateAdminProduct(
   id: number,
   input: AdminProductEditInput,
 ): Promise<{ updated: boolean; unchanged?: boolean; changed: string[] }> {
-  return (await api.patch<{ updated: boolean; unchanged?: boolean; changed: string[] }>(
-    `/admin/products/${id}`,
-    input,
-  )).data;
+  return (
+    await api.patch<{ updated: boolean; unchanged?: boolean; changed: string[] }>(
+      `/admin/products/${id}`,
+      input,
+    )
+  ).data;
 }
 
 export type AdminProductDeleteOutcome = {
@@ -209,6 +239,41 @@ export async function bulkSetAdminProductStatus(
       input,
     )
   ).data;
+}
+
+/** Move many listings into one category (PROMPT 26). */
+export async function bulkMoveAdminProducts(
+  ids: number[],
+  categoryId: number,
+): Promise<{ requested: number; updated: number; missing: number[]; categoryId: number }> {
+  return (
+    await api.patch<{ requested: number; updated: number; missing: number[]; categoryId: number }>(
+      `/admin/products/bulk-category`,
+      { ids, categoryId },
+    )
+  ).data;
+}
+
+/**
+ * Delete many listings at once. A `reason` is mandatory — the server's
+ * `requireReason` refuses the call without one, and a bulk removal is exactly the
+ * kind of action the audit trail exists for.
+ */
+export async function bulkDeleteAdminProducts(
+  ids: number[],
+  reason: string,
+): Promise<{ requested: number; deleted: number; archived: number; missing: number[] }> {
+  return (
+    await api.patch<{ requested: number; deleted: number; archived: number; missing: number[] }>(
+      `/admin/products/bulk-delete`,
+      { ids, reason },
+    )
+  ).data;
+}
+
+/** Orders, rentals, reviews and reports touching one listing. */
+export async function fetchAdminProductRelations(id: number): Promise<AdminProductRelations> {
+  return (await api.get<AdminProductRelations>(`/admin/products/${id}/relations`)).data;
 }
 
 /* --------------------------- generic list helpers --------------------------- */
@@ -417,9 +482,16 @@ export function fetchAdminUsersPage(filters: AdminUserFilters) {
   return fetchAdminPage<AdminWorkspaceUserRow>(adminUsersPath(filters));
 }
 
-export function setAdminUserSuspended(id: number, suspend: boolean): Promise<void> {
+export function setAdminUserSuspended(
+  id: number,
+  suspend: boolean,
+  reason: string,
+): Promise<void> {
   return api
-    .patch(`/admin/users/${id}/status`, { status: suspend ? "SUSPENDED" : "ACTIVE" })
+    .patch(`/admin/users/${id}/status`, {
+      status: suspend ? "SUSPENDED" : "ACTIVE",
+      reason,
+    })
     .then(() => undefined);
 }
 
@@ -605,6 +677,52 @@ export function setAdminCategoryActive(id: number, isActive: boolean): Promise<v
   return api.patch(`/admin/categories/${id}/active`, { isActive }).then(() => undefined);
 }
 
+export type AdminCategoryWriteInput = {
+  name: string;
+  slug?: string;
+  description?: string | null;
+  imageUrl?: string | null;
+  icon?: string | null;
+  parentId?: number | null;
+  sortOrder?: number;
+  isFeatured?: boolean;
+  isActive?: boolean;
+};
+
+export async function createAdminCategory(
+  input: AdminCategoryWriteInput,
+): Promise<AdminCategoryRow> {
+  return (await api.post<AdminCategoryRow>("/admin/categories", input)).data;
+}
+
+export async function updateAdminCategory(
+  id: number,
+  input: Partial<AdminCategoryWriteInput>,
+): Promise<void> {
+  await api.patch(`/admin/categories/${id}`, input);
+}
+
+/**
+ * Delete a category, moving its listings first. `reassignToId` is required by the
+ * server when the category is not empty, and `reason` is mandatory for the audit
+ * trail.
+ */
+export async function deleteAdminCategory(
+  id: number,
+  input: { reason: string; reassignToId?: number },
+): Promise<{ reassigned: number; childrenReassigned: number }> {
+  return (
+    await api.delete<{ reassigned: number; childrenReassigned: number }>(
+      `/admin/categories/${id}`,
+      input,
+    )
+  ).data;
+}
+
+export async function reorderAdminCategories(ids: number[]): Promise<void> {
+  await api.patch("/admin/categories/reorder", { ids });
+}
+
 /* ---------------------------- product images -------------------------------- */
 
 export type AdminProductImageRow = {
@@ -651,6 +769,9 @@ export function setAdminProductImagePrimary(imageId: number): Promise<void> {
 export type AdminAuditFilters = {
   action: string;
   entityType: string | null;
+  search: string;
+  from: string;
+  to: string;
   page: number;
   pageSize: number;
 };
@@ -658,6 +779,9 @@ export type AdminAuditFilters = {
 export const EMPTY_ADMIN_AUDIT_FILTERS: AdminAuditFilters = {
   action: "",
   entityType: null,
+  search: "",
+  from: "",
+  to: "",
   page: 1,
   pageSize: 20,
 };
@@ -666,6 +790,9 @@ export function adminAuditPath(filters: AdminAuditFilters): string {
   return `/admin/audit-log${adminQueryString({
     action: filters.action,
     entityType: filters.entityType,
+    search: filters.search,
+    from: filters.from,
+    to: filters.to,
     page: filters.page,
     pageSize: filters.pageSize,
   })}`;
@@ -675,13 +802,174 @@ export type AdminAuditRow = {
   id: number;
   adminId: number;
   adminName: string;
+  actorRole: string | null;
   action: string;
   entityType: string;
   entityId: number | null;
   details: string | null;
+  reason: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  requestId: string | null;
+  beforeState: string | null;
+  afterState: string | null;
   createdAt: string;
 };
 
 export function fetchAdminAuditPage(filters: AdminAuditFilters) {
   return fetchAdminPage<AdminAuditRow>(adminAuditPath(filters));
+}
+
+/* ---------------------------------- RBAC ------------------------------------ */
+
+export type AdminRoleRow = {
+  id: number;
+  name: string;
+  description: string | null;
+  isSystem: boolean;
+  /** Permission keys `resource.action`. */
+  permissions: string[];
+  /** How many accounts hold this role. `DELETE` refuses while this is non-zero. */
+  memberCount: number;
+};
+
+export type AdminPermissionRow = {
+  key: string;
+  description: string | null;
+  groupKey: string;
+};
+
+export async function fetchAdminRoles(): Promise<AdminRoleRow[]> {
+  return (await api.get<AdminRoleRow[]>("/admin/roles")).data;
+}
+
+export async function fetchAdminPermissions(): Promise<AdminPermissionRow[]> {
+  return (await api.get<AdminPermissionRow[]>("/admin/permissions")).data;
+}
+
+export type AdminRoleWriteInput = {
+  name: string;
+  description?: string;
+  permissions: string[];
+  /** Recorded in the audit log; mandatory. */
+  reason: string;
+};
+
+export async function createAdminRole(input: AdminRoleWriteInput): Promise<AdminRoleRow> {
+  return (await api.post<AdminRoleRow>("/admin/roles", input)).data;
+}
+
+export type AdminRoleUpdateInput = {
+  name?: string;
+  description?: string | null;
+  permissions?: string[];
+  /** Recorded in the audit log; mandatory. */
+  reason: string;
+};
+
+export async function updateAdminRole(
+  id: number,
+  input: AdminRoleUpdateInput,
+): Promise<{ id: number; name: string; permissions?: string[] }> {
+  return (await api.patch<{ id: number; name: string; permissions?: string[] }>(
+    `/admin/roles/${id}`,
+    input,
+  )).data;
+}
+
+export async function deleteAdminRole(id: number, reason: string): Promise<void> {
+  await api.delete(`/admin/roles/${id}`, { reason });
+}
+
+export async function fetchAdminUserRoles(userId: number): Promise<string[]> {
+  return (await api.get<string[]>(`/admin/users/${userId}/roles`)).data;
+}
+
+export async function setAdminUserRoles(
+  userId: number,
+  roles: string[],
+  reason: string,
+): Promise<{ roles: string[] }> {
+  return (await api.put<{ roles: string[] }>(`/admin/users/${userId}/roles`, { roles, reason }))
+    .data;
+}
+
+/* ----------------------------------- CMS ------------------------------------ */
+
+export async function fetchAdminCmsCatalogue(): Promise<AdminCmsCatalogue> {
+  return (await api.get<AdminCmsCatalogue>("/admin/cms/catalogue")).data;
+}
+
+export async function fetchAdminBanners(): Promise<AdminBanner[]> {
+  return (await api.get<AdminBanner[]>("/admin/cms/banners")).data;
+}
+
+export type AdminBannerWriteInput = {
+  placement: string;
+  title: string;
+  subtitle?: string | null;
+  imageUrl: string;
+  linkUrl?: string | null;
+  sortOrder?: number;
+  status?: string;
+  /** ISO strings, or null for "no bound". */
+  startsAt?: string | null;
+  endsAt?: string | null;
+};
+
+export async function createAdminBanner(input: AdminBannerWriteInput): Promise<{ id: number }> {
+  return (await api.post<{ id: number }>("/admin/cms/banners", input)).data;
+}
+
+export async function updateAdminBanner(
+  id: number,
+  input: Partial<AdminBannerWriteInput>,
+): Promise<void> {
+  await api.patch(`/admin/cms/banners/${id}`, input);
+}
+
+export async function deleteAdminBanner(id: number, reason: string): Promise<void> {
+  await api.delete(`/admin/cms/banners/${id}`, { reason });
+}
+
+export async function reorderAdminBanners(placement: string, ids: number[]): Promise<void> {
+  await api.patch("/admin/cms/banners/reorder", { placement, ids });
+}
+
+export async function fetchAdminBlocks(): Promise<AdminBlock[]> {
+  return (await api.get<AdminBlock[]>("/admin/cms/blocks")).data;
+}
+
+export async function fetchAdminBlock(key: string): Promise<AdminBlock> {
+  return (await api.get<AdminBlock>(`/admin/cms/blocks/${encodeURIComponent(key)}`)).data;
+}
+
+export async function saveAdminBlock(
+  key: string,
+  input: { content: Record<string, unknown>; status?: "DRAFT" | "PUBLISHED" },
+): Promise<{ id: number; blockKey: string; status: string }> {
+  return (
+    await api.put<{ id: number; blockKey: string; status: string }>(
+      `/admin/cms/blocks/${encodeURIComponent(key)}`,
+      input,
+    )
+  ).data;
+}
+
+export async function setAdminBlockStatus(
+  key: string,
+  status: "DRAFT" | "PUBLISHED",
+): Promise<void> {
+  await api.patch(`/admin/cms/blocks/${encodeURIComponent(key)}/status`, { status });
+}
+
+export async function deleteAdminBlock(key: string, reason: string): Promise<void> {
+  await api.delete(`/admin/cms/blocks/${encodeURIComponent(key)}`, { reason });
+}
+
+export async function fetchAdminCmsVersions(
+  entityType: "cms_block" | "cms_banner",
+  id: number,
+): Promise<AdminCmsVersion[]> {
+  return (await api.get<AdminCmsVersion[]>(`/admin/cms/versions/${entityType}/${id}`)).data;
 }

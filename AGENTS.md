@@ -28,6 +28,7 @@ pnpm start:api        # Run API only (tsx server/index.ts)
   pnpm db:seed:products # Stage 2 only — appends 20k bulk products (needs demo sellers)
   pnpm db:seed:history  # Stage 3 only — additive volume data (needs products)
   pnpm db:seed:admin    # Stage 4 only — admin, support, growth, security, ops data
+  pnpm db:sync:rbac     # Additive sync of the staff permission catalogue (no deletes)
   ```
 - **Seed pipeline:** `pnpm db:seed` = `seed.ts` (demo) → `seed-products.ts` (20k products) →
   `seed-history.ts` (volume orders/rentals/reviews/…) → `seed-admin.ts` (staff, RBAC grants, audit,

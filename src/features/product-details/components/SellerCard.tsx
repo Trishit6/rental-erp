@@ -4,6 +4,7 @@ import { BadgeCheck, Package, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/shared/avatar";
 import { MessageSellerButton } from "@/features/messages/components/MessageSellerButton";
+import { ReportButton } from "@/features/safety/components/ReportButton";
 import { cn } from "@/lib/utils/cn";
 import type { ProductSeller } from "../types";
 
@@ -72,6 +73,20 @@ export function SellerCard({
       {seller.bio && (
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{seller.bio}</p>
       )}
+
+      {/* Reporting sits with the trust block rather than the buy controls: it is a
+          judgement about the seller and their listing, not a step in a purchase. */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <ReportButton
+          target={{ kind: "product", id: productId, label: "this listing" }}
+          variant="ghost"
+        >
+          Report listing
+        </ReportButton>
+        <ReportButton target={{ kind: "user", id: seller.id, label: seller.name }} variant="ghost">
+          Report seller
+        </ReportButton>
+      </div>
     </section>
   );
 }

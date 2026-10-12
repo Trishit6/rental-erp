@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
+  Activity,
   Archive,
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
   Eye,
+  FolderInput,
   Loader2,
   Package,
   PauseCircle,
@@ -38,13 +40,17 @@ import {
   useAdminProductFacets,
   useAdminProducts,
   useAdminSearchFilters,
+  useBulkAdminProductCategory,
   useBulkAdminProductStatus,
+  useBulkDeleteAdminProducts,
   useDeleteAdminProduct,
   useSetAdminProductStatus,
   useUpdateAdminProduct,
 } from "../query";
 import { AdminDeleteProductDialog } from "./AdminDeleteProductDialog";
 import { AdminProductEditDialog } from "./AdminProductEditDialog";
+import { AdminProductRelationsDialog } from "./AdminProductRelationsDialog";
+import { AdminBulkCategoryDialog, AdminBulkDeleteDialog } from "./AdminProductBulkDialogs";
 import {
   EMPTY_ADMIN_PRODUCT_FILTERS,
   hasActiveFilters,
@@ -91,6 +97,12 @@ const LISTING_TYPE_OPTIONS = [
   { value: "SALE", label: "For sale" },
   { value: "RENT", label: "For rent" },
   { value: "BOTH", label: "Sale or rent" },
+];
+
+const STOCK_OPTIONS = [
+  { value: "ALL", label: "Any availability" },
+  { value: "IN_STOCK", label: "In stock" },
+  { value: "OUT_OF_STOCK", label: "Out of stock" },
 ];
 
 /**
@@ -151,6 +163,9 @@ export function AdminProductsTable() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<AdminProductRow | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
+  const [bulkCategoryOpen, setBulkCategoryOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [relationsFor, setRelationsFor] = useState<AdminProductRow | null>(null);
 
   const facets = useAdminProductFacets();
   const products = useAdminProducts(filters);
@@ -158,6 +173,8 @@ export function AdminProductsTable() {
   const updateProduct = useUpdateAdminProduct();
   const deleteProduct = useDeleteAdminProduct();
   const bulkStatus = useBulkAdminProductStatus();
+  const bulkCategory = useBulkAdminProductCategory();
+  const bulkDelete = useBulkDeleteAdminProducts();
   // Only fetched for the row whose dialog is open; `enabled` in the hook keeps the
   // closed dialog from holding a request.
   const editing = useAdminProductDetail(editingId);
@@ -337,6 +354,14 @@ export function AdminProductsTable() {
             onChange={(event) => update({ listingType: event.target.value || null })}
             options={LISTING_TYPE_OPTIONS}
           />
+          <NativeSelect
+            label="Availability"
+            value={filters.stock}
+            onChange={(event) =>
+              update({ stock: event.target.value as AdminProductFilters["stock"] })
+            }
+            options={STOCK_OPTIONS}
+          />
           <label className="space-y-1">
             <span className="block text-[11px] font-bold text-muted-foreground">Min price (₹)</span>
             <input
@@ -413,14 +438,33 @@ export function AdminProductsTable() {
               <Archive size={14} aria-hidden />
               Archive
             </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setBulkCategoryOpen(true)}
+            >
+              <FolderInput size={14} aria-hidden />
+              Move category
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="text-destructive hover:bg-destructive/10"
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              <Trash2 size={14} aria-hidden />
+              Delete
+            </Button>
             <Button type="button" variant="ghost" size="sm" onClick={clearSelection}>
               <X size={14} aria-hidden />
               Clear selection
             </Button>
           </div>
           <p className="w-full text-[11px] text-muted-foreground sm:w-auto">
-            Bulk actions change status only. Nothing is deleted — a listing with order history
-            cannot be removed anyway.
+            Delete removes the selected listings, except any with order history, which is archived
+            instead. Both require a reason and are written to the audit log.
           </p>
         </Card>
       ) : null}
@@ -595,6 +639,16 @@ export function AdminProductsTable() {
                             variant="ghost"
                             size="sm"
                             className="h-8 px-2"
+                            onClick={() => setRelationsFor(row)}
+                          >
+                            <Activity size={14} aria-hidden />
+                            <span className="sr-only">Related activity for {row.title}</span>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 px-2"
                             disabled={setStatus.isPending}
                             onClick={() =>
                               setStatus.mutate({
@@ -694,6 +748,50 @@ export function AdminProductsTable() {
             { onSettled: () => setDeleting(null) },
           );
         }}
+      />
+
+      <AdminProductRelationsDialog
+        productId={relationsFor?.id ?? null}
+        productTitle={relationsFor?.title ?? ""}
+        open={relationsFor !== null}
+        onOpenChange={(next) => !next && setRelationsFor(null)}
+      />
+
+      <AdminBulkCategoryDialog
+        open={bulkCategoryOpen}
+        count={selected.size}
+        categories={facets.data?.categories ?? []}
+        submitting={bulkCategory.isPending}
+        onOpenChange={setBulkCategoryOpen}
+        onConfirm={(categoryId) =>
+          bulkCategory.mutate(
+            { ids: [...selected], categoryId },
+            {
+              onSettled: () => {
+                setBulkCategoryOpen(false);
+                clearSelection();
+              },
+            },
+          )
+        }
+      />
+
+      <AdminBulkDeleteDialog
+        open={bulkDeleteOpen}
+        count={selected.size}
+        submitting={bulkDelete.isPending}
+        onOpenChange={setBulkDeleteOpen}
+        onConfirm={(reason) =>
+          bulkDelete.mutate(
+            { ids: [...selected], reason },
+            {
+              onSettled: () => {
+                setBulkDeleteOpen(false);
+                clearSelection();
+              },
+            },
+          )
+        }
       />
     </div>
   );

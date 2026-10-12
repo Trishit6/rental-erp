@@ -31,6 +31,7 @@ import { PaymentSecurityNotice } from "./PaymentSecurityNotice";
 import { PaymentSkeleton } from "./PaymentSkeleton";
 import { PaymentSuccess } from "./PaymentSuccess";
 import { PaymentSummary as PaymentSummaryView } from "./PaymentSummary";
+import { UpiQrPanel } from "./UpiQrPanel";
 
 /**
  * The payment page.
@@ -129,15 +130,27 @@ export function PaymentPage() {
   /* --- 4. In flight ------------------------------------------------------ */
   if (step === "processing" && intent) {
     const serverStatus = statusQuery.data?.status ?? intent.status;
+    // Prefer the polled copy: it is the same code regenerated from the row, and it
+    // keeps the panel honest if the intent response is ever stale.
+    const upi = statusQuery.data?.upi ?? intent.upi;
     return (
       <>
-        <PaymentProcessing
-          status={serverStatus}
-          amount={intent.amount}
-          currency={intent.currency}
-          onCheckStatus={() => void statusQuery.refetch()}
-          onCancel={() => handleCancel()}
-        />
+        {upi ? (
+          <UpiQrPanel
+            upi={upi}
+            status={serverStatus}
+            onCheckStatus={() => void statusQuery.refetch()}
+            onCancel={() => void handleCancel()}
+          />
+        ) : (
+          <PaymentProcessing
+            status={serverStatus}
+            amount={intent.amount}
+            currency={intent.currency}
+            onCheckStatus={() => void statusQuery.refetch()}
+            onCancel={() => void handleCancel()}
+          />
+        )}
         {isDevelopmentMock && intent.status === "PENDING" && (
           <DevPaymentSimulator
             amount={intent.amount}

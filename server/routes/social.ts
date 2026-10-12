@@ -1,7 +1,12 @@
 import { Router } from "../lib/http";
+import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "../db";
-import { ok } from "../lib/api";
+import { users } from "../schema";
+import { HttpError, ok } from "../lib/api";
+import { guarded } from "../lib/rate-limit";
 import { applyProfileUpdate, requireUser, selfEditableProfileFields } from "../lib/auth";
+import { blockUser, listBlockedUsers, unblockUser } from "../lib/blocks";
 import { notify } from "../lib/notifications";
 
 /**
@@ -44,7 +49,7 @@ usersRoute.get("/me", (c) => {
  * strict schema means `role`, `verified` and `passwordHash` are not reachable through
  * this endpoint at all, rather than being filtered out after parsing.
  */
-usersRoute.patch("/me", async (c) => {
+usersRoute.patch("/me", guarded("auth.password", async (c) => {
   const user = requireUser(c);
   const input = selfEditableProfileFields.strict().parse(await c.req.json());
 
@@ -79,4 +84,66 @@ usersRoute.patch("/me", async (c) => {
       phone: updated.phone,
     }),
   );
+}));
+
+/* ------------------------------- blocking ----------------------------------- */
+
+/**
+ * `GET /api/users/blocked` — the accounts this user has blocked.
+ *
+ * Registered before the parameterised block routes below so the literal segment
+ * `blocked` is never read as an id. It returns only the blocker's own rows and the
+ * blocker's own note; the blocked account never learns of the relationship.
+ */
+usersRoute.get("/blocked", async (c) => {
+  const user = requireUser(c);
+  return c.json(ok(await listBlockedUsers(user.id)));
 });
+
+const blockParams = z.object({ id: z.coerce.number().int().positive() });
+
+/**
+ * The note is optional and private. `.strict()` so a body that tries to name the
+ * blocker — the one field an attacker would want to control — is a 400 rather than
+ * a silently ignored key.
+ */
+const blockBodySchema = z
+  .object({ reason: z.string().trim().min(1, "A reason cannot be blank.").max(200).optional() })
+  .strict();
+
+/**
+ * `POST /api/users/:id/block` — stop receiving this account's messages.
+ *
+ * Blocking is idempotent: blocking an already-blocked account succeeds and changes
+ * nothing, so a double-tapped button is not an error. The target is verified to
+ * exist so a bad id is a 404 rather than a foreign-key failure surfacing as a 500.
+ */
+usersRoute.post("/:id{[0-9]+}/block", guarded("social.block", async (c) => {
+  const user = requireUser(c);
+  const { id } = blockParams.parse(c.req.param());
+  if (id === user.id) {
+    throw new HttpError(400, "BAD_REQUEST", "You can't block yourself.");
+  }
+
+  const input = blockBodySchema.parse(await c.req.json().catch(() => ({})));
+
+  const [target] = await db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1);
+  if (!target) throw new HttpError(404, "NOT_FOUND", "That account does not exist.");
+
+  await blockUser(user.id, id, input.reason ?? null);
+  return c.json(ok({ id, blocked: true }));
+}));
+
+/**
+ * `DELETE /api/users/:id/block` — lift the block.
+ *
+ * Succeeds whether or not a block was there: "make sure I am not blocking them" is
+ * the request, and answering 404 to a state that already matches the intent would
+ * make a retry after a dropped response look like a failure.
+ */
+usersRoute.delete("/:id{[0-9]+}/block", guarded("social.block", async (c) => {
+  const user = requireUser(c);
+  const { id } = blockParams.parse(c.req.param());
+  await unblockUser(user.id, id);
+  return c.json(ok({ id, blocked: false }));
+}));

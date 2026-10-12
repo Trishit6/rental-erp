@@ -43,6 +43,11 @@ export const adminProductFormSchema = z
       .min(10, "Description needs at least 10 characters.")
       .max(5000),
     categoryId: z.number().int().positive("Choose a category."),
+    /**
+     * The listing's owner. Editable so support can move a listing created under the
+     * wrong account; the server re-checks that the target really is a seller.
+     */
+    sellerId: z.number().int().positive("Choose a seller."),
     listingType: z.enum(["SALE", "RENT", "BOTH"]),
     purchasePrice: rupeesField,
     rentalPricePerDay: rupeesField,
@@ -169,6 +174,7 @@ export function toAdminProductPayload(values: AdminProductFormValues) {
     title: values.title.trim(),
     description: values.description.trim(),
     categoryId: values.categoryId,
+    sellerId: values.sellerId,
     listingType: values.listingType,
     purchasePrice: toPaiseOrNull(values.purchasePrice),
     rentalPricePerDay: toPaiseOrNull(values.rentalPricePerDay),
@@ -205,6 +211,7 @@ export function toAdminProductFormValues(
     title: string;
     description: string;
     categoryId: number;
+    sellerId: number;
     listingType: string;
     purchasePrice: number | null;
     rentalPricePerDay: number | null;
@@ -224,6 +231,7 @@ export function toAdminProductFormValues(
     title: product.title,
     description: product.description,
     categoryId: product.categoryId,
+    sellerId: product.sellerId,
     listingType: (product.listingType === "RENT" || product.listingType === "BOTH"
       ? product.listingType
       : "SALE") as AdminProductFormValues["listingType"],

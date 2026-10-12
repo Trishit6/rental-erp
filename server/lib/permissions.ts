@@ -31,6 +31,7 @@ import { db } from "../db";
 import { roles, rolePermissions, permissions, userRoles, users } from "../schema";
 import { HttpError } from "./api";
 import { requireUser, type SessionUser } from "./auth";
+import { isDevMfaBypass } from "./config";
 import { SYSTEM_ROLES } from "./enums";
 import type { Ctx, Next } from "./http";
 
@@ -56,6 +57,23 @@ export function invalidateAccess(userId: number): void {
 /** Drop the whole cache. Exposed for tests and for a process-wide role change. */
 export function invalidateAllAccess(): void {
   cache.clear();
+}
+
+/**
+ * Pre-seed the cache with a resolved access set, **for tests**.
+ *
+ * `resolveAccess` reads the database, which the router-level suites deliberately
+ * do not have. A test that wants a *granted* staff request to reach its handler
+ * (rather than be refused at the gate) still has to satisfy `requirePermission`,
+ * so it primes the exact set the joins would have produced. Nothing in the
+ * request path calls this; a forged client cannot reach it.
+ */
+export function primeAccessCache(userId: number, access: Access, now = Date.now()): void {
+  cache.set(userId, {
+    roles: new Set(access.roles),
+    permissions: new Set(access.permissions),
+    expiresAt: now + CACHE_TTL_MS,
+  });
 }
 
 /**
@@ -157,6 +175,12 @@ export function requireSystemRole(...names: string[]) {
 export function requireMfaEnrolment() {
   return async (c: Ctx, next: Next): Promise<void> => {
     const user = requireUser(c);
+    // The local development admin is password-only (see `isDevMfaBypass`). In
+    // production this is always `false`, so the gate below is unconditional there.
+    if (isDevMfaBypass(user.email)) {
+      await next();
+      return;
+    }
     if (user.role !== "ADMIN") {
       const access = await resolveAccess(user.id);
       const hasStaffRole = SYSTEM_ROLES.some((role) => access.roles.has(role));

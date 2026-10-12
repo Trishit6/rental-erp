@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   check,
   double,
@@ -1127,6 +1128,19 @@ export const reports = mysqlTable(
     reportedUserId: int("reported_user_id").references(() => users.id, {
       onDelete: "cascade",
     }),
+    /**
+     * The remaining reportable targets. Each is nullable because a report names
+     * exactly one thing, and the create path enforces that "exactly one" in code
+     * (`server/lib/reports.ts`) — a CHECK across five nullable columns would be
+     * unreadable and harder to change than the one validation branch that owns it.
+     *
+     * `orderId`/`rentalId` are the "activity" targets: the thing a buyer or seller
+     * disputes is the transaction, not a free-floating event.
+     */
+    reviewId: int("review_id").references(() => reviews.id, { onDelete: "cascade" }),
+    messageId: int("message_id").references(() => messages.id, { onDelete: "cascade" }),
+    orderId: int("order_id").references(() => orders.id, { onDelete: "cascade" }),
+    rentalId: int("rental_id").references(() => rentals.id, { onDelete: "cascade" }),
     reason: varchar("reason", { length: 32 }).notNull(),
     details: varchar("details", { length: 1000 }),
     // OPEN | IN_REVIEW | RESOLVED | DISMISSED — see docs/database.md.
@@ -1138,6 +1152,49 @@ export const reports = mysqlTable(
     // The moderation queue is a status walk in date order: open items first, then
     // the ones already in review, each newest-first.
     index("reports_status_created_idx").on(table.status, table.createdAt),
+  ],
+);
+
+/* ------------------------------- user blocks ------------------------------- */
+
+/**
+ * A directed block: `blockerId` will not receive messages from `blockedId`.
+ *
+ * ## Why directed, when "block" reads as mutual
+ *
+ * It is stored as one directional row because the *note* and the *decision* belong
+ * to one side — and because unblocking must be one person's action that does not
+ * require the other's consent. The read path (`isBlockedEitherWay` in
+ * `server/lib/blocks.ts`) treats the pair as mutual: if either direction exists,
+ * the two accounts cannot exchange messages.
+ *
+ * ## Why there is no update path
+ *
+ * A block is created or removed, never edited — the same shape as `favorites` — so
+ * the row carries `created_at` only. `reason` is a note the blocker leaves for
+ * themselves and support; it is never shown to the blocked account and is not a
+ * field that changes. Re-blocking after an unblock writes a fresh row.
+ */
+export const userBlocks = mysqlTable(
+  "user_blocks",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    blockerId: int("blocker_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    blockedId: int("blocked_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** A private note for the blocker. Never returned to the blocked account. */
+    reason: varchar("reason", { length: 200 }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("user_blocks_blocker_blocked_unique").on(table.blockerId, table.blockedId),
+    // The "who has blocked me" direction, which the send-path check walks.
+    index("user_blocks_blocked_id_idx").on(table.blockedId),
+    // A self-block is meaningless and would make the mutual check ambiguous.
+    check("user_blocks_not_self", sql`${table.blockerId} <> ${table.blockedId}`),
   ],
 );
 
@@ -1301,6 +1358,37 @@ export const adminAuditLog = mysqlTable(
     entityId: int("entity_id"),
     /** One short, safe sentence. Never request bodies, credentials or stack traces. */
     details: varchar("details", { length: 300 }),
+    /**
+     * The staff role that authorized the action (PROMPT 22).
+     *
+     * Snapshotted rather than joined because the role a person held is part of the
+     * historical fact: "approved a payout as FINANCE" must still read that way after
+     * they are promoted to ADMIN. `adminId` answers *who*; this answers *as what*.
+     */
+    actorRole: varchar("actor_role", { length: 32 }),
+    /**
+     * The operator's mandatory reason (PROMPT 22).
+     *
+     * Sensitive mutations refuse to proceed without one, so the value is the reason
+     * as typed, truncated to column width. Null only for actions the brief does not
+     * mark sensitive.
+     */
+    reason: varchar("reason", { length: 300 }),
+    /** Request provenance: the network address the action came from. */
+    ip: varchar("ip", { length: 45 }),
+    userAgent: varchar("user_agent", { length: 400 }),
+    /** Correlates the log line with the request's own `X-Request-Id` and server logs. */
+    requestId: varchar("request_id", { length: 64 }),
+    /**
+     * Curated JSON snapshots of the entity before and after the action.
+     *
+     * Deliberately *not* whole rows: an audit log that copies every column is a
+     * second, unaudited copy of the database (including password hashes and payout
+     * labels). The mutation decides which few fields tell the story — a status, a
+     * price, a role name — and only those are serialised.
+     */
+    beforeState: text("before_state"),
+    afterState: text("after_state"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [
@@ -1308,6 +1396,9 @@ export const adminAuditLog = mysqlTable(
     // what happened to this entity.
     index("admin_audit_log_admin_created_idx").on(table.adminId, table.createdAt),
     index("admin_audit_log_entity_idx").on(table.entityType, table.entityId),
+    // The role editor asks "what has this role been used for?" without walking
+    // every row, so the actor role is indexed on its own.
+    index("admin_audit_log_actor_role_idx").on(table.actorRole, table.createdAt),
   ],
 );
 
@@ -2114,7 +2205,7 @@ export const supportTickets = mysqlTable(
   "support_tickets",
   {
     id: int("id").autoincrement().primaryKey(),
-    /** `RV-T-8F3K2A` — quotable in conversation, unlike a sequential id. */
+    /** `TK-2026-000123` — quotable in conversation, unlike a sequential id. */
     ticketNumber: varchar("ticket_number", { length: 20 }).notNull(),
     /** The person who asked for help. `restrict`: closing an account does not erase what they reported. */
     userId: int("user_id")
@@ -2123,6 +2214,15 @@ export const supportTickets = mysqlTable(
     /** Null while the ticket sits unassigned — the open queue reads exactly this. */
     assigneeId: int("assignee_id").references(() => users.id, { onDelete: "set null" }),
     orderId: int("order_id").references(() => orders.id, { onDelete: "set null" }),
+    /**
+     * The rental a ticket is about, when it is not about the purchase behind it.
+     *
+     * A rental already carries its `orderId`, but "my item came back damaged" is a
+     * *rental* problem and the customer who files it should not have to find the
+     * order first. Set independently of `orderId`, and `set null` so removing the
+     * rental attachment does not delete the conversation about it.
+     */
+    rentalId: int("rental_id").references(() => rentals.id, { onDelete: "set null" }),
     subject: varchar("subject", { length: 200 }).notNull(),
     /** `OPEN | PENDING | IN_PROGRESS | RESOLVED | CLOSED` — see `TICKET_STATUSES`. */
     status: varchar("status", { length: 20 }).notNull().default("OPEN"),
@@ -2130,6 +2230,14 @@ export const supportTickets = mysqlTable(
     priority: varchar("priority", { length: 12 }).notNull().default("NORMAL"),
     /** Null where no SLA applies. Nullable is not the same as "unbounded". */
     slaDueAt: timestamp("sla_due_at"),
+    /** When staff resolve it. Anchors the reopen window. */
+    resolvedAt: timestamp("resolved_at"),
+    /** When it was finally closed (or resolved, if never closed separately). */
+    closedAt: timestamp("closed_at"),
+    /** The requester's rating of the resolution, 1–5. Null until they rate it. */
+    resolutionRating: int("resolution_rating"),
+    /** Free-text follow-up to the rating. */
+    resolutionComment: varchar("resolution_comment", { length: 1000 }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },
@@ -2145,6 +2253,11 @@ export const supportTickets = mysqlTable(
     index("support_tickets_sla_idx").on(table.slaDueAt),
     check("support_tickets_sla_after_created", sql`${table.slaDueAt} IS NULL OR ${table.slaDueAt} > ${table.createdAt}`),
     check("support_tickets_subject_not_empty", sql`LENGTH(TRIM(${table.subject})) > 0`),
+    // A rating is 1–5 or absent; a "0 stars" or "6 stars" row is not a rating.
+    check(
+      "support_tickets_rating_range",
+      sql`${table.resolutionRating} IS NULL OR (${table.resolutionRating} >= 1 AND ${table.resolutionRating} <= 5)`,
+    ),
   ],
 );
 
@@ -2614,6 +2727,8 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   reviewsAsSeller: many(reviews, { relationName: "reviewSeller" }),
   reportsFiled: many(reports, { relationName: "reportReporter" }),
   reportsAbout: many(reports, { relationName: "reportSubject" }),
+  blocksMade: many(userBlocks, { relationName: "blockBlocker" }),
+  blocksReceived: many(userBlocks, { relationName: "blockBlocked" }),
   payoutsAsSeller: many(payouts, { relationName: "payoutSeller" }),
   payoutsReviewed: many(payouts, { relationName: "payoutReviewer" }),
   payoutMethods: many(sellerPayoutMethods),
@@ -2922,6 +3037,27 @@ export const reportsRelations = relations(reports, ({ one }) => ({
     references: [users.id],
     relationName: "reportSubject",
   }),
+  review: one(reviews, { fields: [reports.reviewId], references: [reviews.id] }),
+  message: one(messages, { fields: [reports.messageId], references: [messages.id] }),
+  order: one(orders, { fields: [reports.orderId], references: [orders.id] }),
+  rental: one(rentals, { fields: [reports.rentalId], references: [rentals.id] }),
+}));
+
+/**
+ * Both ends of a block point at `users`, so each carries a `relationName` — without
+ * it Drizzle cannot tell the blocker edge from the blocked one.
+ */
+export const userBlocksRelations = relations(userBlocks, ({ one }) => ({
+  blocker: one(users, {
+    fields: [userBlocks.blockerId],
+    references: [users.id],
+    relationName: "blockBlocker",
+  }),
+  blocked: one(users, {
+    fields: [userBlocks.blockedId],
+    references: [users.id],
+    relationName: "blockBlocked",
+  }),
 }));
 
 export const adminAuditLogRelations = relations(adminAuditLog, ({ one }) => ({
@@ -3036,6 +3172,7 @@ export const supportTicketsRelations = relations(supportTickets, ({ one, many })
     relationName: "ticketAssignee",
   }),
   order: one(orders, { fields: [supportTickets.orderId], references: [orders.id] }),
+  rental: one(rentals, { fields: [supportTickets.rentalId], references: [rentals.id] }),
   messages: many(ticketMessages),
 }));
 
@@ -3207,6 +3344,8 @@ export type NotificationPreference = typeof notificationPreferences.$inferSelect
 export type NewNotificationPreference = typeof notificationPreferences.$inferInsert;
 export type Report = typeof reports.$inferSelect;
 export type NewReport = typeof reports.$inferInsert;
+export type UserBlock = typeof userBlocks.$inferSelect;
+export type NewUserBlock = typeof userBlocks.$inferInsert;
 export type AdminAuditLog = typeof adminAuditLog.$inferSelect;
 export type NewAdminAuditLog = typeof adminAuditLog.$inferInsert;
 export type OrderEvent = typeof orderEvents.$inferSelect;
@@ -3272,3 +3411,33 @@ export type AppConfigEntry = typeof appConfig.$inferSelect;
 export type NewAppConfigEntry = typeof appConfig.$inferInsert;
 export type ExportJob = typeof exportJobs.$inferSelect;
 export type NewExportJob = typeof exportJobs.$inferInsert;
+
+/* ------------------------------ rate limiting ------------------------------ */
+
+/**
+ * Fixed-window rate-limit counters (see `lib/rate-limit.ts`).
+ *
+ * One row per `budget:scope:key` bucket. `window_started_at` and `expires_at` are
+ * Unix milliseconds (`bigint`) rather than `timestamp`, so the window arithmetic
+ * in the upsert is integer comparison — no timezone interpretation, no "which
+ * row is the window" flag beyond the values themselves. This is operational
+ * state: truncating the table only ever resets a budget, never loses an entity.
+ */
+export const rateLimitCounters = mysqlTable(
+  "rate_limit_counters",
+  {
+    bucketKey: varchar("bucket_key", { length: 190 }).primaryKey(),
+    count: int("count").notNull().default(1),
+    windowStartedAt: bigint("window_started_at", { mode: "number" }).notNull(),
+    expiresAt: bigint("expires_at", { mode: "number" }).notNull(),
+    // A counter row is created and then upserted in place, so both timestamps
+    // describe the row itself: `created_at` when the bucket first appeared,
+    // `updated_at` on the most recent hit.
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [index("rate_limit_counters_expires_idx").on(table.expiresAt)],
+);
+
+export type RateLimitCounter = typeof rateLimitCounters.$inferSelect;
+export type NewRateLimitCounter = typeof rateLimitCounters.$inferInsert;

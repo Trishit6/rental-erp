@@ -5,11 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/shared/avatar";
 import { EmptyState } from "@/components/shared/empty-state";
 import { forgetConversationMessages } from "@/lib/tanstack-db/sync";
-import {
-  useConversations,
-  useMessages,
-  useSendMessage,
-} from "./query";
+import { BlockUserButton } from "@/features/safety/components/BlockUserButton";
+import { useConversations, useMessages, useSendMessage } from "./query";
 import type { ConversationSummary } from "./types";
 import {
   ConversationList,
@@ -233,6 +230,12 @@ function ThreadHeader({
             <span className="hidden sm:inline">View listing</span>
           </Link>
         </Button>
+      )}
+      {conversation?.otherUser && (
+        <BlockUserButton
+          userId={conversation.otherUser.id}
+          name={conversation.otherUser.name}
+        />
       )}
     </div>
   );

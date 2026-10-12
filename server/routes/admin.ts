@@ -1,4 +1,4 @@
-import { Router } from "../lib/http";
+import { Router, type Ctx } from "../lib/http";
 import { z } from "zod";
 import { and, ne, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
@@ -20,28 +20,65 @@ import {
   permissions,
 } from "../schema";
 import { ok, HttpError, buildPagination, paginationQuerySchema } from "../lib/api";
-import { requireAdmin, requireStepUp, restoreUser, suspendUser } from "../lib/auth";
+import { guarded } from "../lib/rate-limit";
+import { requireAdmin, requireStepUp, requireUser, restoreUser, suspendUser } from "../lib/auth";
 import {
   requireMfaEnrolment,
   requirePermission,
   resolveAccess,
   invalidateAccess,
+  invalidateAllAccess,
   isLastActiveSuperAdmin,
 } from "../lib/permissions";
 import { recordSecurityEvent, requestIp, requestUserAgent } from "../lib/security-log";
 import {
   adminProductsQuerySchema,
   listAdminProductFacets,
+  listAdminProductRelations,
   listAdminProducts,
 } from "../lib/admin-products";
 import {
   BULK_PRODUCT_STATUSES,
   adminProductEditSchema,
+  bulkCategorySchema,
+  bulkDeleteAdminProducts,
+  bulkMoveAdminProductCategory,
   bulkSetAdminProductStatus,
   deleteAdminProduct,
   updateAdminProduct,
 } from "../lib/admin-product-writer";
+import {
+  categoryDeleteSchema,
+  categoryReorderSchema,
+  categoryUpdateSchema,
+  categoryWriteSchema,
+  createCategory,
+  deleteCategory,
+  reorderCategories,
+  updateCategory,
+} from "../lib/admin-categories";
+import {
+  BANNER_STATUSES,
+  BLOCK_STATUSES,
+  bannerInputSchema,
+  bannerReorderSchema,
+  bannerUpdateSchema,
+  blockWriteSchema,
+  createBanner,
+  deleteBanner,
+  deleteBlock,
+  getAdminBlock,
+  listAdminBanners,
+  listAdminBlocks,
+  listCmsVersions,
+  reorderBanners,
+  setBlockStatus,
+  updateBanner,
+  upsertBlock,
+  blockCatalogue,
+} from "../lib/cms";
 import { PRODUCT_STATUSES, PUBLIC_PRODUCT_STATUSES } from "../lib/product-status";
+import { ALL_ROLE_NAMES, BANNER_PLACEMENTS } from "../lib/enums";
 import { isPayoutStatus, listAllPayouts, setPayoutStatus } from "../lib/wallet";
 import {
   adminOrdersQuerySchema,
@@ -60,10 +97,44 @@ import {
   listAdminAuditLog,
   getAdminFinanceSummary,
 } from "../lib/admin-queries";
-import { recordAudit } from "../lib/audit";
+import { recordAudit, withAudit } from "../lib/audit";
+import { CUSTOMER_CANCELLABLE_FROM } from "../lib/order-cancellation";
 import { reconcileRentalStatuses } from "../lib/rental-lifecycle";
 import { notificationEventKey } from "../lib/notification-events";
 import { notify } from "../lib/notifications";
+import { notifyOrderProgress } from "../lib/order-notifications";
+import {
+  addAdminOrderNote,
+  adminOrderNextStatuses,
+  cancelAdminOrder,
+  getAdminOrderDetail,
+  overrideAdminOrderStatus,
+  requestOrderRefund,
+  setAdminOrderStatus,
+} from "../lib/order-admin";
+import {
+  adminRentalNextStatuses,
+  decideAdminRentalExtension,
+  forceAdminRentalStatus,
+  getAdminRentalDetail,
+  hasActiveRentalOnOrder,
+  isForcibleRentalStatus,
+  settleAdminRentalDeposit,
+} from "../lib/rental-admin";
+import {
+  adminDisputesQuerySchema,
+  decideAdminDispute,
+  getAdminDispute,
+  listAdminDisputes,
+} from "../lib/dispute-admin";
+import { getOrderHealth } from "../lib/order-health";
+import {
+  addStaffMessage,
+  getStaffTicket,
+  listTicketsForStaff,
+  TICKET_STATUSES,
+  type TicketStatus,
+} from "../lib/support";
 
 export const adminRoute = new Router();
 
@@ -72,6 +143,146 @@ adminRoute.use("*", async (c, next) => {
   // Staff areas are MFA-mandatory (PROMPT 3). The enrolment endpoints on the auth
   // router stay reachable so a blocked staff member can always turn MFA on.
   await requireMfaEnrolment()(c, next);
+});
+
+/* ---------------------------- route permissions ---------------------------- */
+
+/**
+ * The permission every admin route requires (PROMPT 22).
+ *
+ * ## Why this is middleware and not an `if` in each handler
+ *
+ * The brief is explicit: `requirePermission` on *every* `/api/admin` route, with
+ * hidden buttons treated as UX only. A check written inside a handler is one
+ * `return c.json(...)` away from being bypassed, and a check that lives at the
+ * router cannot be reached by any request that skips a handler. Registering it
+ * here means the gate runs *before* routing, so an under-permissioned staff
+ * account learns nothing about the response it is being refused.
+ *
+ * ## Why method + prefix rather than one entry per route
+ *
+ * `Router.use` matches a path prefix, not a method, and several routes share a
+ * path (`GET /products/:id` reads, `PATCH` moderates). Each entry carries the
+ * method and the middleware passes a non-matching method straight through, so a
+ * GET gate never applies to a PATCH and the two can carry different permissions
+ * without wrapping every handler by hand.
+ *
+ * ## Why the coarse gate above still exists
+ *
+ * `requireAdmin` admits staff; these entries decide what each may *do*. A new
+ * route with no entry here is caught by `tests/admin-permissions.test.ts`, which
+ * asserts every registered route is covered — the one failure mode a
+ * hand-maintained map otherwise has.
+ */
+export type AdminRoutePermission = {
+  method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+  /** A path prefix, matched the way the router's `use` matches. */
+  path: string;
+  permission: string;
+};
+
+export const ADMIN_ROUTE_PERMISSIONS: readonly AdminRoutePermission[] = [
+  { method: "GET", path: "/stats", permission: "dashboard.view" },
+
+  { method: "GET", path: "/products", permission: "products.view" },
+  { method: "PATCH", path: "/products", permission: "products.moderate" },
+  { method: "DELETE", path: "/products", permission: "products.moderate" },
+
+  { method: "GET", path: "/orders", permission: "orders.view" },
+  { method: "PATCH", path: "/orders", permission: "orders.manage" },
+  { method: "POST", path: "/orders/:id/notes", permission: "orders.manage" },
+  { method: "POST", path: "/orders/:id/refunds", permission: "orders.refund" },
+  { method: "GET", path: "/order-health", permission: "orders.view" },
+
+  { method: "GET", path: "/rentals", permission: "rentals.view" },
+  { method: "PATCH", path: "/rentals", permission: "rentals.manage" },
+  { method: "POST", path: "/rentals", permission: "rentals.manage" },
+
+  { method: "GET", path: "/disputes", permission: "disputes.view" },
+  { method: "PATCH", path: "/disputes", permission: "disputes.manage" },
+
+  { method: "GET", path: "/users", permission: "users.view" },
+  { method: "GET", path: "/users/:id{[0-9]+}/roles", permission: "rbac.manage" },
+  { method: "PATCH", path: "/users", permission: "users.manage" },
+  { method: "PUT", path: "/users", permission: "rbac.manage" },
+
+  { method: "GET", path: "/sellers", permission: "vendors.view" },
+  { method: "PATCH", path: "/sellers", permission: "vendors.manage" },
+
+  { method: "GET", path: "/finance", permission: "payouts.view" },
+  { method: "GET", path: "/transactions", permission: "payouts.view" },
+  { method: "GET", path: "/payouts", permission: "payouts.view" },
+  { method: "PATCH", path: "/payouts", permission: "payouts.approve" },
+
+  { method: "GET", path: "/reviews", permission: "reviews.view" },
+  { method: "PATCH", path: "/reviews", permission: "reviews.moderate" },
+
+  { method: "GET", path: "/categories", permission: "categories.view" },
+  { method: "PATCH", path: "/categories", permission: "categories.manage" },
+  { method: "POST", path: "/categories", permission: "categories.manage" },
+  { method: "DELETE", path: "/categories", permission: "categories.manage" },
+
+  // CMS (PROMPT 26). One permission for the whole surface: whoever may edit content
+  // may read and write it, and `content.manage` is held by CONTENT_MANAGER and every
+  // administrator.
+  { method: "GET", path: "/cms", permission: "content.manage" },
+  { method: "POST", path: "/cms", permission: "content.manage" },
+  { method: "PUT", path: "/cms", permission: "content.manage" },
+  { method: "PATCH", path: "/cms", permission: "content.manage" },
+  { method: "DELETE", path: "/cms", permission: "content.manage" },
+
+  { method: "GET", path: "/product-images", permission: "products.view" },
+  { method: "POST", path: "/product-images", permission: "products.moderate" },
+  { method: "PATCH", path: "/product-images", permission: "products.moderate" },
+  { method: "DELETE", path: "/product-images", permission: "products.moderate" },
+
+  { method: "GET", path: "/reports", permission: "reports.view" },
+  { method: "PATCH", path: "/reports", permission: "reports.resolve" },
+
+  { method: "GET", path: "/support/tickets", permission: "support.view" },
+  { method: "POST", path: "/support/tickets", permission: "support.reply" },
+
+  { method: "GET", path: "/roles", permission: "rbac.manage" },
+  { method: "POST", path: "/roles", permission: "rbac.manage" },
+  { method: "PATCH", path: "/roles", permission: "rbac.manage" },
+  { method: "DELETE", path: "/roles", permission: "rbac.manage" },
+  { method: "GET", path: "/permissions", permission: "rbac.manage" },
+
+  { method: "GET", path: "/audit-log", permission: "audit.view" },
+];
+
+for (const gate of ADMIN_ROUTE_PERMISSIONS) {
+  adminRoute.use(gate.path, async (c, next) => {
+    // A prefix matches every method under it; the gate only applies to its own.
+    if (c.req.raw.method !== gate.method) {
+      await next();
+      return;
+    }
+    await requirePermission(gate.permission)(c, next);
+  });
+}
+
+/**
+ * `GET /api/admin/me` — the caller's own effective access.
+ *
+ * The sidebar filters to the modules a staff member's permissions allow, and the
+ * role editor's "view as role" preview needs the same vocabulary the server
+ * enforces. Neither can read the session's grants from `users.role` alone (staff
+ * sub-roles live in `user_roles`), so this is the one admin read that is
+ * deliberately not permission-gated: every staff member needs it to render their
+ * own workspace, and it exposes nothing but their own grants.
+ */
+adminRoute.get("/me", async (c) => {
+  const admin = requireAdmin(c);
+  const access = await resolveAccess(admin.id);
+  return c.json(
+    ok({
+      role: admin.role,
+      roles: [...access.roles].sort(),
+      permissions: [...access.permissions].sort(),
+      isSuperAdmin: access.roles.has("SUPER_ADMIN"),
+    }),
+  );
 });
 
 /* -------------------------------- dashboard -------------------------------- */
@@ -210,7 +421,14 @@ adminRoute.patch("/products/:id/status", async (c) => {
     return c.json(ok({ updated: true, unchanged: true }));
   }
   await db.update(products).set({ status: body.status }).where(eq(products.id, id));
-  await recordAudit(c, "PRODUCT_STATUS_SET", "product", id, `Status ${row.status} → ${body.status}.`);
+  await recordAudit(c, {
+    action: "PRODUCT_STATUS_SET",
+    entityType: "product",
+    entityId: id,
+    details: `Status ${row.status} → ${body.status}.`,
+    before: { status: row.status },
+    after: { status: body.status },
+  });
 
   // Only the two moderation decisions that carry news for the seller are announced.
   // Every other status here (`PUBLISHED` → `PAUSED`, `SOLD`, an archive) either
@@ -319,13 +537,14 @@ adminRoute.patch("/products/:id{[0-9]+}", async (c) => {
     return c.json(ok({ updated: false, unchanged: true, changed: [] }));
   }
 
-  await recordAudit(
-    c,
-    "PRODUCT_EDITED",
-    "product",
-    id,
-    `${result.changed.join(", ")} updated by admin.`,
-  );
+  await recordAudit(c, {
+    action: "PRODUCT_EDITED",
+    entityType: "product",
+    entityId: id,
+    details: `${result.changed.join(", ")} updated by admin.`,
+    before: result.before,
+    after: result.after,
+  });
   return c.json(ok({ updated: true, changed: result.changed }));
 });
 
@@ -342,15 +561,16 @@ adminRoute.delete("/products/:id{[0-9]+}", async (c) => {
   const force = c.req.query("force") === "1";
   const result = await deleteAdminProduct(id, { force });
 
-  await recordAudit(
-    c,
-    result.outcome === "deleted" ? "PRODUCT_DELETED" : "PRODUCT_ARCHIVED",
-    "product",
-    id,
-    result.outcome === "deleted"
-      ? "Listing deleted (no order history)."
-      : `Listing archived; ${result.orderCount} order line(s) reference it.`,
-  );
+  await recordAudit(c, {
+    action: result.outcome === "deleted" ? "PRODUCT_DELETED" : "PRODUCT_ARCHIVED",
+    entityType: "product",
+    entityId: id,
+    details:
+      result.outcome === "deleted"
+        ? "Listing deleted (no order history)."
+        : `Listing archived; ${result.orderCount} order line(s) reference it.`,
+    after: { outcome: result.outcome },
+  });
   return c.json(ok(result));
 });
 
@@ -374,13 +594,13 @@ adminRoute.patch("/products/bulk-status", async (c) => {
   const input = adminBulkStatusSchema.parse(await c.req.json());
   const result = await bulkSetAdminProductStatus(input.ids, input.status);
 
-  await recordAudit(
-    c,
-    "PRODUCT_BULK_STATUS",
-    "product",
-    null,
-    `${result.updated} listing(s) set to ${input.status}.`,
-  );
+  await recordAudit(c, {
+    action: "PRODUCT_BULK_STATUS",
+    entityType: "product",
+    entityId: null,
+    details: `${result.updated} listing(s) set to ${input.status}.`,
+    after: { status: input.status, updated: result.updated, requested: result.requested },
+  });
   return c.json(ok(result));
 });
 
@@ -408,73 +628,42 @@ adminRoute.get("/orders", async (c) => {
  * shape — that one hides the email; this one is for the person answering the
  * support ticket.
  */
+/**
+ * `GET /api/admin/orders/:id` — the full administrative view of one order.
+ *
+ * Assembled by `getAdminOrderDetail`: the receipt, the per-seller split, the
+ * payment ledger, any rentals, refunds and disputes, and the order's timeline —
+ * everything an operator needs to answer "what is going on with this order?"
+ * without opening six other screens. `nextStatuses` and `canCancel` are computed
+ * from the same state machine the actions enforce, so the buttons the UI offers
+ * and the moves the API accepts cannot drift.
+ */
 adminRoute.get("/orders/:id", async (c) => {
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id) || id <= 0) {
     throw new HttpError(404, "NOT_FOUND", "Order not found.");
   }
 
-  const [order] = await db
-    .select({
-      id: orders.id,
-      orderNumber: orders.orderNumber,
-      orderType: orders.orderType,
-      status: orders.status,
-      paymentStatus: orders.paymentStatus,
-      subtotal: orders.subtotal,
-      deliveryFee: orders.deliveryFee,
-      depositTotal: orders.depositTotal,
-      total: orders.total,
-      currency: orders.currency,
-      deliveryMethod: orders.deliveryMethod,
-      deliveryAddressSnapshot: orders.deliveryAddressSnapshot,
-      trackingNumber: orders.trackingNumber,
-      paymentProvider: orders.paymentProvider,
-      paymentReference: orders.paymentReference,
-      createdAt: orders.createdAt,
-      updatedAt: orders.updatedAt,
-      customerName: users.name,
-      customerEmail: users.email,
-      customerPhone: users.phone,
-    })
-    .from(orders)
-    .innerJoin(users, eq(orders.userId, users.id))
-    .where(eq(orders.id, id))
-    .limit(1);
-  if (!order) throw new HttpError(404, "NOT_FOUND", "Order not found.");
+  const detail = await getAdminOrderDetail(id);
+  if (!detail) throw new HttpError(404, "NOT_FOUND", "Order not found.");
 
-  const items = await db
-    .select({
-      id: orderItems.id,
-      productId: orderItems.productId,
-      sellerId: orderItems.sellerId,
-      mode: orderItems.mode,
-      quantity: orderItems.quantity,
-      unitPrice: orderItems.unitPrice,
-      lineTotal: orderItems.lineTotal,
-      titleSnapshot: orderItems.titleSnapshot,
-      imageSnapshot: orderItems.imageSnapshot,
-      startDate: orderItems.startDate,
-      endDate: orderItems.endDate,
-      fulfillmentStatus: orderItems.fulfillmentStatus,
-      sellerName: sql<string>`(SELECT u.name FROM users u WHERE u.id = ${orderItems.sellerId})`,
-    })
-    .from(orderItems)
-    .where(eq(orderItems.orderId, id))
-    .orderBy(asc(orderItems.id));
-
-  return c.json(ok({ order, items }));
+  return c.json(
+    ok({
+      ...detail,
+      nextStatuses: adminOrderNextStatuses(detail.order.status),
+      canCancel: CUSTOMER_CANCELLABLE_FROM.has(detail.order.status),
+    }),
+  );
 });
 
 /**
- * `PATCH /api/admin/orders/:id/status` — advance an order's status.
+ * `PATCH /api/admin/orders/:id/status` — advance an order along the shared ladder.
  *
- * Admins move orders along the same lifecycle the fulfillment engine uses; there
- * is deliberately no free-form status string. Cancellation goes through the same
- * state machine the customer cancellation path uses (stock restoration, ledger
- * unwinding) and is therefore *not* re-implemented here — an admin who needs to
- * cancel asks the customer flow to do it, or uses the customer's own endpoint,
- * rather than a second cancellation implementation that skips the money logic.
+ * The target must be a step `ADMIN_ORDER_TRANSITIONS` allows, so an admin move and
+ * a customer or seller move mean the same thing. A jump the machine forbids is a
+ * 409; `PATCH .../override` is the deliberate escape hatch and it demands a reason.
+ * `CANCELLED` is absent here on purpose — it has its own route, because cancelling
+ * carries money and rental consequences a plain status move does not.
  */
 const adminOrderStatusSchema = z.object({
   status: z.enum([
@@ -488,98 +677,198 @@ const adminOrderStatusSchema = z.object({
   ]),
 });
 
-adminRoute.patch("/orders/:id/status", async (c) => {
-  const id = Number(c.req.param("id"));
-  const input = adminOrderStatusSchema.parse(await c.req.json().catch(() => ({})));
-
+/**
+ * Load the fields the order actions need, or 404.
+ *
+ * `paymentStatus`, `total` and `currency` travel with the order because the state
+ * machine, the cancellation guard and the refundable check each need one of them;
+ * reading once keeps a single action's decisions consistent with a single snapshot.
+ */
+async function loadAdminOrder(id: number) {
   const [order] = await db
     .select({
       id: orders.id,
       status: orders.status,
+      paymentStatus: orders.paymentStatus,
       orderNumber: orders.orderNumber,
       userId: orders.userId,
+      total: orders.total,
+      currency: orders.currency,
     })
     .from(orders)
     .where(eq(orders.id, id))
     .limit(1);
   if (!order) throw new HttpError(404, "NOT_FOUND", "Order not found.");
+  return order;
+}
+
+adminRoute.patch("/orders/:id/status", async (c) => {
+  const admin = requireAdmin(c);
+  const id = Number(c.req.param("id"));
+  const input = adminOrderStatusSchema.parse(await c.req.json().catch(() => ({})));
+
+  const order = await loadAdminOrder(id);
   if (order.status === input.status) {
     return c.json(ok({ updated: true, unchanged: true }));
   }
-  if (order.status === "CANCELLED") {
-    throw new HttpError(409, "INVALID_TRANSITION", "A cancelled order cannot be reopened.");
-  }
 
-  await db
-    .update(orders)
-    .set({ status: input.status, updatedAt: new Date() })
-    .where(eq(orders.id, id));
-  await recordAudit(
-    c,
-    "ORDER_STATUS_SET",
-    "order",
-    id,
-    `Order ${order.orderNumber ?? id}: ${order.status} → ${input.status}.`,
-  );
+  await setAdminOrderStatus({ id: admin.id, role: "ADMIN" }, order, input.status);
 
-  // The customer is watching this order and cannot see the admin table, so every
-  // status an admin sets here is news for them.
-  //
-  // Each status that means something has its *own* type. An earlier version folded
-  // `READY_FOR_PICKUP` into `ORDER_PROCESSING` and `COMPLETED` into `ORDER_DELIVERED`
-  // on the reasoning that one umbrella type per stage was tidier — but the copy for both
-  // already existed below ("ready for collection", "is complete"), and the fold made the
-  // notification actively wrong: a customer told their order was "being prepared" when it
-  // was waiting to be collected, and one told their order had "been delivered" when it
-  // had been delivered days earlier. It also left `ORDER_READY_FOR_PICKUP` and
-  // `ORDER_COMPLETED` declared in the vocabulary with no emitter anywhere, which is the
-  // exact drift `tests/notification-events.test.ts` now fails on.
-  const announcedType = ORDER_STATUS_NOTIFICATION[input.status];
-  if (announcedType) {
-    await notify(db, {
-      userId: order.userId,
-      type: announcedType,
-      title: `Order ${order.orderNumber ?? `#${id}`} is ${statusLabel(input.status).toLowerCase()}`,
-      body: ORDER_STATUS_BODY[input.status].replace("{number}", order.orderNumber ?? `#${id}`),
-      context: { orderId: id, orderNumber: order.orderNumber ?? null },
-      eventKey: notificationEventKey(announcedType, id),
-    });
-  }
+  await recordAudit(c, {
+    action: "ORDER_STATUS_SET",
+    entityType: "order",
+    entityId: id,
+    details: `Order ${order.orderNumber ?? id}: ${order.status} → ${input.status}.`,
+    before: { status: order.status },
+    after: { status: input.status },
+  });
 
   return c.json(ok({ updated: true }));
 });
 
+/** Any status the column may hold — what an override may target. */
+const adminOrderOverrideSchema = z.object({
+  status: z.enum([
+    "PENDING_PAYMENT",
+    "CONFIRMED",
+    "PROCESSING",
+    "READY_FOR_PICKUP",
+    "SHIPPED",
+    "DELIVERED",
+    "COMPLETED",
+    "CANCELLED",
+  ]),
+  reason: z.string().trim().min(3).max(300),
+});
+
 /**
- * Which status change tells the customer something, and as what.
+ * `PATCH /api/admin/orders/:id/override` — force any status, with a reason.
  *
- * Absent from the map means "nobody outside the admin workspace needs to hear about
- * it" — `PENDING_PAYMENT` and `CANCELLED` are absent because they are announced by the
- * payment and cancellation paths instead, which is where they actually originate.
+ * The one order action that is not a state machine. `withAudit({ requireReason })`
+ * makes the reason a request-level requirement (refused before the handler runs)
+ * and records who wrote it; `overrideAdminOrderStatus` also writes it onto the
+ * order timeline, because the customer's own view can read the timeline but not
+ * the staff audit log.
  */
-const ORDER_STATUS_NOTIFICATION: Partial<
-  Record<(typeof adminOrderStatusSchema)["_output"]["status"], string>
-> = {
-  CONFIRMED: "ORDER_CONFIRMED",
-  PROCESSING: "ORDER_PROCESSING",
-  READY_FOR_PICKUP: "ORDER_READY_FOR_PICKUP",
-  SHIPPED: "ORDER_SHIPPED",
-  DELIVERED: "ORDER_DELIVERED",
-  COMPLETED: "ORDER_COMPLETED",
-};
+adminRoute.patch(
+  "/orders/:id/override",
+  withAudit({ action: "ORDER_OVERRIDE", entityType: "order", requireReason: true }, async (c, audit) => {
+    const admin = requireAdmin(c);
+    const id = Number(c.req.param("id"));
+    const input = adminOrderOverrideSchema.parse(await c.req.json().catch(() => ({})));
+    const order = await loadAdminOrder(id);
 
-const ORDER_STATUS_BODY: Record<string, string> = {
-  CONFIRMED: "Your order {number} has been confirmed and is being prepared.",
-  PROCESSING: "Your order {number} is being prepared.",
-  READY_FOR_PICKUP: "Your order {number} is ready for collection.",
-  SHIPPED: "Your order {number} has been shipped.",
-  DELIVERED: "Your order {number} has been delivered.",
-  COMPLETED: "Your order {number} is complete. Thanks for shopping with Revaro.",
-};
+    await overrideAdminOrderStatus(
+      { id: admin.id, role: "ADMIN" },
+      order,
+      input.status,
+      audit.reason ?? input.reason,
+    );
 
-/** Human-readable status for a notification title. */
-function statusLabel(status: string): string {
-  return status.replaceAll("_", " ").toLowerCase();
-}
+    c.json(ok({ updated: true }));
+    return {
+      entityId: id,
+      details: `Order ${order.orderNumber ?? id} forced ${order.status} → ${input.status}.`,
+      before: { status: order.status },
+      after: { status: input.status },
+    };
+  }),
+);
+
+/** `POST /api/admin/orders/:id/notes` — an internal note on the order timeline. */
+const adminOrderNoteSchema = z.object({ note: z.string().trim().min(1).max(300) });
+
+adminRoute.post("/orders/:id/notes", async (c) => {
+  const admin = requireAdmin(c);
+  const id = Number(c.req.param("id"));
+  const input = adminOrderNoteSchema.parse(await c.req.json().catch(() => ({})));
+  const order = await loadAdminOrder(id);
+
+  await addAdminOrderNote({ id: admin.id, role: "ADMIN" }, order, input.note);
+
+  await recordAudit(c, {
+    action: "ORDER_NOTE_ADDED",
+    entityType: "order",
+    entityId: id,
+    details: `Internal note on order ${order.orderNumber ?? id}.`,
+  });
+
+  return c.json(ok({ updated: true }));
+});
+
+/** `POST /api/admin/orders/:id/cancel` — cancel on the customer's behalf. */
+const adminOrderCancelSchema = z.object({ reason: z.string().trim().min(3).max(300) });
+
+adminRoute.post("/orders/:id/cancel", async (c) => {
+  const admin = requireAdmin(c);
+  const id = Number(c.req.param("id"));
+  const input = adminOrderCancelSchema.parse(await c.req.json().catch(() => ({})));
+  const order = await loadAdminOrder(id);
+  const hasActiveRental = await hasActiveRentalOnOrder(id);
+
+  await cancelAdminOrder({ id: admin.id, role: "ADMIN" }, order, hasActiveRental, input.reason);
+
+  await recordAudit(c, {
+    action: "ORDER_CANCELLED",
+    entityType: "order",
+    entityId: id,
+    details: `Order ${order.orderNumber ?? id} cancelled by admin.`,
+    reason: input.reason,
+    before: { status: order.status },
+    after: { status: "CANCELLED" },
+  });
+
+  return c.json(ok({ cancelled: true }));
+});
+
+/** `POST /api/admin/orders/:id/refunds` — open a (PENDING) refund request. */
+const adminOrderRefundSchema = z.object({
+  amount: z.number().int().positive(),
+  reason: z.string().trim().min(3).max(300),
+  orderItemId: z.number().int().positive().nullish(),
+  idempotencyKey: z.string().trim().max(120).nullish(),
+});
+
+adminRoute.post(
+  "/orders/:id/refunds",
+  withAudit(
+    { action: "ORDER_REFUND_REQUESTED", entityType: "order", requireReason: true },
+    async (c, audit) => {
+      const admin = requireAdmin(c);
+      const id = Number(c.req.param("id"));
+      const input = adminOrderRefundSchema.parse(await c.req.json().catch(() => ({})));
+      const order = await loadAdminOrder(id);
+
+      const refund = await requestOrderRefund({ id: admin.id, role: "ADMIN" }, order, {
+        amount: input.amount,
+        reason: input.reason,
+        orderItemId: input.orderItemId ?? null,
+        idempotencyKey: input.idempotencyKey ?? null,
+      });
+
+      c.json(ok(refund));
+      return {
+        entityId: id,
+        details: `Refund ${refund.refundNumber} requested for order ${order.orderNumber ?? id} (${refund.amount} paise).`,
+        reason: audit.reason ?? input.reason,
+        after: { refundNumber: refund.refundNumber, amount: refund.amount },
+      };
+    },
+  ),
+);
+
+/**
+ * `GET /api/admin/order-health` — stuck orders and overdue returns.
+ *
+ * On its own path rather than under `/orders` so it can never be swallowed by the
+ * `/orders/:id` route — a mistake that would make the dashboard try to load an
+ * order whose id is the word "health".
+ */
+adminRoute.get("/order-health", async (c) => {
+  const health = await getOrderHealth();
+  return c.json(ok(health));
+});
+
 
 /* --------------------------------- rentals ---------------------------------- */
 
@@ -596,6 +885,241 @@ adminRoute.get("/rentals", async (c) => {
   const { rows, total } = await listAdminRentals(query);
   return c.json(ok(rows, buildPagination(query.page, query.pageSize, total)));
 });
+
+/**
+ * Load the fields a rental action needs, or 404.
+ *
+ * A superset of what each action consumes (the status machine needs the parties,
+ * the deposit path needs the order line, the extension path needs the dates) so
+ * one read serves all of them and a concurrent edit cannot be observed halfway.
+ */
+async function loadAdminRental(id: number) {
+  const [rental] = await db
+    .select({
+      id: rentals.id,
+      status: rentals.status,
+      renterId: rentals.renterId,
+      ownerId: rentals.ownerId,
+      productId: rentals.productId,
+      orderId: rentals.orderId,
+      orderItemId: rentals.orderItemId,
+      securityDeposit: rentals.securityDeposit,
+      endDate: rentals.endDate,
+      dailyRate: rentals.dailyRate,
+      extensionRequestedDays: rentals.extensionRequestedDays,
+      currency: orders.currency,
+    })
+    .from(rentals)
+    .innerJoin(orders, eq(rentals.orderId, orders.id))
+    .where(eq(rentals.id, id))
+    .limit(1);
+  if (!rental) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
+  return rental;
+}
+
+/**
+ * `GET /api/admin/rentals/:id` — one rental in full.
+ *
+ * Reconciles derived state first (a `CONFIRMED` booking whose window has opened is
+ * `ACTIVE`), then returns the parties, the product, the recorded steps and the
+ * deposit position, plus `nextStatuses` from the same map the force action uses.
+ */
+adminRoute.get("/rentals/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id) || id <= 0) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
+  await reconcileRentalStatuses(db, {});
+  const detail = await getAdminRentalDetail(id);
+  if (!detail) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
+  return c.json(ok({ ...detail, nextStatuses: adminRentalNextStatuses(detail.rental.status) }));
+});
+
+const rentalForceSchema = z.object({ status: z.string().trim() });
+
+/** `PATCH /api/admin/rentals/:id/status` — force a reachable rental status. */
+adminRoute.patch(
+  "/rentals/:id/status",
+  withAudit({ action: "RENTAL_STATUS_FORCED", entityType: "rental" }, async (c) => {
+    const admin = requireAdmin(c);
+    const id = Number(c.req.param("id"));
+    const input = rentalForceSchema.parse(await c.req.json().catch(() => ({})));
+    if (!isForcibleRentalStatus(input.status)) {
+      throw new HttpError(400, "BAD_STATUS", "Unknown rental status.");
+    }
+    const rental = await loadAdminRental(id);
+    await forceAdminRentalStatus({ id: admin.id, role: "ADMIN" }, rental, input.status);
+    c.json(ok({ updated: true }));
+    return {
+      entityId: id,
+      details: `Rental ${id}: ${rental.status} → ${input.status}.`,
+      before: { status: rental.status },
+      after: { status: input.status },
+    };
+  }),
+);
+
+/** `POST /api/admin/rentals/:id/return` — confirm a physical return. */
+adminRoute.post(
+  "/rentals/:id/return",
+  withAudit({ action: "RENTAL_RETURN_CONFIRMED", entityType: "rental" }, async (c) => {
+    const admin = requireAdmin(c);
+    const id = Number(c.req.param("id"));
+    const rental = await loadAdminRental(id);
+    await forceAdminRentalStatus({ id: admin.id, role: "ADMIN" }, rental, "RETURNED");
+    c.json(ok({ updated: true }));
+    return {
+      entityId: id,
+      details: `Rental ${id} marked returned by admin.`,
+      before: { status: rental.status },
+      after: { status: "RETURNED" },
+    };
+  }),
+);
+
+const rentalDepositSchema = z.object({
+  deduction: z.number().int().nonnegative().default(0),
+  reason: z.string().trim().min(3).max(300),
+});
+
+/** `POST /api/admin/rentals/:id/deposit` — release or deduct a security deposit. */
+adminRoute.post(
+  "/rentals/:id/deposit",
+  withAudit(
+    { action: "RENTAL_DEPOSIT_SETTLED", entityType: "rental", requireReason: true },
+    async (c, audit) => {
+      const admin = requireAdmin(c);
+      const id = Number(c.req.param("id"));
+      const input = rentalDepositSchema.parse(await c.req.json().catch(() => ({})));
+      const rental = await loadAdminRental(id);
+      const reason = audit.reason ?? input.reason;
+      const result = await settleAdminRentalDeposit({ id: admin.id, role: "ADMIN" }, rental, {
+        deduction: input.deduction,
+        reason,
+      });
+      c.json(ok(result));
+      return {
+        entityId: id,
+        details: `Rental ${id} deposit settled: released ${result.released}, deducted ${result.deduction}.`,
+        reason,
+        before: { deposit: rental.securityDeposit },
+        after: { released: result.released, deduction: result.deduction, refundNumber: result.refundNumber },
+      };
+    },
+  ),
+);
+
+const rentalExtensionSchema = z.object({
+  decision: z.enum(["APPROVE", "REJECT"]),
+  days: z.number().int().min(1).max(365).optional(),
+  reason: z.string().trim().min(3).max(300),
+});
+
+/** `POST /api/admin/rentals/:id/extension` — decide a pending extension request. */
+adminRoute.post(
+  "/rentals/:id/extension",
+  withAudit(
+    { action: "RENTAL_EXTENSION_DECIDED", entityType: "rental", requireReason: true },
+    async (c, audit) => {
+      const admin = requireAdmin(c);
+      const id = Number(c.req.param("id"));
+      const input = rentalExtensionSchema.parse(await c.req.json().catch(() => ({})));
+      const rental = await loadAdminRental(id);
+      const reason = audit.reason ?? input.reason;
+      const result = await decideAdminRentalExtension(
+        { id: admin.id, role: "ADMIN" },
+        rental,
+        input.decision,
+        { days: input.days, reason },
+      );
+      c.json(ok(result));
+      return {
+        entityId: id,
+        details: `Rental ${id} extension ${input.decision.toLowerCase()}d.`,
+        reason,
+        after: { days: result.days, newEndDate: result.newEndDate?.toISOString() ?? null },
+      };
+    },
+  ),
+);
+
+/* -------------------------------- disputes ---------------------------------- */
+
+/**
+ * `GET /api/admin/disputes` — the queue. Filtered by status and date, and
+ * searchable by dispute or order number.
+ */
+adminRoute.get("/disputes", async (c) => {
+  const query = adminDisputesQuerySchema.parse(c.req.query());
+  const { rows, total } = await listAdminDisputes(query);
+  return c.json(ok(rows, buildPagination(query.page, query.pageSize, total)));
+});
+
+/** `GET /api/admin/disputes/:id` — one dispute with its order context. */
+adminRoute.get("/disputes/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id) || id <= 0) throw new HttpError(404, "NOT_FOUND", "Dispute not found.");
+  const detail = await getAdminDispute(id);
+  if (!detail) throw new HttpError(404, "NOT_FOUND", "Dispute not found.");
+  return c.json(ok(detail));
+});
+
+const disputeDecisionSchema = z.object({
+  status: z.enum(["UNDER_REVIEW", "RESOLVED", "DISMISSED"]),
+  resolution: z.string().trim().max(2000).default(""),
+  refund: z
+    .object({
+      amount: z.number().int().positive(),
+      reason: z.string().trim().min(3).max(300),
+      idempotencyKey: z.string().trim().max(120).nullish(),
+    })
+    .nullish(),
+});
+
+/**
+ * `PATCH /api/admin/disputes/:id` — decide a dispute.
+ *
+ * A terminal decision names the resolver and notifies both parties; an optional
+ * refund is opened first, so the dispute only reaches its final state when the
+ * refund request itself was valid.
+ */
+adminRoute.patch(
+  "/disputes/:id",
+  withAudit({ action: "DISPUTE_DECIDED", entityType: "dispute" }, async (c) => {
+    const admin = requireAdmin(c);
+    const id = Number(c.req.param("id"));
+    const input = disputeDecisionSchema.parse(await c.req.json().catch(() => ({})));
+
+    const [dispute] = await db
+      .select({
+        id: disputes.id,
+        disputeNumber: disputes.disputeNumber,
+        status: disputes.status,
+        orderId: disputes.orderId,
+        openedBy: disputes.openedBy,
+        againstUserId: disputes.againstUserId,
+        orderNumber: orders.orderNumber,
+      })
+      .from(disputes)
+      .innerJoin(orders, eq(disputes.orderId, orders.id))
+      .where(eq(disputes.id, id))
+      .limit(1);
+    if (!dispute) throw new HttpError(404, "NOT_FOUND", "Dispute not found.");
+
+    const result = await decideAdminDispute({ id: admin.id, role: "ADMIN" }, dispute, {
+      status: input.status,
+      resolution: input.resolution,
+      refund: input.refund ?? null,
+    });
+
+    c.json(ok(result));
+    return {
+      entityId: id,
+      details: `Dispute ${dispute.disputeNumber}: ${dispute.status} → ${input.status}.`,
+      reason: input.resolution || null,
+      before: { status: dispute.status },
+      after: { status: input.status },
+    };
+  }),
+);
 
 /* ---------------------------------- users ----------------------------------- */
 
@@ -661,13 +1185,14 @@ adminRoute.patch("/sellers/:id/verified", async (c) => {
     .update(sellerProfiles)
     .set({ verified: input.verified, updatedAt: new Date() })
     .where(eq(sellerProfiles.userId, id));
-  await recordAudit(
-    c,
-    input.verified ? "SELLER_APPROVED" : "SELLER_UNVERIFIED",
-    "user",
-    id,
-    `Seller verification ${input.verified ? "granted" : "revoked"} for #${id}.`,
-  );
+  await recordAudit(c, {
+    action: input.verified ? "SELLER_APPROVED" : "SELLER_UNVERIFIED",
+    entityType: "user",
+    entityId: id,
+    details: `Seller verification ${input.verified ? "granted" : "revoked"} for #${id}.`,
+    before: { verified: false },
+    after: { verified: input.verified },
+  });
   return c.json(ok({ verified: input.verified }));
 });
 
@@ -736,14 +1261,18 @@ adminRoute.patch("/reviews/:id/status", async (c) => {
   if (!row) throw new HttpError(404, "NOT_FOUND", "Review not found.");
   if (row.status === input.status) return c.json(ok({ updated: true, unchanged: true }));
 
-  await db.update(reviews).set({ status: input.status, updatedAt: new Date() }).where(eq(reviews.id, id));
-  await recordAudit(
-    c,
-    input.status === "HIDDEN" ? "REVIEW_HIDDEN" : "REVIEW_RESTORED",
-    "review",
-    id,
-    `Review #${id} ${input.status === "HIDDEN" ? "hidden" : "restored"}.`,
-  );
+  await db
+    .update(reviews)
+    .set({ status: input.status, updatedAt: new Date() })
+    .where(eq(reviews.id, id));
+  await recordAudit(c, {
+    action: input.status === "HIDDEN" ? "REVIEW_HIDDEN" : "REVIEW_RESTORED",
+    entityType: "review",
+    entityId: id,
+    details: `Review #${id} ${input.status === "HIDDEN" ? "hidden" : "restored"}.`,
+    before: { status: row.status },
+    after: { status: input.status },
+  });
   return c.json(ok({ status: input.status }));
 });
 
@@ -807,13 +1336,14 @@ adminRoute.patch("/categories/:id/active", async (c) => {
     .update(categories)
     .set({ isActive: input.isActive, updatedAt: new Date() })
     .where(eq(categories.id, id));
-  await recordAudit(
-    c,
-    input.isActive ? "CATEGORY_RESTORED" : "CATEGORY_RETIRED",
-    "category",
-    id,
-    `Category "${row.name}" ${input.isActive ? "restored" : "retired"}.`,
-  );
+  await recordAudit(c, {
+    action: input.isActive ? "CATEGORY_RESTORED" : "CATEGORY_RETIRED",
+    entityType: "category",
+    entityId: id,
+    details: `Category "${row.name}" ${input.isActive ? "restored" : "retired"}.`,
+    before: { isActive: row.isActive },
+    after: { isActive: input.isActive },
+  });
   return c.json(ok({ isActive: input.isActive }));
 });
 
@@ -838,7 +1368,9 @@ adminRoute.get("/product-images", async (c) => {
         slug: products.slug,
         sellerName: users.name,
         imageCount: sql<number>`(SELECT COUNT(*) FROM product_images pi WHERE pi.product_id = ${products.id})`,
-        primaryImage: sql<string | null>`(SELECT pi.url FROM product_images pi WHERE pi.product_id = ${products.id} ORDER BY pi.sort_order ASC, pi.id ASC LIMIT 1)`,
+        primaryImage: sql<
+          string | null
+        >`(SELECT pi.url FROM product_images pi WHERE pi.product_id = ${products.id} ORDER BY pi.sort_order ASC, pi.id ASC LIMIT 1)`,
       })
       .from(products)
       .innerJoin(users, eq(products.sellerId, users.id))
@@ -936,13 +1468,13 @@ adminRoute.post("/product-images/:id{[0-9]+}", async (c) => {
     })
     .$returningId();
 
-  await recordAudit(
-    c,
-    "PRODUCT_IMAGE_ADDED",
-    "image",
-    Number(inserted?.id ?? 0),
-    `Image attached to product #${productId}.`,
-  );
+  await recordAudit(c, {
+    action: "PRODUCT_IMAGE_ADDED",
+    entityType: "image",
+    entityId: Number(inserted?.id ?? 0),
+    details: `Image attached to product #${productId}.`,
+    after: { productId, url: input.url },
+  });
   return c.json(ok({ added: true, imageId: Number(inserted?.id ?? 0) }));
 });
 
@@ -959,7 +1491,13 @@ adminRoute.delete("/product-images/:id{[0-9]+}", async (c) => {
   if (!row) throw new HttpError(404, "NOT_FOUND", "Image not found.");
 
   await db.delete(productImages).where(eq(productImages.id, imageId));
-  await recordAudit(c, "PRODUCT_IMAGE_REMOVED", "image", imageId, `Removed from product #${row.productId}.`);
+  await recordAudit(c, {
+    action: "PRODUCT_IMAGE_REMOVED",
+    entityType: "image",
+    entityId: imageId,
+    details: `Removed from product #${row.productId}.`,
+    before: { productId: row.productId },
+  });
   return c.json(ok({ removed: true }));
 });
 
@@ -973,7 +1511,11 @@ adminRoute.delete("/product-images/:id{[0-9]+}", async (c) => {
 adminRoute.patch("/product-images/:id{[0-9]+}/primary", async (c) => {
   const imageId = Number(c.req.param("id"));
   const [row] = await db
-    .select({ id: productImages.id, productId: productImages.productId, sortOrder: productImages.sortOrder })
+    .select({
+      id: productImages.id,
+      productId: productImages.productId,
+      sortOrder: productImages.sortOrder,
+    })
     .from(productImages)
     .where(eq(productImages.id, imageId))
     .limit(1);
@@ -997,7 +1539,14 @@ adminRoute.patch("/product-images/:id{[0-9]+}/primary", async (c) => {
     await tx.update(productImages).set({ sortOrder: 0 }).where(eq(productImages.id, imageId));
   });
 
-  await recordAudit(c, "PRODUCT_IMAGE_PRIMARY", "image", imageId, `Set as primary on product #${row.productId}.`);
+  await recordAudit(c, {
+    action: "PRODUCT_IMAGE_PRIMARY",
+    entityType: "image",
+    entityId: imageId,
+    details: `Set as primary on product #${row.productId}.`,
+    before: { sortOrder: row.sortOrder },
+    after: { sortOrder: 0 },
+  });
   return c.json(ok({ updated: true }));
 });
 
@@ -1064,32 +1613,38 @@ const payoutStatusSchema = z
   })
   .strict();
 
-adminRoute.patch("/payouts/:id{[0-9]+}/status", async (c) => {
-  const admin = requireAdmin(c);
-  const input = payoutStatusSchema.parse(await c.req.json().catch(() => ({})));
+adminRoute.patch(
+  "/payouts/:id{[0-9]+}/status",
+  withAudit({ action: "PAYOUT_STATUS_SET", entityType: "payout" }, async (c) => {
+    const admin = requireAdmin(c);
+    const input = payoutStatusSchema.parse(await c.req.json().catch(() => ({})));
 
-  if (!isPayoutStatus(input.status)) {
-    throw new HttpError(400, "BAD_REQUEST", "That is not a payout state.");
-  }
-  if ((input.status === "FAILED" || input.status === "CANCELLED") && !input.reason?.trim()) {
-    // A seller reads this sentence. "Failed" with nothing to act on is how a
-    // marketplace gets a week of support tickets about a payout nobody will explain.
-    throw new HttpError(
-      400,
-      "REASON_REQUIRED",
-      "Give the seller a reason when you decline a payout.",
-    );
-  }
+    if (!isPayoutStatus(input.status)) {
+      throw new HttpError(400, "BAD_REQUEST", "That is not a payout state.");
+    }
+    if ((input.status === "FAILED" || input.status === "CANCELLED") && !input.reason?.trim()) {
+      // A seller reads this sentence. "Failed" with nothing to act on is how a
+      // marketplace gets a week of support tickets about a payout nobody will explain.
+      throw new HttpError(
+        400,
+        "REASON_REQUIRED",
+        "Give the seller a reason when you decline a payout.",
+      );
+    }
 
-  return c.json(
-    ok(
-      await setPayoutStatus(Number(c.req.param("id")), input.status, {
-        id: admin.id,
-        reason: input.reason ?? null,
-      }),
-    ),
-  );
-});
+    const updated = await setPayoutStatus(Number(c.req.param("id")), input.status, {
+      id: admin.id,
+      reason: input.reason ?? null,
+    });
+    c.json(ok(updated));
+    return {
+      entityId: Number(c.req.param("id")),
+      details: `Payout set to ${input.status}${input.reason?.trim() ? `: ${input.reason.trim()}` : ""}.`,
+      reason: input.reason ?? null,
+      after: { status: input.status },
+    };
+  }),
+);
 
 /* --------------------------------- reports ---------------------------------- */
 
@@ -1101,13 +1656,78 @@ adminRoute.get("/reports", async (c) => {
 adminRoute.patch("/reports/:id", async (c) => {
   const id = Number(c.req.param("id"));
   const body = (await c.req.json()) as { status?: string };
-  const allowed = ["OPEN", "RESOLVED", "DISMISSED"];
+  const allowed = ["OPEN", "IN_REVIEW", "RESOLVED", "DISMISSED"];
   if (!body.status || !allowed.includes(body.status)) {
     throw new HttpError(400, "BAD_REQUEST", "Invalid status.");
   }
+  const [existing] = await db
+    .select({ status: reports.status })
+    .from(reports)
+    .where(eq(reports.id, id))
+    .limit(1);
+  if (!existing) throw new HttpError(404, "NOT_FOUND", "Report not found.");
   await db.update(reports).set({ status: body.status }).where(eq(reports.id, id));
+  await recordAudit(c, {
+    action: "REPORT_STATUS_SET",
+    entityType: "report",
+    entityId: id,
+    details: `Report #${id} → ${body.status}.`,
+    before: { status: existing.status },
+    after: { status: body.status },
+  });
   return c.json(ok({ updated: true }));
 });
+
+/* --------------------------------- support ---------------------------------- */
+
+/**
+ * The staff side of support (PROMPT 19).
+ *
+ * These sit under `/api/admin` so they inherit the MFA-mandatory admin gate declared at
+ * the top of this file. The customer-facing reads filter internal notes out in SQL; these
+ * are the reads that intentionally include them.
+ */
+adminRoute.get("/support/tickets", async (c) => {
+  const { page, pageSize } = paginationQuerySchema.parse(c.req.query());
+  const raw = c.req.query("status");
+  const status =
+    raw && (TICKET_STATUSES as readonly string[]).includes(raw) ? (raw as TicketStatus) : undefined;
+  const { rows, pagination } = await listTicketsForStaff({ page, pageSize, status });
+  return c.json(ok(rows, pagination));
+});
+
+adminRoute.get("/support/tickets/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new HttpError(404, "NOT_FOUND", "That ticket does not exist.");
+  }
+  return c.json(ok(await getStaffTicket(id)));
+});
+
+const staffTicketReplySchema = z
+  .object({
+    body: z.string().trim().min(1).max(4000),
+    /** An internal note is written to the thread but filtered from every customer read. */
+    isInternal: z.boolean().default(false),
+  })
+  .strict();
+
+adminRoute.post(
+  "/support/tickets/:id/messages",
+  guarded("admin.action", async (c) => {
+    const admin = requireAdmin(c);
+    const id = Number(c.req.param("id"));
+    const input = staffTicketReplySchema.parse(await c.req.json());
+    const result = await addStaffMessage(admin.id, id, input);
+    await recordAudit(c, {
+      action: "SUPPORT_REPLIED",
+      entityType: "ticket",
+      entityId: id,
+      details: `Staff reply${input.isInternal ? " (internal note)" : ""}.`,
+    });
+    return c.json(ok(result), 201);
+  }),
+);
 
 /* ----------------------------------- RBAC ----------------------------------- */
 
@@ -1131,30 +1751,321 @@ adminRoute.get("/roles", async (c) => {
     .select({ roleId: rolePermissions.roleId, key: permissions.key })
     .from(rolePermissions)
     .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id));
+  const memberRows = await db
+    .select({ roleId: userRoles.roleId, value: count() })
+    .from(userRoles)
+    .groupBy(userRoles.roleId);
   const keysByRole = new Map<number, string[]>();
   for (const row of grantRows) {
     const keys = keysByRole.get(row.roleId) ?? [];
     keys.push(row.key);
     keysByRole.set(row.roleId, keys);
   }
+  const membersByRole = new Map(memberRows.map((row) => [row.roleId, Number(row.value)] as const));
   return c.json(
     ok(
       roleRows.map((role) => ({
         ...role,
         permissions: (keysByRole.get(role.id) ?? []).sort(),
+        memberCount: membersByRole.get(role.id) ?? 0,
       })),
     ),
   );
 });
 
-/** `GET /api/admin/permissions` — the full permission vocabulary. */
+/** `GET /api/admin/permissions` — the full permission vocabulary, grouped. */
 adminRoute.get("/permissions", async (c) => {
   const rows = await db
-    .select({ key: permissions.key, description: permissions.description })
+    .select({
+      key: permissions.key,
+      description: permissions.description,
+      groupKey: permissions.groupKey,
+    })
     .from(permissions)
-    .orderBy(asc(permissions.key));
+    .orderBy(asc(permissions.groupKey), asc(permissions.key));
   return c.json(ok(rows));
 });
+
+/* ------------------- role editor: custom roles (PROMPT 22) ------------------ */
+
+/**
+ * The permission keys the caller themselves holds, which cap what they may grant.
+ *
+ * `SUPER_ADMIN` is unrestricted. Every other manager may only hand out what they
+ * already hold: without this, anyone who can open the editor could grant a role
+ * `rbac.manage` (or `users.manage`) and then assign it to themselves — a privilege
+ * escalation that would make the permission check decorative.
+ */
+async function assertGrantableKeys(c: Ctx, requested: string[]): Promise<void> {
+  const user = requireUser(c);
+  const access = await resolveAccess(user.id);
+  if (access.roles.has("SUPER_ADMIN")) return;
+  const unheld = requested.filter((key) => !access.permissions.has(key));
+  if (unheld.length > 0) {
+    throw new HttpError(
+      403,
+      "PERMISSION_ESCALATION",
+      `You cannot grant permissions you do not hold: ${unheld.join(", ")}.`,
+    );
+  }
+}
+
+/** Resolve catalogue keys to their rows, refusing any key that is not a permission. */
+async function permissionRowsFor(keys: string[]): Promise<{ id: number; key: string }[]> {
+  if (keys.length === 0) return [];
+  const rows = await db
+    .select({ id: permissions.id, key: permissions.key })
+    .from(permissions)
+    .where(inArray(permissions.key, keys));
+  if (rows.length !== keys.length) {
+    const known = new Set(rows.map((row) => row.key));
+    const unknown = keys.filter((key) => !known.has(key));
+    throw new HttpError(400, "BAD_REQUEST", `Unknown permission(s): ${unknown.join(", ")}.`);
+  }
+  return rows;
+}
+
+const roleNameSchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(32)
+  .regex(/^[A-Za-z][A-Za-z0-9_]*$/, "Use letters, digits and underscores only.");
+
+const roleWriteSchema = z
+  .object({
+    name: roleNameSchema,
+    description: z.string().trim().max(200).optional(),
+    permissions: z.array(z.string().trim().min(1).max(64)).max(64).default([]),
+    /** Recorded in the audit log; mandatory, validated by `withAudit`. */
+    reason: z.string().trim().max(300).optional(),
+  })
+  .strict();
+
+const roleUpdateSchema = z
+  .object({
+    name: roleNameSchema.optional(),
+    description: z.string().trim().max(200).nullable().optional(),
+    permissions: z.array(z.string().trim().min(1).max(64)).max(64).optional(),
+    /** Recorded in the audit log; mandatory, validated by `withAudit`. */
+    reason: z.string().trim().max(300).optional(),
+  })
+  .strict();
+
+/**
+ * `POST /api/admin/roles` — create a custom role.
+ *
+ * Built-in role names are reserved (`ALL_ROLE_NAMES`) so a custom role cannot be
+ * named `ADMIN` and quietly take on the meaning the code already gives that word.
+ */
+adminRoute.post(
+  "/roles",
+  guarded(
+    "admin.action",
+    withAudit(
+      { action: "RBAC_ROLE_CREATED", entityType: "role", requireReason: true },
+      async (c) => {
+        await requireStepUp(c);
+        await requirePermission("rbac.manage")(c, async () => undefined);
+        const input = roleWriteSchema.parse(await c.req.json().catch(() => ({})));
+
+        const name = input.name.toUpperCase();
+        if ((ALL_ROLE_NAMES as readonly string[]).includes(name)) {
+          throw new HttpError(409, "ROLE_RESERVED", `"${name}" is a built-in role name.`);
+        }
+        const [duplicate] = await db
+          .select({ id: roles.id })
+          .from(roles)
+          .where(eq(roles.name, name))
+          .limit(1);
+        if (duplicate) {
+          throw new HttpError(409, "ROLE_EXISTS", "A role with that name already exists.");
+        }
+
+        const keys = [...new Set(input.permissions)].sort();
+        await assertGrantableKeys(c, keys);
+        const permissionRows = await permissionRowsFor(keys);
+
+        const [inserted] = await db
+          .insert(roles)
+          .values({ name, description: input.description ?? null, isSystem: false })
+          .$returningId();
+        const roleId = Number(inserted.id);
+        if (permissionRows.length > 0) {
+          await db
+            .insert(rolePermissions)
+            .values(permissionRows.map((row) => ({ roleId, permissionId: row.id })));
+        }
+        invalidateAllAccess();
+
+        c.json(
+          ok({
+            id: roleId,
+            name,
+            description: input.description ?? null,
+            isSystem: false,
+            permissions: keys,
+            memberCount: 0,
+          }),
+          201,
+        );
+        return {
+          entityId: roleId,
+          details: `Created role ${name} with ${keys.length} permission(s).`,
+          after: { name, permissions: keys },
+        };
+      },
+    ),
+  ),
+);
+
+/**
+ * `PATCH /api/admin/roles/:id` — rename, re-describe or re-grant a custom role.
+ *
+ * Built-in roles are immutable: the seed is their source of truth and editing them
+ * here would be silently reverted on the next sync. A manager cannot edit a role
+ * they themselves hold — that is how someone grants themselves more without a
+ * second pair of eyes.
+ */
+adminRoute.patch(
+  "/roles/:id{[0-9]+}",
+  guarded(
+    "admin.action",
+    withAudit(
+      { action: "RBAC_ROLE_UPDATED", entityType: "role", requireReason: true },
+      async (c) => {
+        const admin = await requireStepUp(c);
+        await requirePermission("rbac.manage")(c, async () => undefined);
+        const roleId = Number(c.req.param("id"));
+        const input = roleUpdateSchema.parse(await c.req.json().catch(() => ({})));
+
+        const [role] = await db
+          .select({ id: roles.id, name: roles.name, isSystem: roles.isSystem })
+          .from(roles)
+          .where(eq(roles.id, roleId))
+          .limit(1);
+        if (!role) throw new HttpError(404, "NOT_FOUND", "Role not found.");
+        if (role.isSystem) {
+          throw new HttpError(409, "SYSTEM_ROLE", "Built-in roles cannot be edited.");
+        }
+        const access = await resolveAccess(admin.id);
+        if (access.roles.has(role.name)) {
+          throw new HttpError(409, "SELF_ROLE_EDIT", "You cannot edit a role you hold.");
+        }
+
+        let nextName = role.name;
+        if (input.name !== undefined) {
+          nextName = input.name.toUpperCase();
+          if ((ALL_ROLE_NAMES as readonly string[]).includes(nextName)) {
+            throw new HttpError(409, "ROLE_RESERVED", `"${nextName}" is a built-in role name.`);
+          }
+          if (nextName !== role.name) {
+            const [duplicate] = await db
+              .select({ id: roles.id })
+              .from(roles)
+              .where(eq(roles.name, nextName))
+              .limit(1);
+            if (duplicate) {
+              throw new HttpError(409, "ROLE_EXISTS", "A role with that name already exists.");
+            }
+          }
+        }
+
+        let keys: string[] | null = null;
+        let permissionRows: { id: number; key: string }[] = [];
+        if (input.permissions !== undefined) {
+          keys = [...new Set(input.permissions)].sort();
+          await assertGrantableKeys(c, keys);
+          permissionRows = await permissionRowsFor(keys);
+        }
+
+        await db.transaction(async (tx) => {
+          await tx
+            .update(roles)
+            .set({
+              name: nextName,
+              description:
+                input.description === undefined ? undefined : input.description ?? null,
+            })
+            .where(eq(roles.id, roleId));
+          if (keys !== null) {
+            await tx.delete(rolePermissions).where(eq(rolePermissions.roleId, roleId));
+            if (permissionRows.length > 0) {
+              await tx
+                .insert(rolePermissions)
+                .values(permissionRows.map((row) => ({ roleId, permissionId: row.id })));
+            }
+          }
+        });
+        invalidateAllAccess();
+
+        c.json(ok({ id: roleId, name: nextName, permissions: keys ?? undefined }));
+        return {
+          entityId: roleId,
+          details: `Updated role ${role.name}${nextName !== role.name ? ` → ${nextName}` : ""}${
+            keys ? ` (${keys.length} permission(s))` : ""
+          }.`,
+          before: { name: role.name },
+          after: { name: nextName, ...(keys ? { permissions: keys } : {}) },
+        };
+      },
+    ),
+  ),
+);
+
+/**
+ * `DELETE /api/admin/roles/:id` — remove a custom role.
+ *
+ * A role that is still assigned is refused: deleting it would revoke access for
+ * whoever holds it without that being the stated intent. The member list has to be
+ * cleared first, deliberately.
+ */
+adminRoute.delete(
+  "/roles/:id{[0-9]+}",
+  guarded(
+    "admin.action",
+    withAudit(
+      { action: "RBAC_ROLE_DELETED", entityType: "role", requireReason: true },
+      async (c) => {
+        await requireStepUp(c);
+        await requirePermission("rbac.manage")(c, async () => undefined);
+        const roleId = Number(c.req.param("id"));
+
+        const [role] = await db
+          .select({ id: roles.id, name: roles.name, isSystem: roles.isSystem })
+          .from(roles)
+          .where(eq(roles.id, roleId))
+          .limit(1);
+        if (!role) throw new HttpError(404, "NOT_FOUND", "Role not found.");
+        if (role.isSystem) {
+          throw new HttpError(409, "SYSTEM_ROLE", "Built-in roles cannot be deleted.");
+        }
+
+        const [member] = await db
+          .select({ userId: userRoles.userId })
+          .from(userRoles)
+          .where(eq(userRoles.roleId, roleId))
+          .limit(1);
+        if (member) {
+          throw new HttpError(
+            409,
+            "ROLE_IN_USE",
+            "Remove this role from every account before deleting it.",
+          );
+        }
+
+        await db.delete(roles).where(eq(roles.id, roleId));
+        invalidateAllAccess();
+        c.json(ok({ deleted: true }));
+        return {
+          entityId: roleId,
+          details: `Deleted role ${role.name}.`,
+          before: { name: role.name },
+        };
+      },
+    ),
+  ),
+);
 
 /** `GET /api/admin/users/:id/roles` — which roles a specific account holds. */
 adminRoute.get("/users/:id{[0-9]+}/roles", async (c) => {
@@ -1169,162 +2080,600 @@ adminRoute.get("/users/:id{[0-9]+}/roles", async (c) => {
 });
 
 const setUserRolesSchema = z
-  .object({ roles: z.array(z.string().trim().min(1).max(32)).max(12) })
+  .object({
+    roles: z.array(z.string().trim().min(1).max(32)).max(12),
+    /** Recorded in the audit log; mandatory, validated by `withAudit`. */
+    reason: z.string().trim().max(300).optional(),
+  })
   .strict();
 
 /**
  * `PUT /api/admin/users/:id/roles` — set an account's system roles.
  *
  * Only a `SUPER_ADMIN` gets here: the route requires `rbac.manage`, which the seed
- * grants to no other role. Two structural rules are enforced on top:
+ * grants to no other role. Three structural rules are enforced on top:
  *
+ * - **No self-edit.** An administrator cannot change their own role set. Editing
+ *   your own grants is how a compromised session turns "read the logs" into
+ *   "become the super admin"; the change has to be made by a second person.
  * - **Last-super-admin protection.** Revoking `SUPER_ADMIN` from the final
  *   non-suspended holder is refused with a 409, because no operation is worth
  *   making the platform unadministerable.
  * - **Step-up.** The change requires a recent second-factor verification on the
  *   caller's session, so a hijacked-session attacker cannot hand themselves `ADMIN`
  *   — that would be privilege escalation standing on another person's stolen cookie.
+ *
+ * The `withAudit` wrapper records the actor, their role, the before/after role sets,
+ * the request provenance and the mandatory reason in one entry.
  */
-adminRoute.put("/users/:id{[0-9]+}/roles", async (c) => {
-  const admin = await requireStepUp(c);
-  await requirePermission("rbac.manage")(c, async () => undefined);
-  const userId = Number(c.req.param("id"));
-  const input = setUserRolesSchema.parse(await c.req.json().catch(() => ({})));
+adminRoute.put(
+  "/users/:id{[0-9]+}/roles",
+  guarded(
+    "admin.action",
+    withAudit(
+      { action: "RBAC_ROLES_SET", entityType: "user", requireReason: true },
+      async (c) => {
+        const admin = await requireStepUp(c);
+        await requirePermission("rbac.manage")(c, async () => undefined);
+        const userId = Number(c.req.param("id"));
+        const input = setUserRolesSchema.parse(await c.req.json().catch(() => ({})));
 
-  const [target] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
-  if (!target) throw new HttpError(404, "NOT_FOUND", "User not found.");
+        if (userId === admin.id) {
+          throw new HttpError(409, "SELF_ROLE_CHANGE", "You cannot change your own roles.");
+        }
 
-  const requestedNames = [...new Set(input.roles)];
-  const roleRows = await db
-    .select({ id: roles.id, name: roles.name })
-    .from(roles)
-    .where(inArray(roles.name, requestedNames));
-  if (roleRows.length !== requestedNames.length) {
-    throw new HttpError(400, "BAD_REQUEST", "One or more role names are not recognised.");
-  }
-  const requestedIds = new Map(roleRows.map((role) => [role.name, role.id] as const));
+        const [target] = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
+        if (!target) throw new HttpError(404, "NOT_FOUND", "User not found.");
 
-  const existing = await db
-    .select({ roleId: userRoles.roleId, name: roles.name })
-    .from(userRoles)
-    .innerJoin(roles, eq(userRoles.roleId, roles.id))
-    .where(eq(userRoles.userId, userId));
-  const existingByName = new Map(existing.map((row) => [row.name, row.roleId] as const));
+        const requestedNames = [...new Set(input.roles)];
+        const roleRows = await db
+          .select({ id: roles.id, name: roles.name })
+          .from(roles)
+          .where(inArray(roles.name, requestedNames));
+        if (roleRows.length !== requestedNames.length) {
+          throw new HttpError(400, "BAD_REQUEST", "One or more role names are not recognised.");
+        }
+        const requestedIds = new Map(roleRows.map((role) => [role.name, role.id] as const));
 
-  if (
-    existingByName.has("SUPER_ADMIN") &&
-    !requestedIds.has("SUPER_ADMIN") &&
-    (await isLastActiveSuperAdmin(userId))
-  ) {
-    throw new HttpError(409, "LAST_SUPER_ADMIN", "You cannot revoke the last super administrator.");
-  }
+        const existing = await db
+          .select({ roleId: userRoles.roleId, name: roles.name })
+          .from(userRoles)
+          .innerJoin(roles, eq(userRoles.roleId, roles.id))
+          .where(eq(userRoles.userId, userId));
+        const existingByName = new Map(existing.map((row) => [row.name, row.roleId] as const));
 
-  await db.transaction(async (tx) => {
-    for (const [roleName, roleId] of requestedIds) {
-      if (!existingByName.has(roleName)) {
-        await tx.insert(userRoles).values({ userId, roleId, grantedBy: admin.id });
-      }
-    }
-    for (const [roleName, roleId] of existingByName) {
-      if (!requestedIds.has(roleName)) {
-        await tx.delete(userRoles).where(
-          and(eq(userRoles.userId, userId), eq(userRoles.roleId, roleId)),
-        );
-      }
-    }
-  });
+        if (
+          existingByName.has("SUPER_ADMIN") &&
+          !requestedIds.has("SUPER_ADMIN") &&
+          (await isLastActiveSuperAdmin(userId))
+        ) {
+          throw new HttpError(
+            409,
+            "LAST_SUPER_ADMIN",
+            "You cannot revoke the last super administrator.",
+          );
+        }
 
-  // The next request this user makes must see the new grants.
-  invalidateAccess(userId);
+        await db.transaction(async (tx) => {
+          for (const [roleName, roleId] of requestedIds) {
+            if (!existingByName.has(roleName)) {
+              await tx.insert(userRoles).values({ userId, roleId, grantedBy: admin.id });
+            }
+          }
+          for (const [roleName, roleId] of existingByName) {
+            if (!requestedIds.has(roleName)) {
+              await tx
+                .delete(userRoles)
+                .where(and(eq(userRoles.userId, userId), eq(userRoles.roleId, roleId)));
+            }
+          }
+        });
 
-  const added = [...requestedIds.keys()].filter((name) => !existingByName.has(name));
-  const removed = [...existingByName.keys()].filter((name) => !requestedIds.has(name));
-  const granted = requestedNames.join(", ") || "none";
-  await recordAudit(
-    c,
-    "RBAC_ROLES_SET",
-    "user",
-    userId,
-    `Roles → ${granted}${added.length ? ` (+${added.join(",")})` : ""}${removed.length ? ` (-${removed.join(",")})` : ""}.`,
-  );
-  const ip = requestIp(c);
-  const userAgent = requestUserAgent(c);
-  if (added.length) {
-    await recordSecurityEvent({
-      userId,
-      type: "ROLE_GRANTED",
-      ip,
-      userAgent,
-      details: { roles: added, by: admin.id },
-    });
-  }
-  if (removed.length) {
-    await recordSecurityEvent({
-      userId,
-      type: "ROLE_REVOKED",
-      ip,
-      userAgent,
-      details: { roles: removed, by: admin.id },
-    });
-  }
+        // The next request this user makes must see the new grants.
+        invalidateAccess(userId);
 
-  return c.json(ok({ roles: requestedNames }));
-});
+        const added = [...requestedIds.keys()].filter((name) => !existingByName.has(name));
+        const removed = [...existingByName.keys()].filter((name) => !requestedIds.has(name));
+        const ip = requestIp(c);
+        const userAgent = requestUserAgent(c);
+        if (added.length) {
+          await recordSecurityEvent({
+            userId,
+            type: "ROLE_GRANTED",
+            ip,
+            userAgent,
+            details: { roles: added, by: admin.id },
+          });
+        }
+        if (removed.length) {
+          await recordSecurityEvent({
+            userId,
+            type: "ROLE_REVOKED",
+            ip,
+            userAgent,
+            details: { roles: removed, by: admin.id },
+          });
+        }
 
-const setUserStatusSchema = z.object({ status: z.enum(["ACTIVE", "SUSPENDED"]) }).strict();
+        c.json(ok({ roles: requestedNames }));
+        return {
+          entityId: userId,
+          details: `Roles → ${requestedNames.join(", ") || "none"}${
+            added.length ? ` (+${added.join(",")})` : ""
+          }${removed.length ? ` (-${removed.join(",")})` : ""}.`,
+          before: { roles: [...existingByName.keys()].sort() },
+          after: { roles: requestedNames },
+        };
+      },
+    ),
+  ),
+);
+
+const setUserStatusSchema = z
+  .object({
+    status: z.enum(["ACTIVE", "SUSPENDED"]),
+    /** Recorded in the audit log; mandatory, validated by `withAudit`. */
+    reason: z.string().trim().max(300).optional(),
+  })
+  .strict();
 
 /**
  * `PATCH /api/admin/users/:id/status` — suspend or restore an account.
  *
  * Suspension is the dangerous direction: the account's sessions die immediately
  * (`suspendUser` deletes them) and the login path refuses the account's password
- * until it is restored. The two structural rules are `users.manage` permission and
- * step-up, plus the same last-super-admin protection as role changes.
+ * until it is restored. The structural rules are `users.manage` permission,
+ * step-up, no self-suspension, and the same last-super-admin protection as role
+ * changes. The `withAudit` wrapper records the reason and the before/after state.
  */
-adminRoute.patch("/users/:id{[0-9]+}/status", async (c) => {
-  const admin = await requireStepUp(c);
-  await requirePermission("users.manage")(c, async () => undefined);
-  const userId = Number(c.req.param("id"));
-  const input = setUserStatusSchema.parse(await c.req.json().catch(() => ({})));
+adminRoute.patch(
+  "/users/:id{[0-9]+}/status",
+  guarded(
+    "admin.action",
+    withAudit(
+      { action: "USER_STATUS_CHANGED", entityType: "user", requireReason: true },
+      async (c) => {
+        const admin = await requireStepUp(c);
+        await requirePermission("users.manage")(c, async () => undefined);
+        const userId = Number(c.req.param("id"));
+        const input = setUserStatusSchema.parse(await c.req.json().catch(() => ({})));
 
-  const [target] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
-  if (!target) throw new HttpError(404, "NOT_FOUND", "User not found.");
+        if (userId === admin.id) {
+          throw new HttpError(
+            409,
+            "SELF_STATUS_CHANGE",
+            "You cannot change your own account status.",
+          );
+        }
 
-  if (input.status === "SUSPENDED") {
-    const targetAccess = await resolveAccess(userId);
-    if (targetAccess.roles.has("SUPER_ADMIN") && (await isLastActiveSuperAdmin(userId))) {
-      throw new HttpError(409, "LAST_SUPER_ADMIN", "You cannot suspend the last super administrator.");
-    }
-    const revokedSessions = await suspendUser(userId);
-    invalidateAccess(userId);
-    await recordAudit(c, "USER_STATUS_CHANGED", "user", userId, "Suspended the account.");
-    await recordSecurityEvent({
-      userId,
-      type: "ACCOUNT_SUSPENDED",
-      ip: requestIp(c),
-      userAgent: requestUserAgent(c),
-      details: { by: admin.id, revokedSessions },
-    });
-    return c.json(ok({ status: "SUSPENDED", revokedSessions }));
-  }
+        const [target] = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
+        if (!target) throw new HttpError(404, "NOT_FOUND", "User not found.");
 
-  await restoreUser(userId);
-  invalidateAccess(userId);
-  await recordAudit(c, "USER_STATUS_CHANGED", "user", userId, "Restored the account.");
-  await recordSecurityEvent({
-    userId,
-    type: "ACCOUNT_UNSUSPENDED",
-    ip: requestIp(c),
-    userAgent: requestUserAgent(c),
-    details: { by: admin.id },
-  });
-  return c.json(ok({ status: "ACTIVE" }));
+        if (input.status === "SUSPENDED") {
+          const targetAccess = await resolveAccess(userId);
+          if (targetAccess.roles.has("SUPER_ADMIN") && (await isLastActiveSuperAdmin(userId))) {
+            throw new HttpError(
+              409,
+              "LAST_SUPER_ADMIN",
+              "You cannot suspend the last super administrator.",
+            );
+          }
+          const revokedSessions = await suspendUser(userId);
+          invalidateAccess(userId);
+          await recordSecurityEvent({
+            userId,
+            type: "ACCOUNT_SUSPENDED",
+            ip: requestIp(c),
+            userAgent: requestUserAgent(c),
+            details: { by: admin.id, revokedSessions },
+          });
+          c.json(ok({ status: "SUSPENDED", revokedSessions }));
+          return {
+            entityId: userId,
+            details: "Suspended the account.",
+            before: { status: "ACTIVE" },
+            after: { status: "SUSPENDED", revokedSessions },
+          };
+        }
+
+        await restoreUser(userId);
+        invalidateAccess(userId);
+        await recordSecurityEvent({
+          userId,
+          type: "ACCOUNT_UNSUSPENDED",
+          ip: requestIp(c),
+          userAgent: requestUserAgent(c),
+          details: { by: admin.id },
+        });
+        c.json(ok({ status: "ACTIVE" }));
+        return {
+          entityId: userId,
+          details: "Restored the account.",
+          before: { status: "SUSPENDED" },
+          after: { status: "ACTIVE" },
+        };
+      },
+    ),
+  ),
+);
+
+/* ----------------- categories: create / edit / delete / reorder ------------- */
+
+/**
+ * `POST /api/admin/categories` — add a category.
+ *
+ * Audit-only mutation, so no `requireReason`: naming a category is routine. The
+ * rename/merge cases — the ones with real blast radius — are the update and delete
+ * handlers below.
+ */
+adminRoute.post(
+  "/categories",
+  guarded(
+    "admin.action",
+    withAudit({ action: "CATEGORY_CREATED", entityType: "category" }, async (c) => {
+      await requirePermission("categories.manage")(c, async () => undefined);
+      const input = categoryWriteSchema.parse(await c.req.json().catch(() => ({})));
+      const created = await createCategory(input);
+
+      c.json(ok(created), 201);
+      return {
+        entityId: created.id,
+        details: `Created category "${created.name}".`,
+        after: { name: created.name, slug: created.slug, parentId: created.parentId },
+      };
+    }),
+  ),
+);
+
+adminRoute.patch(
+  "/categories/reorder",
+  guarded(
+    "admin.action",
+    withAudit({ action: "CATEGORY_REORDERED", entityType: "category" }, async (c) => {
+      await requirePermission("categories.manage")(c, async () => undefined);
+      const input = categoryReorderSchema.parse(await c.req.json().catch(() => ({})));
+      const result = await reorderCategories(input.ids);
+
+      c.json(ok(result));
+      return {
+        details: `Reordered ${result.updated} categor${result.updated === 1 ? "y" : "ies"}.`,
+        after: { ids: input.ids },
+      };
+    }),
+  ),
+);
+
+adminRoute.patch(
+  "/categories/:id{[0-9]+}",
+  guarded(
+    "admin.action",
+    withAudit({ action: "CATEGORY_UPDATED", entityType: "category" }, async (c) => {
+      await requirePermission("categories.manage")(c, async () => undefined);
+      const id = Number(c.req.param("id"));
+      const patch = categoryUpdateSchema.parse(await c.req.json().catch(() => ({})));
+      const result = await updateCategory(id, patch);
+
+      c.json(ok({ id: result.id, updated: true }));
+      return {
+        entityId: id,
+        details: "Updated the category.",
+        before: result.before,
+        after: result.after,
+      };
+    }),
+  ),
+);
+
+/**
+ * `DELETE /api/admin/categories/:id` — remove a category, moving its listings.
+ *
+ * The reassignment is the whole point: `products.category_id` is FK-restrict, so a
+ * bare delete fails, and the handler would rather answer "which category should
+ * these move to?" than leak a foreign-key error. See `deleteCategory`.
+ */
+adminRoute.delete(
+  "/categories/:id{[0-9]+}",
+  guarded(
+    "admin.action",
+    withAudit(
+      { action: "CATEGORY_DELETED", entityType: "category", requireReason: true },
+      async (c) => {
+        await requirePermission("categories.manage")(c, async () => undefined);
+        const id = Number(c.req.param("id"));
+        const input = categoryDeleteSchema.parse(await c.req.json().catch(() => ({})));
+        const result = await deleteCategory(id, input.reassignToId);
+
+        c.json(ok(result));
+        return {
+          entityId: id,
+          details: `Deleted category "${result.name}" and moved ${result.reassigned} listing(s).`,
+          before: { name: result.name },
+          after: { reassignToId: result.reassignToId },
+        };
+      },
+    ),
+  ),
+);
+
+/* --------------------------------- CMS: catalogue --------------------------- */
+
+/**
+ * `GET /api/admin/cms/catalogue` — the vocabularies the content editor renders.
+ *
+ * Placements, statuses and the known block keys travel from the server so the form
+ * cannot offer a placement the API would reject, and a new block key becomes
+ * editable by adding it to `BLOCK_DEFINITIONS` alone.
+ */
+adminRoute.get("/cms/catalogue", async (c) => {
+  return c.json(
+    ok({
+      placements: BANNER_PLACEMENTS,
+      bannerStatuses: BANNER_STATUSES,
+      blockStatuses: BLOCK_STATUSES,
+      blocks: blockCatalogue(),
+    }),
+  );
 });
+
+/* --------------------------------- CMS: banners ----------------------------- */
+
+adminRoute.get("/cms/banners", async (c) => {
+  return c.json(ok(await listAdminBanners()));
+});
+
+adminRoute.post(
+  "/cms/banners",
+  guarded(
+    "admin.action",
+    withAudit({ action: "CMS_BANNER_CREATED", entityType: "cms_banner" }, async (c) => {
+      await requirePermission("content.manage")(c, async () => undefined);
+      const input = bannerInputSchema.parse(await c.req.json().catch(() => ({})));
+      const result = await createBanner(input, (await requireUser(c)).id);
+
+      c.json(ok({ id: result.id }), 201);
+      return {
+        entityId: result.id,
+        details: `Created a ${input.placement} banner "${input.title}".`,
+        after: result.after,
+      };
+    }),
+  ),
+);
+
+/**
+ * `PATCH /api/admin/cms/banners/reorder` — the order a placement renders in.
+ *
+ * Declared before the `:id` route so the literal is never read as an id (the digit
+ * constraint already makes that impossible, but keeping the literal first reads
+ * better and costs nothing).
+ */
+adminRoute.patch(
+  "/cms/banners/reorder",
+  guarded(
+    "admin.action",
+    withAudit({ action: "CMS_BANNERS_REORDERED", entityType: "cms_banner" }, async (c) => {
+      await requirePermission("content.manage")(c, async () => undefined);
+      const input = bannerReorderSchema.parse(await c.req.json().catch(() => ({})));
+      const result = await reorderBanners(input.placement, input.ids);
+
+      c.json(ok(result));
+      return {
+        details: `Reordered ${result.updated} ${input.placement} banner(s).`,
+        after: { placement: input.placement, ids: input.ids },
+      };
+    }),
+  ),
+);
+
+adminRoute.patch(
+  "/cms/banners/:id{[0-9]+}",
+  guarded(
+    "admin.action",
+    withAudit({ action: "CMS_BANNER_UPDATED", entityType: "cms_banner" }, async (c) => {
+      await requirePermission("content.manage")(c, async () => undefined);
+      const id = Number(c.req.param("id"));
+      const patch = bannerUpdateSchema.parse(await c.req.json().catch(() => ({})));
+      const result = await updateBanner(id, patch);
+
+      c.json(ok({ id: result.id }));
+      return {
+        entityId: id,
+        details: "Updated the banner.",
+        before: result.before,
+        after: result.after,
+      };
+    }),
+  ),
+);
+
+adminRoute.delete(
+  "/cms/banners/:id{[0-9]+}",
+  guarded(
+    "admin.action",
+    withAudit(
+      { action: "CMS_BANNER_DELETED", entityType: "cms_banner", requireReason: true },
+      async (c) => {
+        await requirePermission("content.manage")(c, async () => undefined);
+        const id = Number(c.req.param("id"));
+        const result = await deleteBanner(id);
+
+        c.json(ok({ id, deleted: true }));
+        return { entityId: id, details: "Deleted the banner.", before: result.before };
+      },
+    ),
+  ),
+);
+
+/* --------------------------------- CMS: blocks ------------------------------ */
+
+adminRoute.get("/cms/blocks", async (c) => {
+  return c.json(ok(await listAdminBlocks()));
+});
+
+adminRoute.get("/cms/blocks/:key", async (c) => {
+  const block = await getAdminBlock(c.req.param("key"));
+  if (!block) throw new HttpError(404, "NOT_FOUND", "Block not found.");
+  return c.json(ok(block));
+});
+
+/**
+ * `PUT /api/admin/cms/blocks/:key` — save a block.
+ *
+ * Upsert, because a known key (`home.how_it_works`) may not have a row yet and the
+ * editor should not have to distinguish "create" from "edit". Saving keeps the
+ * stored status unless the body names one, so the editor's Save is never an
+ * accidental publish — publishing is the explicit route below.
+ */
+adminRoute.put(
+  "/cms/blocks/:key",
+  guarded(
+    "admin.action",
+    withAudit({ action: "CMS_BLOCK_SAVED", entityType: "cms_block" }, async (c) => {
+      await requirePermission("content.manage")(c, async () => undefined);
+      const key = c.req.param("key");
+      const input = blockWriteSchema.parse(await c.req.json().catch(() => ({})));
+      const result = await upsertBlock(key, input, (await requireUser(c)).id);
+
+      c.json(ok({ id: result.id, blockKey: result.blockKey, status: result.after.status }));
+      return {
+        entityId: result.id,
+        details: `${result.action === "created" ? "Created" : "Saved"} block "${key}".`,
+        before: result.before,
+        after: result.after,
+      };
+    }),
+  ),
+);
+
+adminRoute.patch(
+  "/cms/blocks/:key/status",
+  guarded(
+    "admin.action",
+    withAudit({ action: "CMS_BLOCK_STATUS_SET", entityType: "cms_block" }, async (c) => {
+      await requirePermission("content.manage")(c, async () => undefined);
+      const key = c.req.param("key");
+      const input = z
+        .object({ status: z.enum(BLOCK_STATUSES) })
+        .parse(await c.req.json().catch(() => ({})));
+      const result = await setBlockStatus(key, input.status);
+
+      c.json(ok({ blockKey: key, status: input.status }));
+      return {
+        entityId: result.id,
+        details: `Set block "${key}" to ${input.status}.`,
+        before: result.before,
+        after: result.after,
+      };
+    }),
+  ),
+);
+
+adminRoute.delete(
+  "/cms/blocks/:key",
+  guarded(
+    "admin.action",
+    withAudit(
+      { action: "CMS_BLOCK_DELETED", entityType: "cms_block", requireReason: true },
+      async (c) => {
+        await requirePermission("content.manage")(c, async () => undefined);
+        const key = c.req.param("key");
+        const result = await deleteBlock(key);
+
+        c.json(ok({ blockKey: key, deleted: true }));
+        return { details: `Deleted block "${key}".`, before: result.before };
+      },
+    ),
+  ),
+);
+
+/**
+ * `GET /api/admin/cms/versions/:entityType/:id` — a block's or banner's history.
+ *
+ * Served from the audit trail (see `listCmsVersions`), so the editor's history tab
+ * shows exactly what the audit log already records — no second copy to drift.
+ */
+adminRoute.get("/cms/versions/:entityType/:id{[0-9]+}", async (c) => {
+  const entityType = z
+    .enum(["cms_block", "cms_banner"])
+    .parse(c.req.param("entityType"));
+  const id = Number(c.req.param("id"));
+  const limitRaw = Number(c.req.query("limit") ?? 20);
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 50) : 20;
+  return c.json(ok(await listCmsVersions(entityType, id, limit)));
+});
+
+/* ---------------------- product relations + bulk catalogue ------------------ */
+
+/**
+ * `GET /api/admin/products/:id/relations` — what touches this listing.
+ *
+ * Orders, rentals, reviews and reports in one request, so the detail drawer can
+ * show "this is the listing with a dispute and two bad reviews" without four round
+ * trips. Reads are capped; the full reports/moderation surfaces carry the rest.
+ */
+adminRoute.get("/products/:id{[0-9]+}/relations", async (c) => {
+  const id = Number(c.req.param("id"));
+  const [product] = await db
+    .select({ id: products.id })
+    .from(products)
+    .where(eq(products.id, id))
+    .limit(1);
+  if (!product) throw new HttpError(404, "NOT_FOUND", "Product not found.");
+  return c.json(ok(await listAdminProductRelations(id)));
+});
+
+adminRoute.patch(
+  "/products/bulk-category",
+  guarded(
+    "admin.action",
+    withAudit({ action: "PRODUCTS_CATEGORY_MOVED", entityType: "product" }, async (c) => {
+      await requirePermission("products.moderate")(c, async () => undefined);
+      const input = bulkCategorySchema.parse(await c.req.json().catch(() => ({})));
+      const result = await bulkMoveAdminProductCategory(input.ids, input.categoryId);
+
+      c.json(ok(result));
+      return {
+        details: `Moved ${result.updated} listing(s) to category ${result.categoryId}.`,
+        after: { ids: input.ids, categoryId: input.categoryId },
+      };
+    }),
+  ),
+);
+
+/**
+ * `PATCH /api/admin/products/bulk-delete` — remove many listings at once.
+ *
+ * A `PATCH` with an explicit `ids` body rather than `DELETE /products` with a body:
+ * the shared `DELETE /products` prefix already means archive, and keeping bulk
+ * delete as a named action makes the intent (and the audit entry) unambiguous.
+ */
+adminRoute.patch(
+  "/products/bulk-delete",
+  guarded(
+    "admin.action",
+    withAudit(
+      { action: "PRODUCTS_DELETED", entityType: "product", requireReason: true },
+      async (c) => {
+        await requirePermission("products.moderate")(c, async () => undefined);
+        const input = z
+          .object({ ids: z.array(z.number().int().positive()).min(1).max(200) })
+          .parse(await c.req.json().catch(() => ({})));
+        const result = await bulkDeleteAdminProducts(input.ids);
+
+        c.json(ok(result));
+        return {
+          details: `Deleted ${result.deleted}, archived ${result.archived}.`,
+          after: { ids: input.ids, deleted: result.deleted, archived: result.archived },
+        };
+      },
+    ),
+  ),
+);

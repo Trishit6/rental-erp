@@ -4,7 +4,11 @@ import { db } from "../db";
 import { orderItems, orders, products, users } from "../schema";
 import { HttpError } from "./api";
 import { toFulfillmentAddress } from "./address-snapshot";
-import { effectiveFulfillment } from "./order-fulfillment";
+import {
+  effectiveFulfillment,
+  allowedTransitions,
+  type SellerFulfillmentState,
+} from "./order-fulfillment";
 
 /**
  * Seller-side order queries.
@@ -482,7 +486,10 @@ export async function getSellerOrder(
     },
     timeline: buildSellerOrderTimeline(orderRow.status, lines),
     actions: {
-      next: [],
+      next: nextFulfillmentStates(
+        orderRow.status,
+        lines.map((line) => line.fulfillmentStatus),
+      ),
       canCancel: ["CONFIRMED", "PROCESSING", "READY_FOR_PICKUP"].includes(
         rollupStatus(
           orderRow.status,
@@ -521,6 +528,29 @@ function rollupStatus(orderStatus: string, lineStatuses: (string | null)[]): str
     const b = RANK_BY_STATUS[status] ?? 8;
     return b < a ? status : least;
   });
+}
+
+/**
+ * The fulfilment steps the seller may apply to *the whole order at once*.
+ *
+ * The endpoint applies one target to every line and validates each one, so a step
+ * is offerable only when **all** of the seller's lines may take it — the
+ * intersection of their allowed transitions. A line already delivered offers
+ * nothing further, and the order as a whole then offers a step only if every other
+ * line can take it too, which is exactly what the bulk write will require.
+ */
+export function nextFulfillmentStates(
+  orderStatus: string,
+  lineStatuses: (string | null)[],
+): string[] {
+  if (lineStatuses.length === 0) return [];
+  let intersection: SellerFulfillmentState[] | null = null;
+  for (const status of lineStatuses) {
+    const { next } = allowedTransitions(orderStatus, status);
+    intersection =
+      intersection === null ? [...next] : intersection.filter((step) => next.includes(step));
+  }
+  return intersection ?? [];
 }
 
 /**

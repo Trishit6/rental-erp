@@ -21,6 +21,7 @@ const CRUMB_LABELS: Record<string, string> = {
   "": "Dashboard",
   products: "Products",
   categories: "Categories",
+  content: "Content",
   "product-images": "Product images",
   orders: "Orders",
   purchases: "Purchases",
@@ -37,6 +38,7 @@ const CRUMB_LABELS: Record<string, string> = {
   notifications: "Notifications",
   settings: "Settings",
   "audit-logs": "Audit logs",
+  roles: "Roles & permissions",
 };
 
 /** One step of the trail. `to` is absent on the current (last) crumb. */

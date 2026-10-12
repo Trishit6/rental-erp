@@ -101,7 +101,7 @@ export type ErrorHandler = (error: unknown, c: Ctx) => unknown;
 
 /* ---------------------------------- cookies --------------------------------- */
 
-function parseCookies(header: string | undefined): Record<string, string> {
+export function parseCookies(header: string | undefined): Record<string, string> {
   const jar: Record<string, string> = {};
   if (!header) return jar;
   for (const part of header.split(";")) {
@@ -119,7 +119,7 @@ function parseCookies(header: string | undefined): Record<string, string> {
   return jar;
 }
 
-function serializeCookie(name: string, value: string, options: CookieOptions = {}): string {
+export function serializeCookie(name: string, value: string, options: CookieOptions = {}): string {
   const parts = [`${name}=${encodeURIComponent(value)}`];
   parts.push(`Path=${options.path ?? "/"}`);
   if (options.maxAge !== undefined) parts.push(`Max-Age=${Math.floor(options.maxAge)}`);
@@ -136,11 +136,27 @@ export function getCookie(c: Ctx, name: string): string | undefined {
 }
 
 export function setCookie(c: Ctx, name: string, value: string, options?: CookieOptions): void {
-  const existing = c.res.getHeader("Set-Cookie");
+  appendSetCookie(c.res, name, value, options);
+}
+
+/**
+ * Appends a `Set-Cookie` to a raw response, accumulating rather than replacing.
+ *
+ * The CSRF middleware runs as ordinary Express `app.use` middleware — it has no
+ * `Ctx` — and it must not clobber an auth cookie another layer is about to write,
+ * so the same accumulate-and-append rule applies here as on `setCookie`.
+ */
+export function appendSetCookie(
+  res: Response,
+  name: string,
+  value: string,
+  options?: CookieOptions,
+): void {
+  const existing = res.getHeader("Set-Cookie");
   const cookie = serializeCookie(name, value, options);
-  if (Array.isArray(existing)) c.res.setHeader("Set-Cookie", [...existing, cookie]);
-  else if (typeof existing === "string") c.res.setHeader("Set-Cookie", [existing, cookie]);
-  else c.res.setHeader("Set-Cookie", cookie);
+  if (Array.isArray(existing)) res.setHeader("Set-Cookie", [...existing, cookie]);
+  else if (typeof existing === "string") res.setHeader("Set-Cookie", [existing, cookie]);
+  else res.setHeader("Set-Cookie", cookie);
 }
 
 /**
@@ -359,7 +375,7 @@ const prefixCache = new Map<string, RegExp>();
  * Prefix parameters are matched but not captured: no caller reads them, and
  * non-capturing groups keep the shape honest about that.
  */
-function compilePrefix(path: string): RegExp {
+export function compilePrefix(path: string): RegExp {
   const cached = prefixCache.get(path);
   if (cached) return cached;
 

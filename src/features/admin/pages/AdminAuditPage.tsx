@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ScrollText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Pagination } from "@/components/shared/pagination";
 import { AdminPageHeader } from "../components/AdminLayout";
 import {
@@ -25,12 +26,13 @@ import { EMPTY_ADMIN_AUDIT_FILTERS } from "../api";
  * cannot be edited even by the administrator reading it. That is the point: a moderation
  * trail whose entries can be corrected afterwards records intentions, not events.
  *
- * ## Reading it as prose rather than JSON
+ * ## Why the row carries provenance, not just a sentence
  *
- * `details` is free text written by the handler at the moment of the change ("Set the
- * order to SHIPPED"). It is shown as written, wrapped, rather than pretty-printed — an
- * administrator reading this wants to know what happened, and a JSON blob is a thing to
- * decode rather than a thing to read.
+ * A "details" column alone answers *what* changed; it does not answer *who, from where,
+ * on whose session, and why* — the four questions an incident review actually asks. The
+ * enriched entry (PROMPT 22) fills them: actor role, mandatory reason, IP, user agent and
+ * the request id that ties the row back to the server logs. The reason and before/after
+ * snapshot are surfaced in the detail cell while the raw correlation id stays compact.
  */
 
 const ENTITY_OPTIONS = [
@@ -40,12 +42,19 @@ const ENTITY_OPTIONS = [
   { value: "rental", label: "Rentals" },
   { value: "user", label: "Users" },
   { value: "seller", label: "Sellers" },
+  { value: "role", label: "Roles" },
   { value: "review", label: "Reviews" },
   { value: "category", label: "Categories" },
   { value: "image", label: "Images" },
   { value: "payout", label: "Payouts" },
   { value: "report", label: "Reports" },
+  { value: "ticket", label: "Tickets" },
 ];
+
+/** Humanise an action name: `RBAC_ROLES_SET` → `rbac roles set`. */
+function humanizeAction(action: string): string {
+  return action.replace(/_/g, " ").toLowerCase();
+}
 
 export function AdminAuditPage() {
   const [filters, setFilters] = useState(EMPTY_ADMIN_AUDIT_FILTERS);
@@ -55,20 +64,24 @@ export function AdminAuditPage() {
     setFilters((current) => ({ ...current, ...patch, page: 1 }));
 
   const rows = audit.data?.rows ?? [];
-  const hasFilters = filters.action !== "" || filters.entityType !== null;
+  const hasFilters =
+    filters.search !== "" ||
+    filters.entityType !== null ||
+    filters.from !== "" ||
+    filters.to !== "";
 
   return (
     <div className="space-y-5 pb-10">
       <AdminPageHeader
         eyebrow="System"
         title="Audit log"
-        description="Every moderation action, with who did it and when. Entries are written by the action itself and cannot be edited."
+        description="Every administrative action, with who did it, as what role, from where and why. Entries are written by the action itself and cannot be edited."
       />
 
       <AdminTableScaffold
         icon={ScrollText}
-        search={filters.action}
-        onSearch={(action) => update({ action })}
+        search={filters.search}
+        onSearch={(search) => update({ search })}
         isSearching={audit.isFetching && !audit.isLoading}
         hasFilters={hasFilters}
         onClearFilters={() => setFilters({ ...EMPTY_ADMIN_AUDIT_FILTERS })}
@@ -81,6 +94,28 @@ export function AdminAuditPage() {
             options: ENTITY_OPTIONS,
           },
         ]}
+        extraFilters={
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              From
+              <Input
+                type="date"
+                value={filters.from}
+                onChange={(event) => update({ from: event.target.value })}
+                className="h-9 w-auto"
+              />
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              To
+              <Input
+                type="date"
+                value={filters.to}
+                onChange={(event) => update({ to: event.target.value })}
+                className="h-9 w-auto"
+              />
+            </label>
+          </div>
+        }
         count={audit.data?.total ?? 0}
         shownCount={rows.length}
         isLoading={audit.isLoading && !audit.data}
@@ -89,7 +124,7 @@ export function AdminAuditPage() {
         emptyTitle={hasFilters ? "No entries match" : "No activity yet"}
         emptyDescription={
           hasFilters
-            ? "Nothing matches these filters. Try a different action or record type."
+            ? "Nothing matches these filters. Try a different term, record type or date range."
             : "Administrative actions are recorded here as they happen."
         }
         pager={
@@ -101,13 +136,15 @@ export function AdminAuditPage() {
         }
       >
         <AdminTable>
-          <AdminTableHead labels={["Action", "Record", "Administrator", "Detail", "When"]} />
+          <AdminTableHead
+            labels={["Action", "Record", "Administrator", "Reason & detail", "Source", "When"]}
+          />
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.id}>
                 <TableCell>
                   <Badge className="whitespace-nowrap bg-primary/12 text-primary">
-                    {row.action.replace(/_/g, " ").toLowerCase()}
+                    {humanizeAction(row.action)}
                   </Badge>
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-sm">
@@ -116,9 +153,27 @@ export function AdminAuditPage() {
                     <span className="font-semibold"> #{row.entityId}</span>
                   ) : null}
                 </TableCell>
-                <TableCell className="whitespace-nowrap">{row.adminName}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <span className="block">{row.adminName}</span>
+                  {row.actorRole ? (
+                    <span className="block text-xs text-muted-foreground">{row.actorRole}</span>
+                  ) : null}
+                </TableCell>
                 <TableCell className="max-w-xl text-xs text-muted-foreground">
-                  {row.details ?? "—"}
+                  {row.reason ? (
+                    <span className="mb-0.5 block font-semibold text-foreground">
+                      “{row.reason}”
+                    </span>
+                  ) : null}
+                  {row.details ?? (row.reason ? null : "—")}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                  <span className="block">{row.ip ?? "—"}</span>
+                  {row.requestId ? (
+                    <span className="block font-mono text-[10px]" title={row.requestId}>
+                      {row.requestId.slice(0, 8)}…
+                    </span>
+                  ) : null}
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                   {formatAdminDateTime(row.createdAt)}

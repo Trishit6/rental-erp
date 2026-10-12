@@ -50,6 +50,7 @@ const REQUIRED_TABLES = [
   "notifications",
   "notification_preferences",
   "reports",
+  "user_blocks",
   "admin_audit_log",
   // foundation tables from this feature
   "order_events",
@@ -83,6 +84,8 @@ const REQUIRED_TABLES = [
   "feature_flags",
   "app_config",
   "export_jobs",
+  // PROMPT 4 — durable rate-limit counters.
+  "rate_limit_counters",
 ];
 
 function fail(message: string): never {

@@ -41,6 +41,9 @@ export const TRUNCATED_TABLES = [
   "refunds",
   // Before `orders` and `users`.
   "disputes",
+  // Before `users`. A surviving block would silently keep two accounts that the
+  // next seed never related from being able to message each other.
+  "user_blocks",
   // Before `users` and `roles`. A surviving grant would hand the next run's
   // administrator a role no row describes.
   "user_roles",
@@ -140,6 +143,10 @@ export const TRUNCATED_TABLES = [
   "seller_profiles",
   "addresses",
   "sessions",
+  // Operational state, not an entity: truncating resets every budget, which is
+  // exactly what a reseed wants — a stale counter from a previous run must not
+  // rate-limit the first requests against the freshly seeded data.
+  "rate_limit_counters",
   "categories",
   "users",
 ] as const;

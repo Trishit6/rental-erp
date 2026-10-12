@@ -1,6 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { useCategoryDirectory } from "@/lib/categories";
-import { getFeaturedProducts, getPreLovedProducts, getRentalProducts, getStats } from "./api";
+import { queryKeys } from "@/lib/query/keys";
+import {
+  getFeaturedProducts,
+  getPreLovedProducts,
+  getPublicBanners,
+  getPublicBlocks,
+  getRentalProducts,
+  getStats,
+} from "./api";
 
 /** Stable home-scoped query keys (public data — long cache, survives navigation). */
 export const homeKeys = {
@@ -42,6 +50,36 @@ export function usePreLovedProducts() {
   return useQuery({
     queryKey: homeKeys.preLovedProducts(),
     queryFn: getPreLovedProducts,
+    staleTime: PUBLIC_STALE_TIME,
+  });
+}
+
+/* ---------------------------- public CMS content ---------------------------- */
+
+/**
+ * The live HERO banners.
+ *
+ * Keyed under the shared `["cms", …]` prefix rather than `homeKeys` on purpose: an
+ * admin write invalidates `["cms"]`, so a saved banner reaches this query and the
+ * storefront reflects it on the next read. A home-scoped key would not be touched by
+ * that invalidation and would serve the old banner until its own cache expired.
+ *
+ * With nothing live, the query returns an empty list and the hero keeps its built-in
+ * slides — an unconfigured deployment must still look finished.
+ */
+export function useHeroBanners() {
+  return useQuery({
+    queryKey: queryKeys.cmsBanners("HERO"),
+    queryFn: () => getPublicBanners("HERO"),
+    staleTime: PUBLIC_STALE_TIME,
+  });
+}
+
+/** Every published homepage block, keyed — one request for the whole page. */
+export function useHomeBlocks() {
+  return useQuery({
+    queryKey: queryKeys.cmsBlocks,
+    queryFn: getPublicBlocks,
     staleTime: PUBLIC_STALE_TIME,
   });
 }

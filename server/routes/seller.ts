@@ -9,13 +9,14 @@ import {
   productImages,
   products,
   productTags,
-  reports,
   sellerProfiles,
   transactions,
   users,
 } from "../schema";
 import { buildPagination, ok, HttpError } from "../lib/api";
 import { requireUser } from "../lib/auth";
+import { guarded } from "../lib/rate-limit";
+import { createReport, reportInputSchema } from "../lib/reports";
 import { PLATFORM_RENTAL_FEE_PERCENT, PLATFORM_SALE_FEE_PERCENT } from "../lib/config";
 import { imageUrlErrors } from "../lib/image-urls";
 import {
@@ -32,6 +33,7 @@ import {
   resolveAnalyticsRange,
 } from "../lib/seller-analytics";
 import { getSellerStatus, requireSeller } from "../lib/seller-access";
+import { getSellerAlerts } from "../lib/seller-alerts";
 import { listSellerProducts, resolveSellerProductFilters } from "../lib/seller-product-queries";
 import { allowedImageHosts } from "../lib/storage";
 import { slugify } from "../../src/lib/pricing";
@@ -191,6 +193,20 @@ sellerRoute.get("/summary", async (c) => {
   return c.json(
     ok(await getSellerSummary(user.id, PLATFORM_SALE_FEE_PERCENT, PLATFORM_RENTAL_FEE_PERCENT)),
   );
+});
+
+/* --------------------------------- alerts ---------------------------------- */
+
+/**
+ * `GET /api/seller/alerts` — stock running out, and rentals due back soon.
+ *
+ * The two misses a seller cannot see in a list of thousands: a live listing on
+ * its last unit or two, and a rental ending within a few days. Read from the
+ * inventory and rental tables, so there is no counter to drift.
+ */
+sellerRoute.get("/alerts", async (c) => {
+  const user = requireSeller(c);
+  return c.json(ok(await getSellerAlerts(user.id)));
 });
 
 /* ------------------------------- analytics --------------------------------- */
@@ -620,7 +636,12 @@ sellerRoute.patch("/products/:id{[0-9]+}", async (c) => {
  */
 async function announcePriceChange(
   productId: number,
-  before: { title: string; slug: string; purchasePrice: number | null; rentalPricePerDay: number | null },
+  before: {
+    title: string;
+    slug: string;
+    purchasePrice: number | null;
+    rentalPricePerDay: number | null;
+  },
   fields: { purchasePrice?: number | null; rentalPricePerDay?: number | null },
 ): Promise<void> {
   const dropped = (from: number | null, to: number | null | undefined): number | null => {
@@ -1098,46 +1119,22 @@ sellerRoute.get("/transactions", async (c) => {
 /* --------------------------------- reports --------------------------------- */
 
 /**
- * Reporting something is available to every signed-in user, not just sellers —
- * so this one handler keeps `requireUser`, the same gate it had before, and says
- * so here so the difference from its neighbours does not read as an oversight.
+ * `POST /api/seller/reports` — the legacy reporting entry point.
+ *
+ * Reporting is available to every signed-in user, not just sellers, so this keeps
+ * `requireUser`. It delegates to `createReport`, the same rule the canonical
+ * `/api/reports` mount uses, so the two endpoints cannot disagree about what a
+ * report is or which targets it may name.
  */
-sellerRoute.post("/reports", async (c) => {
-  const user = requireUser(c);
-  const input = z
-    .object({
-      productId: z.number().int().positive().optional(),
-      reportedUserId: z.number().int().positive().optional(),
-      reason: z.string().trim().min(3).max(32),
-      details: z.string().trim().max(1000).optional(),
-    })
-    .strict()
-    .parse(await c.req.json());
-
-  // mysql2 inserts do not return rows, so the id is taken from `$returningId()`
-  // and the row re-read. The previous version destructured the (empty) insert
-  // result and answered `201` with no data at all.
-  const [created] = await db
-    .insert(reports)
-    .values({ ...input, reporterId: user.id })
-    .$returningId();
-  const reportId = Number(created.id);
-
-  // A report is only useful to a moderator who knows one exists, and nothing in the
-  // product page surfaces it to them. Keyed on the report row, which is unique per
-  // submission, so the notice is exactly one per report however the request is retried.
-  await notifyAdmins(db, {
-    type: "ADMIN_SUSPICIOUS_ACTIVITY",
-    title: "New report",
-    body: `${user.name} reported ${input.reportedUserId ? "a user" : input.productId ? "a listing" : "content"}: ${input.reason}.`,
-    relatedEntityType: input.productId ? "LISTING" : "ACCOUNT",
-    relatedEntityId: input.productId ?? input.reportedUserId ?? null,
-    eventKey: notificationEventKey("ADMIN_SUSPICIOUS_ACTIVITY", reportId),
-    metadata: { reportId, productId: input.productId ?? null },
-  });
-
-  return c.json(ok({ id: reportId }), 201);
-});
+sellerRoute.post(
+  "/reports",
+  guarded("reports.create", async (c) => {
+    const user = requireUser(c);
+    const input = reportInputSchema.parse(await c.req.json());
+    const result = await createReport(user.id, input);
+    return c.json(ok(result), 201);
+  }),
+);
 
 /* --------------------------------- helpers --------------------------------- */
 

@@ -141,8 +141,29 @@ export type StockReservationStatus = (typeof STOCK_RESERVATION_STATUSES)[number]
 export const ACTOR_ROLES = ["USER", "SELLER", "ADMIN", "SYSTEM"] as const;
 export type ActorRole = (typeof ACTOR_ROLES)[number];
 
-/** `order_events.type` — foundation table. */
-export const ORDER_EVENT_TYPES = ["CREATED", "STATUS_CHANGED", "NOTE_ADDED"] as const;
+/**
+ * `order_events.type` — the order timeline.
+ *
+ * The original three covered creation, an ordinary status move and an internal
+ * note. The admin desk (PROMPT 27) writes three more, each kept distinct rather
+ * than folded into `STATUS_CHANGED` so the trail answers "*why* did this move?"
+ * without a reader having to diff the before/after JSON:
+ *
+ *  - `OVERRIDE`    — an admin forced a transition the state machine forbids;
+ *  - `CANCELLED`   — cancellation, which has money consequences a plain move does not;
+ *  - `REFUND`      — a refund was requested against the order.
+ *
+ * The column is a `varchar` with only a non-empty check, so this list is the
+ * vocabulary and adding to it needs no migration.
+ */
+export const ORDER_EVENT_TYPES = [
+  "CREATED",
+  "STATUS_CHANGED",
+  "NOTE_ADDED",
+  "OVERRIDE",
+  "CANCELLED",
+  "REFUND",
+] as const;
 export type OrderEventType = (typeof ORDER_EVENT_TYPES)[number];
 
 /* -------------------------------------------------------------------------- *

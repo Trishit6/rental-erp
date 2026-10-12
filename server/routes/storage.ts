@@ -1,9 +1,11 @@
 import { Router } from "../lib/http";
 import { z } from "zod";
 import { ok, HttpError } from "../lib/api";
+import { guarded, rateLimit } from "../lib/rate-limit";
 import { requireUser } from "../lib/auth";
 import { getStorageProvider, readStorageConfig } from "../lib/storage";
 import { readDevObject, writeDevObject } from "../lib/storage/dev";
+import { matchesDeclaredImageType } from "../lib/storage/magic";
 import {
   ALLOWED_IMAGE_MIME_TYPES,
   buildObjectKey,
@@ -18,6 +20,10 @@ import {
 } from "../lib/storage/types";
 
 export const storageRoute = new Router();
+
+// Uploads are the abuse-prone side of storage: minting targets, pushing bytes
+// and deleting objects are all cheap to hammer and each burns provider work.
+storageRoute.use(rateLimit("storage.upload"));
 
 /* --------------------------------- config ---------------------------------- */
 
@@ -73,7 +79,7 @@ const uploadTargetSchema = z
  * an unrecognised value is a 400, so the shape of every key this endpoint can produce is
  * closed by `isValidObjectKey`, which the upload and delete paths both re-check.
  */
-storageRoute.post("/upload-target", async (c) => {
+storageRoute.post("/upload-target", guarded("storage.upload", async (c) => {
   const user = requireUser(c);
   const input = uploadTargetSchema.parse(await c.req.json());
 
@@ -98,7 +104,7 @@ storageRoute.post("/upload-target", async (c) => {
   });
 
   return c.json(ok(target), 201);
-});
+}));
 
 /* ----------------------------- development sink ---------------------------- */
 
@@ -111,7 +117,7 @@ storageRoute.post("/upload-target", async (c) => {
  * validated as a real key for the *current* seller. A key outside the caller's
  * own prefix is a 403, not a silent write somewhere else.
  */
-storageRoute.put("/upload", async (c) => {
+storageRoute.put("/upload", guarded("storage.upload", async (c) => {
   const user = requireUser(c);
   if (!readStorageConfig().isDevelopmentAdapter) {
     throw new HttpError(404, "NOT_FOUND", "Not found.");
@@ -148,9 +154,20 @@ storageRoute.put("/upload", async (c) => {
     throw new HttpError(413, "IMAGE_TOO_LARGE", `Images must be under ${MAX_IMAGE_BYTES} bytes.`);
   }
 
+  // The declared type is a claim too. Sniff the bytes and refuse a file that is not
+  // the image it said it was — otherwise an HTML or SVG body wearing an `image/png`
+  // header would be stored as a listing photo.
+  if (!matchesDeclaredImageType(bytes, contentType)) {
+    throw new HttpError(
+      400,
+      "UNSUPPORTED_IMAGE_TYPE",
+      "The uploaded file is not the image type it claims to be.",
+    );
+  }
+
   await writeDevObject(key, bytes);
   return c.json(ok({ key, byteSize: bytes.byteLength }));
-});
+}));
 
 /** Serve a locally stored object. */
 storageRoute.get("/local", async (c) => {
@@ -189,7 +206,7 @@ storageRoute.get("/local", async (c) => {
 const deleteSchema = z.object({ key: z.string().trim().min(1).max(300) }).strict();
 
 /** Delete an object the caller owns. */
-storageRoute.delete("/object", async (c) => {
+storageRoute.delete("/object", guarded("storage.upload", async (c) => {
   const user = requireUser(c);
   const { key } = deleteSchema.parse(await c.req.json());
   if (!isValidObjectKey(key)) throw new HttpError(400, "BAD_REQUEST", "Invalid key.");
@@ -200,4 +217,4 @@ storageRoute.delete("/object", async (c) => {
 
   await getStorageProvider().deleteObject(key);
   return c.json(ok({ deleted: true }));
-});
+}));

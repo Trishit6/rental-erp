@@ -79,6 +79,8 @@ export type AdminProductFilters = {
   status: string | null;
   condition: string | null;
   listingType: string | null;
+  /** Availability filter (PROMPT 26): `available_quantity`, not `quantity`. */
+  stock: "ALL" | "IN_STOCK" | "OUT_OF_STOCK";
   minPrice: number | null;
   maxPrice: number | null;
   sort: AdminProductSort;
@@ -94,6 +96,7 @@ export const EMPTY_ADMIN_PRODUCT_FILTERS: AdminProductFilters = {
   status: null,
   condition: null,
   listingType: null,
+  stock: "ALL",
   minPrice: null,
   maxPrice: null,
   sort: "createdAt",
@@ -111,7 +114,94 @@ export function hasActiveFilters(filters: AdminProductFilters): boolean {
     filters.status !== null ||
     filters.condition !== null ||
     filters.listingType !== null ||
+    filters.stock !== "ALL" ||
     filters.minPrice !== null ||
     filters.maxPrice !== null
   );
 }
+
+/* --------------------------------- CMS types -------------------------------- */
+
+export type AdminBanner = {
+  id: number;
+  placement: string;
+  title: string;
+  subtitle: string | null;
+  imageUrl: string;
+  linkUrl: string | null;
+  sortOrder: number;
+  status: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  createdBy: number | null;
+  createdAt: string;
+  updatedAt: string;
+  createdByName: string | null;
+};
+
+export type AdminBlock = {
+  id: number;
+  blockKey: string;
+  /** Parsed content, or null when a stored value no longer matches its schema. */
+  content: Record<string, unknown> | null;
+  rawContent: string;
+  status: string;
+  updatedAt: string;
+  known: boolean;
+};
+
+export type AdminCmsCatalogue = {
+  placements: string[];
+  bannerStatuses: string[];
+  blockStatuses: string[];
+  blocks: { key: string; label: string; description: string }[];
+};
+
+export type AdminCmsVersion = {
+  id: number;
+  action: string;
+  reason: string | null;
+  before: unknown;
+  after: unknown;
+  adminName: string | null;
+  createdAt: string;
+};
+
+/* --------------------------- product detail relations ----------------------- */
+
+export type AdminProductRelations = {
+  orders: {
+    orderId: number;
+    orderNumber: string | null;
+    status: string;
+    paymentStatus: string;
+    quantity: number;
+    unitPrice: number;
+    buyerName: string | null;
+    createdAt: string;
+  }[];
+  rentals: {
+    id: number;
+    status: string;
+    startDate: string;
+    endDate: string;
+    total: number;
+    renterName: string | null;
+  }[];
+  reviews: {
+    id: number;
+    rating: number;
+    status: string;
+    title: string | null;
+    comment: string;
+    authorName: string | null;
+    createdAt: string;
+  }[];
+  reports: {
+    id: number;
+    reason: string;
+    status: string;
+    details: string | null;
+    createdAt: string;
+  }[];
+};

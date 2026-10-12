@@ -150,6 +150,15 @@ function ProductEditForm({
     [facets],
   );
 
+  const sellerOptions = useMemo(
+    () =>
+      (facets?.sellers ?? []).map((seller) => ({
+        value: String(seller.id),
+        label: seller.name,
+      })),
+    [facets],
+  );
+
   function handleSave() {
     if (!values) return;
     const parsed = adminProductFormSchema.safeParse(values);
@@ -204,7 +213,7 @@ function ProductEditForm({
               />
             </Field>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               <Field label="Category" error={errors.categoryId} htmlFor="admin-edit-category">
                 <NativeSelect
                   id="admin-edit-category"
@@ -212,6 +221,20 @@ function ProductEditForm({
                   value={String(values.categoryId ?? "")}
                   onChange={(e) => setField("categoryId", Number(e.target.value))}
                   options={categoryOptions}
+                />
+              </Field>
+              <Field
+                label="Seller"
+                error={errors.sellerId}
+                hint="Reassigning moves the listing to another seller."
+                htmlFor="admin-edit-seller"
+              >
+                <NativeSelect
+                  id="admin-edit-seller"
+                  label="Seller"
+                  value={String(values.sellerId ?? "")}
+                  onChange={(e) => setField("sellerId", Number(e.target.value))}
+                  options={sellerOptions}
                 />
               </Field>
               <Field label="Listing type" error={errors.listingType} htmlFor="admin-edit-listing-type">

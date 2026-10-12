@@ -161,10 +161,10 @@ export function AdminUsersPage() {
         row={confirm.target}
         isSubmitting={suspension.isPending}
         onCancel={confirm.close}
-        onConfirm={(suspend) => {
+        onConfirm={(suspend, reason) => {
           if (!confirm.target) return;
           const id = confirm.target.id;
-          suspension.mutate({ id, suspend }, { onSettled: confirm.close });
+          suspension.mutate({ id, suspend, reason }, { onSettled: confirm.close });
         }}
       />
     </div>
@@ -239,7 +239,7 @@ function AccountSuspensionDialog({
   row: AdminWorkspaceUserRow | null;
   isSubmitting: boolean;
   onCancel: () => void;
-  onConfirm: (suspend: boolean) => void;
+  onConfirm: (suspend: boolean, reason: string) => void;
 }) {
   if (!row) return null;
   const restoring = row.role === "SUSPENDED";
@@ -252,6 +252,8 @@ function AccountSuspensionDialog({
       }}
       subject={`${row.name} — ${row.email}`}
       title={restoring ? "Restore this account?" : "Suspend this account?"}
+      requireReason
+      reasonLabel={restoring ? "Reason for restoring" : "Reason for suspending"}
       body={
         restoring ? (
           <p>
@@ -273,7 +275,7 @@ function AccountSuspensionDialog({
       confirmLabel={restoring ? "Restore access" : "Suspend account"}
       tone={restoring ? "default" : "destructive"}
       isSubmitting={isSubmitting}
-      onConfirm={() => onConfirm(restoring ? false : true)}
+      onConfirm={(reason) => onConfirm(restoring ? false : true, reason)}
     />
   );
 }

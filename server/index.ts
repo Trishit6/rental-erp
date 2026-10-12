@@ -4,13 +4,19 @@ import { onErrorHandler } from "./lib/api";
 import { attachUser } from "./lib/auth";
 import { assertServerEnv } from "./lib/env";
 import { createApp, Router, type Ctx } from "./lib/http";
-import { originGuard, securityHeaders } from "./lib/security";
+import { originGuard, securityHeaders, cors, csrfProtection } from "./lib/security";
+import { requestId, requestIdOf } from "./lib/request-id";
+import { configureRateLimitStoreFromEnv } from "./lib/rate-limit";
+import { logger, redactUrl } from "./lib/logger";
 import { auth } from "./routes/auth";
 import { productsRoute, categoriesRoute } from "./routes/products";
+import { cmsRoute } from "./routes/cms";
 import { favoritesRoute, cartRoute, addressesRoute } from "./routes/market";
 import { ordersRoute, rentalsRoute } from "./routes/orders";
 import { paymentsRoute } from "./routes/payments";
 import { reviewsRoute } from "./routes/reviews";
+import { reportsRoute } from "./routes/reports";
+import { supportRoute } from "./routes/support";
 import { usersRoute } from "./routes/social";
 import { messagesRoute } from "./routes/messages";
 import { notificationsRoute } from "./routes/notifications";
@@ -35,17 +41,35 @@ import type { RequestHandler } from "express";
  * The route table below is unchanged from the Hono version it replaces.
  */
 
-/** Replaces `hono/logger`. One line per request; nothing is retained. */
+/**
+ * One structured line per request, through the redacting logger.
+ *
+ * The URL is the one place a credential travels *outside* a body — a password
+ * reset link, a signed image — and it reaches the request log verbatim. Logging
+ * through `redactUrl` keeps `?token=…` out of the stream while leaving the path
+ * readable. Request and response bodies are never logged at all (see
+ * `mayLogBody`), so passwords, MFA codes, card/UPI data and payment intents
+ * cannot reach a log line even if a route debug-logs its inputs later.
+ */
 const requestLogger: RequestHandler = (req, res, next) => {
   const startedAt = process.hrtime.bigint();
   res.on("finish", () => {
     const ms = Number(process.hrtime.bigint() - startedAt) / 1e6;
-    console.log(`${req.method} ${req.originalUrl} ${res.statusCode} ${ms.toFixed(1)}ms`);
+    logger.info("request", {
+      requestId: requestIdOf(req),
+      method: req.method,
+      url: redactUrl(req.originalUrl),
+      status: res.statusCode,
+      ms: Number(ms.toFixed(1)),
+    });
   });
   next();
 };
 
 const { app, router } = createApp({ captureRawBody: true });
+
+// Configure rate-limit storage from the environment before mounting middleware.
+configureRateLimitStoreFromEnv();
 
 /**
  * Fail fast, and fail in the terminal rather than in a user's browser.
@@ -69,11 +93,15 @@ beforeApi.use(attachUser);
 // Headers first: they apply to every response, including the ones the guard and
 // the error handler produce later.
 app.use(securityHeaders);
+app.use(requestId);
+// CORS for any foreign origins we allow; must run before the origin/CSRF gates.
+app.use(cors);
 app.use(requestLogger);
 // Origin check before any session work, so a foreign origin is refused without
 // reading a cookie. `SameSite=Lax` on both auth cookies is the browser half of
 // the same defence; see `server/lib/security.ts` for why both are needed.
 app.use("/api", originGuard);
+app.use("/api", csrfProtection);
 app.use("/api", beforeApi.toExpress());
 
 /* --------------------------------- health ---------------------------------- */
@@ -136,6 +164,7 @@ router.get("/api/stats", async (c: Ctx) => {
 
 router.route("/api/auth", auth);
 router.route("/api/categories", categoriesRoute);
+router.route("/api/cms", cmsRoute);
 router.route("/api/products", productsRoute);
 router.route("/api/products/search", productsRoute);
 router.route("/api/favorites", favoritesRoute);
@@ -145,6 +174,8 @@ router.route("/api/orders", ordersRoute);
 router.route("/api/payments", paymentsRoute);
 router.route("/api/rentals", rentalsRoute);
 router.route("/api/reviews", reviewsRoute);
+router.route("/api/reports", reportsRoute);
+router.route("/api/support", supportRoute);
 router.route("/api/users", usersRoute);
 router.route("/api/conversations", messagesRoute);
 router.route("/api/notifications", notificationsRoute);
@@ -175,8 +206,8 @@ app.use((_req, res) => {
   });
 });
 
-// Express identifies itself by default; Revaro's API does not need to advertise
-// its stack, and §"never expose internals" is easier to honour by default.
+// Express identifies itself by default; Revaro's API does not advertise its
+// stack, and the security headers also remove X-Powered-By.
 app.disable("x-powered-by");
 
 const port = Number(process.env.API_PORT ?? 3001);

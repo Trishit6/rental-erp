@@ -17,6 +17,7 @@ import { formatInr } from "@/lib/pricing";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SellerAlertsCard } from "./components/AlertsCard";
 import { useSellerSummary } from "./query";
 
 /**
@@ -146,6 +147,8 @@ export function DashboardPage() {
             />
           </div>
 
+          <SellerAlertsCard />
+
           <div className="grid gap-5 lg:grid-cols-3">
             <Card className="p-6 lg:col-span-2">
               <div className="flex items-center justify-between gap-3">
@@ -199,7 +202,11 @@ export function DashboardPage() {
                       (`product-card`, `SellerCard`, `HeroSection`). These two were
                       raw amber, so the same 4.5★ read as gold on the seller
                       dashboard and terracotta on a product card. */}
-                  <Star size={18} aria-hidden className="mb-1 ml-1 inline fill-primary text-primary" />
+                  <Star
+                    size={18}
+                    aria-hidden
+                    className="mb-1 ml-1 inline fill-primary text-primary"
+                  />
                 </p>
                 <p className="text-sm text-muted-foreground">
                   {data?.reviews.count ?? 0} review{(data?.reviews.count ?? 0) === 1 ? "" : "s"}

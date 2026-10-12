@@ -12,6 +12,7 @@ import {
   users,
 } from "../schema";
 import { buildPagination, fail, ok, HttpError } from "../lib/api";
+import { guarded } from "../lib/rate-limit";
 import { parseAddressSnapshot } from "../lib/address-snapshot";
 import { requireUser } from "../lib/auth";
 import {
@@ -83,13 +84,16 @@ ordersRoute.use("*", async (c, next) => {
  * 410 rather than 404 so a client with a stale build gets a useful instruction
  * instead of a confusing "not found".
  */
-ordersRoute.post("/", (c) =>
-  c.json(
-    fail(
-      "ORDER_CREATION_REQUIRES_PAYMENT",
-      "Orders are created by the payment flow. Start at /api/payments/intents.",
+ordersRoute.post(
+  "/",
+  guarded("checkout.order", (c) =>
+    c.json(
+      fail(
+        "ORDER_CREATION_REQUIRES_PAYMENT",
+        "Orders are created by the payment flow. Start at /api/payments/intents.",
+      ),
+      410,
     ),
-    410,
   ),
 );
 
@@ -371,7 +375,7 @@ const cancelOrderSchema = z
  * As elsewhere, the REFUND transaction records that the *settlement* is owed —
  * actually moving money stays with the payment architecture.
  */
-ordersRoute.post("/:id/cancel", async (c) => {
+ordersRoute.post("/:id/cancel", guarded("checkout.order", async (c) => {
   const user = c.get("user")!;
   const raw = c.req.param("id");
   const input = cancelOrderSchema.parse(await c.req.json().catch(() => ({})));
@@ -544,7 +548,7 @@ ordersRoute.post("/:id/cancel", async (c) => {
   });
 
   return c.json(ok({ cancelled: true, orderId: order.id, status: "CANCELLED" as const }));
-});
+}));
 
 /* --------------------------- buy again / rent again ------------------------ */
 

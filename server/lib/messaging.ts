@@ -12,6 +12,7 @@ import {
 } from "../schema";
 import { HttpError } from "./api";
 import type { SessionUser } from "./auth";
+import { assertNotBlocked } from "./blocks";
 import { isSellerRole } from "./seller-access";
 
 /**
@@ -363,6 +364,12 @@ export async function appendMessage(
 ): Promise<MessageRecord> {
   await requireParticipation(conversationId, user.id);
 
+  // A block is mutual on read, so one lookup covers both "I blocked them" and
+  // "they blocked me". Refusing here — in the data layer every send path goes
+  // through — is what makes a block hold on an existing thread, not just on new ones.
+  const counterpartId = await otherParticipantId(conversationId, user.id);
+  if (counterpartId !== null) await assertNotBlocked(user.id, counterpartId);
+
   const now = new Date();
   const trimmed = body.trim().slice(0, 2000);
   const [inserted] = await db
@@ -422,6 +429,11 @@ export async function assertCanContactSeller(
   if (!seller || !isSellerRole(seller.role)) {
     throw new HttpError(409, "SELLER_UNAVAILABLE", "The seller cannot receive messages right now.");
   }
+
+  // The same mutual check every send runs, applied at the door too: a blocked
+  // buyer should not be able to open a fresh thread and only discover the block
+  // when the first message fails.
+  await assertNotBlocked(buyer.id, product.sellerId);
 
   return { product, sellerId: product.sellerId };
 }

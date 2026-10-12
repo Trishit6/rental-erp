@@ -7,6 +7,7 @@ import type { ProductCardData } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { ProductGrid } from "@/components/shared/product-grid";
+import { ReportButton } from "@/features/safety/components/ReportButton";
 import { usePublicSeller } from "./query";
 
 /**
@@ -63,6 +64,14 @@ export function SellerPage() {
           </div>
         </div>
         <Badge className="bg-accent/10 text-accent">Neighbour seller</Badge>
+        {seller && (
+          <ReportButton
+            target={{ kind: "user", id: seller.id, label: seller.name }}
+            variant="secondary"
+          >
+            Report seller
+          </ReportButton>
+        )}
       </Card>
 
       <section className="space-y-4">

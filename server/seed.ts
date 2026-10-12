@@ -41,6 +41,7 @@ import { TRUNCATED_TABLES } from "./lib/seed-truncate";
 import { ALL_ROLE_NAMES } from "./lib/enums";
 import { createOrderNumber } from "./lib/payments/order-number";
 import { createPayoutNumber } from "./lib/wallet";
+import { PERMISSION_CATALOGUE, ROLE_PERMISSION_GRANTS } from "./lib/permission-catalogue";
 
 /* --------------------------------- helpers --------------------------------- */
 
@@ -91,67 +92,10 @@ import { mulberry32 } from "./data/seed-realistic";
  */
 /* ----------------------------------- RBAC ---------------------------------- */
 
-/**
- * The staff permission catalogue.
- *
- * Seeded rather than left empty: a permission table that starts blank is one
- * nobody notices staying blank. The first admin screen to check a key would
- * deny everyone, and the failure would look like an authentication bug instead
- * of missing data.
- *
- * Keys are `resource.action`, the shape `permissions.key` CHECKs for at the
- * database as well — a typo here fails the seed rather than becoming a
- * permission that can never be granted.
- */
-const PERMISSIONS: { key: string; description: string }[] = [
-  { key: "orders.view", description: "Read orders across sellers" },
-  { key: "orders.manage", description: "Change order status and fulfillment" },
-  { key: "orders.refund", description: "Issue a refund against an order" },
-  { key: "products.view", description: "Read listings, including unpublished ones" },
-  { key: "products.moderate", description: "Publish, pause or remove a listing" },
-  { key: "users.view", description: "Read customer and seller accounts" },
-  { key: "users.manage", description: "Suspend, restore and edit accounts" },
-  { key: "payouts.view", description: "Read the payout ledger" },
-  { key: "payouts.approve", description: "Approve or reject a payout" },
-  { key: "support.view", description: "Read support tickets" },
-  { key: "support.reply", description: "Reply to a support ticket" },
-  { key: "reports.resolve", description: "Resolve or dismiss a report" },
-  { key: "content.manage", description: "Edit banners and CMS blocks" },
-  { key: "audit.view", description: "Read the audit log" },
-  { key: "settings.manage", description: "Change platform settings and feature flags" },
-  { key: "rbac.manage", description: "Grant and revoke roles and permissions" },
-  { key: "exports.run", description: "Start a data export" },
-];
-
-/**
- * Which system role holds which key.
- *
- * `USER` and `SELLER` hold **none** on purpose. Their access comes from
- * `users.role` and the ownership checks that already exist; giving two systems
- * overlapping authority over the same endpoint is how a customer ends up with a
- * permission nobody granted them.
- *
- * `SUPER_ADMIN` is the only role with `rbac.manage`, and nothing is seeded into
- * it — unrestricted access should have to be handed out deliberately, not arrive
- * with the demo data.
- */
-const ROLE_PERMISSIONS: Record<(typeof ALL_ROLE_NAMES)[number], readonly string[]> = {
-  SUPER_ADMIN: PERMISSIONS.map((permission) => permission.key),
-  ADMIN: PERMISSIONS.filter((permission) => permission.key !== "rbac.manage").map((p) => p.key),
-  SUPPORT: [
-    "orders.view",
-    "users.view",
-    "support.view",
-    "support.reply",
-    "reports.resolve",
-    "exports.run",
-  ],
-  FINANCE: ["orders.view", "payouts.view", "payouts.approve", "audit.view", "exports.run"],
-  MODERATOR: ["products.view", "products.moderate", "reports.resolve", "users.view", "support.view"],
-  CONTENT_MANAGER: ["content.manage", "products.view"],
-  USER: [],
-  SELLER: [],
-};
+// The staff permission catalogue and the role → permission grants live in
+// `lib/permission-catalogue`, so the seed, the per-route admin gates in
+// `routes/admin.ts`, and the tests that assert every route is gated all read one
+// list rather than three that can drift apart.
 
 const ROLE_DESCRIPTIONS: Record<(typeof ALL_ROLE_NAMES)[number], string> = {
   SUPER_ADMIN: "Unrestricted access. Grants rbac.manage and must be assigned by hand.",
@@ -172,7 +116,7 @@ const ROLE_DESCRIPTIONS: Record<(typeof ALL_ROLE_NAMES)[number], string> = {
  * re-seed refreshes the catalogue instead of colliding with last run's rows.
  */
 async function seedRbac(adminUserId: number): Promise<void> {
-  const permissionRows = PERMISSIONS.map((permission) => ({
+  const permissionRows = PERMISSION_CATALOGUE.map((permission) => ({
     key: permission.key,
     description: permission.description,
     // Everything a key can be about, read off the key itself rather than kept in
@@ -193,9 +137,11 @@ async function seedRbac(adminUserId: number): Promise<void> {
     isSystem: true,
   }));
   const insertedRoles = await db.insert(roles).values(roleRows).$returningId();
-  const roleIdByName = new Map(roleRows.map((role, index) => [role.name, Number(insertedRoles[index].id)]));
+  const roleIdByName = new Map(
+    roleRows.map((role, index) => [role.name, Number(insertedRoles[index].id)]),
+  );
 
-  const grants = Object.entries(ROLE_PERMISSIONS).flatMap(([roleName, keys]) => {
+  const grants = Object.entries(ROLE_PERMISSION_GRANTS).flatMap(([roleName, keys]) => {
     const roleId = roleIdByName.get(roleName as (typeof ALL_ROLE_NAMES)[number]);
     if (roleId === undefined) throw new Error(`RBAC seed: role "${roleName}" was not inserted`);
     return keys.map((key) => {
@@ -249,10 +195,12 @@ async function seed() {
         passwordHash: adminPasswordHash,
         role: "ADMIN",
         verified: true,
-        // Staff credentials are shared demo values with an MFA enrolment still
-        // outstanding, so the account says so instead of looking production-ready.
-        mustChangePassword: true,
-        mustEnrollMfa: true,
+        // The local admin is the one reusable login: no forced rotation and no
+        // second factor, so `ADMIN_EMAIL`/`ADMIN_PASSWORD` keep working and
+        // `isDevMfaBypass` admits it to the staff area. Every *other* seeded staff
+        // account keeps the enrolment-outstanding flags (and gets real MFA).
+        mustChangePassword: false,
+        mustEnrollMfa: false,
       },
       {
         name: "Maya Sharma",

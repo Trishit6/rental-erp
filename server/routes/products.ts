@@ -12,6 +12,7 @@ import {
   users,
 } from "../schema";
 import { ok, buildPagination, HttpError } from "../lib/api";
+import { rateLimit } from "../lib/rate-limit";
 import { requireUser } from "../lib/auth";
 import { checkRentalAvailability } from "../lib/rental-availability";
 import { isPubliclyVisible, PUBLIC_PRODUCT_STATUSES } from "../lib/product-status";
@@ -19,6 +20,10 @@ import { slugify } from "../../src/lib/pricing";
 
 export const productsRoute = new Router();
 export const categoriesRoute = new Router();
+
+// The product surface is read-heavy and cheap, so the budget is generous; it
+// exists to stop unbounded scraping of the catalogue and the search endpoints.
+productsRoute.use(rateLimit("search"));
 
 /* ------------------------------ categories -------------------------------- */
 

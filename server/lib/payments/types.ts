@@ -58,6 +58,33 @@ export type CreateIntentInput = {
   metadata?: Record<string, string>;
 };
 
+/**
+ * A UPI collect request and its rendered QR.
+ *
+ * ## Why this is not proof of payment
+ *
+ * The payload is an *invitation* to pay: anyone who can read it can pay it from
+ * any UPI app, and a screenshot of it is not evidence that money moved. Only the
+ * provider's verified webhook (or `verifyPayment`) settles the transaction. The
+ * client renders this and then polls the server; it never advances the UI on the
+ * basis of the QR.
+ */
+export type UpiPayment = {
+  /** The `upi://pay?...` URI a UPI app scans or opens. */
+  payload: string;
+  /** The same payload rendered as a PNG data URL, for display as an image. */
+  imageDataUrl: string;
+  /** The virtual payment address the money is collectable into. */
+  payeeVpa: string;
+  payeeName: string;
+  /** The exact amount, in integer paise, matching the transaction row. */
+  amount: number;
+  currency: string;
+  /** The `tr` reference the customer sees and support can quote. */
+  reference: string;
+  note: string;
+};
+
 export type PaymentIntent = {
   provider: string;
   /** The provider's own identifier — what a webhook would refer back to. */
@@ -68,6 +95,8 @@ export type PaymentIntent = {
   /** What the client must hand back to complete this intent. */
   clientSecret?: string;
   expiresAt?: Date;
+  /** Present for a UPI intent when the deployment has a payee VPA configured. */
+  upi?: UpiPayment;
 };
 
 export type VerifyPaymentInput = {

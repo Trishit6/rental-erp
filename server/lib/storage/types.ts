@@ -58,8 +58,11 @@ export const MAX_IMAGES_PER_LISTING = 8;
  *
  *  - `products` — seller-uploaded listing photography.
  *  - `avatars`   — one user's own profile picture.
+ *  - `tickets`   — a file attached to a support ticket the user raised.
+ *  - `cms`       — admin-uploaded storefront art (hero banners), keyed by the
+ *                  uploading administrator so the ownership rule is unchanged.
  */
-export const STORAGE_SCOPES = ["products", "avatars"] as const;
+export const STORAGE_SCOPES = ["products", "avatars", "tickets", "cms"] as const;
 export type StorageScope = (typeof STORAGE_SCOPES)[number];
 
 export function isStorageScope(value: unknown): value is StorageScope {
@@ -167,6 +170,29 @@ export function ownsObjectKey(
   ownerId: number,
 ): boolean {
   return isValidObjectKey(key) && key.startsWith(objectKeyPrefix(scope, ownerId));
+}
+
+/**
+ * The object key inside a stored public URL, or `null` when the URL is not ours.
+ *
+ * The server-side twin of `objectKeyFromUrl` in `src/lib/storage`. Support attachments
+ * arrive as a URL the client already uploaded to, and the only way to prove that URL is
+ * an object under a scope we control is to read the key back out of it and run the same
+ * ownership check the delete path runs. Anything the pattern does not recognise is not
+ * an object of ours, so the answer is `null` rather than a best guess.
+ */
+export function objectKeyFromUrl(url: string): string | null {
+  let decoded = url;
+  try {
+    decoded = decodeURIComponent(url);
+  } catch {
+    // A malformed escape sequence is a URL that is not ours; fall through with the
+    // raw string and let the pattern reject it.
+  }
+  const match = new RegExp(
+    `(?:${STORAGE_SCOPES.join("|")})\\/\\d+\\/[a-z0-9]{8,32}\\.(?:jpg|png|webp|avif)`,
+  ).exec(decoded);
+  return match ? match[0] : null;
 }
 
 /**

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "../db";
 import { orders, transactions } from "../schema";
 import { HttpError, ok } from "../lib/api";
+import { guarded } from "../lib/rate-limit";
 import { requireUser } from "../lib/auth";
 import { buildCheckoutQuote, CURRENCY } from "../lib/checkout";
 import {
@@ -13,7 +14,13 @@ import {
 } from "../lib/order-creation";
 import { readCheckoutContext, serializeCheckoutMetadata } from "../lib/payments/checkout-context";
 import { getPaymentProvider, readPaymentConfig } from "../lib/payments";
-import { isPaymentMethod, type PaymentMethod, type PaymentStatus } from "../lib/payments/types";
+import {
+  isPaymentMethod,
+  type PaymentMethod,
+  type PaymentStatus,
+  type UpiPayment,
+} from "../lib/payments/types";
+import { buildUpiPayment } from "../lib/payments/upi";
 import { notificationEventKey } from "../lib/notification-events";
 import { notify } from "../lib/notifications";
 
@@ -66,6 +73,29 @@ function assertAmountMatches(expected: number, actual: number): void {
       "The payment amount has changed. Please review your checkout again.",
     );
   }
+}
+
+/**
+ * The UPI presentation for a transaction, or `undefined` when it does not apply.
+ *
+ * Regenerated from the row rather than stored: the payload is a pure function of
+ * the amount and the row id, so there is nothing to keep in sync, and the only
+ * new datum — the payee VPA — is public by design and not a secret worth persisting.
+ * Only a UPI attempt that could still be paid gets a code; a settled or failed one
+ * must not hand back something scannable.
+ */
+async function upiForTransaction(
+  row: { id: number; amount: number; paymentMethod: string | null; status: string },
+  isProductionReady: boolean,
+): Promise<UpiPayment | undefined> {
+  if (row.paymentMethod !== "UPI") return undefined;
+  if (row.status !== "PENDING" && row.status !== "PROCESSING") return undefined;
+  const payment = await buildUpiPayment({
+    amountPaise: row.amount,
+    reference: `RVPAY${row.id}`,
+    isProductionReady,
+  });
+  return payment ?? undefined;
 }
 
 /* ------------------------------ provider info ------------------------------- */
@@ -125,7 +155,7 @@ paymentsRoute.get("/summary", async (c) => {
  * attempt is always visible even if the provider never answers. The amount on
  * that row is the contract: order creation will refuse to charge anything else.
  */
-paymentsRoute.post("/intents", async (c) => {
+paymentsRoute.post("/intents", guarded(["payments.intent", "coupon.apply"], async (c) => {
   const user = requireUser(c);
   const input = createIntentSchema.parse(await c.req.json());
 
@@ -165,6 +195,8 @@ paymentsRoute.post("/intents", async (c) => {
         currency: existing.currency,
         status: existing.status as PaymentStatus,
         isProductionReady: provider.isProductionReady,
+        // The same intent resumed, so the same collect code is still valid.
+        upi: await upiForTransaction(existing, provider.isProductionReady),
         // Only a still-open intent is resumable; a settled one must not be
         // handed back for a second charge.
         resumable: existing.status === "PENDING" && existing.orderId === null,
@@ -213,11 +245,21 @@ paymentsRoute.post("/intents", async (c) => {
       currency: intent.currency,
       status: intent.status,
       isProductionReady: provider.isProductionReady,
+      // Built from the amount just written, never from anything the client sent.
+      upi: await upiForTransaction(
+        {
+          id: Number(inserted.id),
+          amount: intent.amount,
+          paymentMethod: input.paymentMethod,
+          status: "PENDING",
+        },
+        provider.isProductionReady,
+      ),
       resumable: true,
     }),
     201,
   );
-});
+}));
 
 /* --------------------------------- status ----------------------------------- */
 
@@ -247,6 +289,9 @@ paymentsRoute.get("/:id", async (c) => {
       failureReason: row.failureReason,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      // A page that reloaded mid-payment can still show the same collect code,
+      // because it is derived from the row rather than remembered from the create call.
+      upi: await upiForTransaction(row, getPaymentProvider().isProductionReady),
     }),
   );
 });
@@ -261,7 +306,7 @@ paymentsRoute.get("/:id", async (c) => {
  * order built. A failure in the second half leaves a real, reconcilable payment
  * record — never a customer charged with no order to show.
  */
-paymentsRoute.post("/:id/verify", async (c) => {
+paymentsRoute.post("/:id/verify", guarded("payments.intent", async (c) => {
   const user = requireUser(c);
   const id = z.coerce.number().int().positive().parse(c.req.param("id"));
   const input = verifySchema.parse(await c.req.json().catch(() => ({})));
@@ -381,7 +426,7 @@ paymentsRoute.post("/:id/verify", async (c) => {
   });
 
   return c.json(ok(confirmation));
-});
+}));
 
 /* ---------------------------------- cancel ---------------------------------- */
 
@@ -389,7 +434,7 @@ paymentsRoute.post("/:id/verify", async (c) => {
  * Cancel a payment. The cart is deliberately left alone — the customer is still
  * holding the items and has not gone anywhere.
  */
-paymentsRoute.post("/:id/cancel", async (c) => {
+paymentsRoute.post("/:id/cancel", guarded("payments.intent", async (c) => {
   const user = requireUser(c);
   const id = z.coerce.number().int().positive().parse(c.req.param("id"));
 
@@ -424,7 +469,7 @@ paymentsRoute.post("/:id/cancel", async (c) => {
     .where(eq(transactions.id, row.id));
 
   return c.json(ok({ transactionId: row.id, status: "CANCELLED" as PaymentStatus }));
-});
+}));
 
 /* --------------------------------- webhook ---------------------------------- */
 

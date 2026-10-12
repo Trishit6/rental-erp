@@ -11,6 +11,18 @@ export const queryKeys = {
   storageConfig: ["storage", "config"] as const,
   stats: ["stats"] as const,
   categories: ["categories"] as const,
+  /**
+   * Public CMS content (PROMPT 26) — hero banners and homepage blocks.
+   *
+   * Cached like the catalogue because it is identical for every visitor, so it
+   * survives across sessions. An admin write invalidates these keys, which is what
+   * makes "admin edits show on the public site immediately" true without a reload.
+   */
+  cms: ["cms"] as const,
+  cmsBanners: (placement: string | null = null) =>
+    ["cms", "banners", placement ?? "all"] as const,
+  cmsBlocks: ["cms", "blocks"] as const,
+  cmsBlock: (key: string) => ["cms", "block", key] as const,
   products: (filters: Record<string, unknown> = {}) => ["products", filters] as const,
   product: (slug: string) => ["product", slug] as const,
   /**
@@ -117,6 +129,15 @@ export const queryKeys = {
   notificationPreferences: ["notifications", "preferences"] as const,
   conversations: ["conversations"] as const,
   /**
+   * The accounts the signed-in user has blocked.
+   *
+   * Private, and a prefix because a block/unblock must reconcile the management
+   * list on `/settings` and the toggle in a thread header at once. It is one
+   * person's decisions: who blocked whom is never shown to the other party, so
+   * this must be evicted on logout like any other private list.
+   */
+  blockedUsers: ["blocks"] as const,
+  /**
    * The orders and rentals a conversation may be attached to.
    *
    * Under `["conversations"]` rather than under `orders`/`rentals` deliberately: this
@@ -138,6 +159,19 @@ export const queryKeys = {
   messages: ["messages"] as const,
   messageList: (conversationId: number, page: number) =>
     ["messages", String(conversationId), page] as const,
+  /**
+   * The signed-in user's own support tickets.
+   *
+   * One private prefix for the list, one ticket and the helper lookups. Private for the
+   * same reason conversations are: a ticket is a customer's private correspondence with
+   * staff, and a shared browser must not keep one account's tickets for the next.
+   */
+  support: ["support"] as const,
+  supportTickets: (filters: Record<string, unknown> = {}) =>
+    ["support", "tickets", filters] as const,
+  supportTicket: (id: number | string) => ["support", "ticket", id] as const,
+  supportHelpTopics: (query: string) => ["support", "help-topics", query] as const,
+  supportDuplicate: (orderId: number) => ["support", "duplicate", orderId] as const,
   /**
    * The signed-in user's own history as a timeline.
    *
@@ -217,6 +251,8 @@ export const queryKeys = {
   sellerOnboarding: ["seller", "me", "onboarding"] as const,
   /** Dashboard cards. Private: a stranger's earnings must never be readable. */
   sellerSummary: ["seller", "me", "summary"] as const,
+  /** Low-stock and returning-soon nudges. Private: they describe one seller's stock. */
+  sellerAlerts: ["seller", "me", "alerts"] as const,
   sellerAnalytics: (params: Record<string, unknown> = {}) =>
     ["seller", "me", "analytics", params] as const,
   /** Prefix every seller-listing entry hangs off — list pages and one product. */
@@ -304,11 +340,18 @@ export const queryKeys = {
   adminCategories: ["admin-categories"] as const,
   adminProductImages: ["admin-product-images"] as const,
   adminAuditLog: ["admin-audit-log"] as const,
+  /** The CMS workspace: banners, blocks and the block catalogue. Private. */
+  adminCms: ["admin-cms"] as const,
   /**
    * The RBAC surface — roles, the permission vocabulary and one user's roles.
    * One prefix so a grant/revoke invalidates every screen at once.
    */
   adminRbac: ["admin-rbac"] as const,
+  /**
+   * The signed-in staff member's own roles and permissions (`GET /api/admin/me`).
+   * The sidebar filters on it; it is per-user and therefore private.
+   */
+  adminMe: ["admin-me"] as const,
   /**
    * The `/api/health` probe the admin dashboard's system-status card reads. It is
    * scoped under the admin prefix so the status shown in the workspace is never
@@ -342,8 +385,10 @@ export const privateQueryKeys = [
   // case for a marketplace demo, not the exception.
   queryKeys.notifications,
   queryKeys.conversations,
+  queryKeys.blockedUsers,
   queryKeys.conversationAll,
   queryKeys.messages,
+  queryKeys.support,
   queryKeys.activity,
   queryKeys.sellerMe,
   // `sellerMe` already covers every wallet key, so this is belt-and-braces rather
@@ -373,6 +418,8 @@ export const privateQueryKeys = [
   ["admin-categories"],
   ["admin-product-images"],
   ["admin-audit-log"],
+  ["admin-cms"],
   ["admin-health"],
   ["admin-rbac"],
+  ["admin-me"],
 ] as const;

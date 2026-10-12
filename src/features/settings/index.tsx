@@ -5,6 +5,7 @@ import { useTheme } from "@/lib/theme";
 import type { ThemePreference } from "@/lib/theme";
 import { cn } from "@/lib/utils/cn";
 import { NotificationPreferencesSection } from "@/features/notifications/components/NotificationPreferencesSection";
+import { BlockedUsersCard } from "@/features/safety/components/BlockedUsersCard";
 
 /**
  * `/settings` — account preferences.
@@ -69,6 +70,8 @@ export function SettingsPage() {
       </Card>
 
       <NotificationPreferencesSection />
+
+      <BlockedUsersCard />
 
       <Card className="flex flex-col items-start gap-3 p-6 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">

@@ -39,6 +39,11 @@ export type HeroSlide = {
   /** Small caption card over the image. */
   captionLabel: string;
   captionTitle: string;
+  /**
+   * Where the caption links, when the slide came from a CMS banner. Validated by the
+   * server to be an in-app path or an `https:` URL, so it is never a `javascript:`.
+   */
+  href?: string;
 };
 
 export const HERO_SLIDES: HeroSlide[] = [

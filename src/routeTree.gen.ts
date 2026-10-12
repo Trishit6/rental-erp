@@ -33,9 +33,11 @@ import { Route as AuthenticatedOrdersRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedRentalsRouteImport } from './routes/_authenticated/rentals'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedSupportRouteImport } from './routes/_authenticated/support'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminAuditLogsRouteImport } from './routes/admin/audit-logs'
 import { Route as AdminCategoriesRouteImport } from './routes/admin/categories'
+import { Route as AdminContentRouteImport } from './routes/admin/content'
 import { Route as AdminFinanceRouteImport } from './routes/admin/finance'
 import { Route as AdminForbiddenRouteImport } from './routes/admin/forbidden'
 import { Route as AdminModerationRouteImport } from './routes/admin/moderation'
@@ -50,6 +52,7 @@ import { Route as AdminRentalsRouteImport } from './routes/admin/rentals'
 import { Route as AdminReportsRouteImport } from './routes/admin/reports'
 import { Route as AdminReturnsRouteImport } from './routes/admin/returns'
 import { Route as AdminReviewsRouteImport } from './routes/admin/reviews'
+import { Route as AdminRolesRouteImport } from './routes/admin/roles'
 import { Route as AdminSellersRouteImport } from './routes/admin/sellers'
 import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
@@ -74,6 +77,7 @@ import { Route as AuthenticatedProfileOrdersRouteImport } from './routes/_authen
 import { Route as AuthenticatedProfileRentalsRouteImport } from './routes/_authenticated/profile.rentals'
 import { Route as AuthenticatedProfileWishlistRouteImport } from './routes/_authenticated/profile.wishlist'
 import { Route as AuthenticatedRentalsRentalIdRouteImport } from './routes/_authenticated/rentals.$rentalId'
+import { Route as AuthenticatedSupportTicketIdRouteImport } from './routes/_authenticated/support_.$ticketId'
 import { Route as AdminReviewsSellersRouteImport } from './routes/admin/reviews.sellers'
 import { Route as SellerProductsNewRouteImport } from './routes/seller/products.new'
 import { Route as SellerProductsProductIdEditRouteImport } from './routes/seller/products.$productId.edit'
@@ -197,6 +201,11 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedSupportRoute = AuthenticatedSupportRouteImport.update({
+  id: '/support',
+  path: '/support',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -210,6 +219,11 @@ const AdminAuditLogsRoute = AdminAuditLogsRouteImport.update({
 const AdminCategoriesRoute = AdminCategoriesRouteImport.update({
   id: '/categories',
   path: '/categories',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminContentRoute = AdminContentRouteImport.update({
+  id: '/content',
+  path: '/content',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminFinanceRoute = AdminFinanceRouteImport.update({
@@ -280,6 +294,11 @@ const AdminReturnsRoute = AdminReturnsRouteImport.update({
 const AdminReviewsRoute = AdminReviewsRouteImport.update({
   id: '/reviews',
   path: '/reviews',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminRolesRoute = AdminRolesRouteImport.update({
+  id: '/roles',
+  path: '/roles',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminSellersRoute = AdminSellersRouteImport.update({
@@ -408,6 +427,12 @@ const AuthenticatedRentalsRentalIdRoute =
     path: '/$rentalId',
     getParentRoute: () => AuthenticatedRentalsRoute,
   } as any)
+const AuthenticatedSupportTicketIdRoute =
+  AuthenticatedSupportTicketIdRouteImport.update({
+    id: '/support_/$ticketId',
+    path: '/support/$ticketId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AdminReviewsSellersRoute = AdminReviewsSellersRouteImport.update({
   id: '/sellers',
   path: '/sellers',
@@ -448,8 +473,10 @@ export interface FileRoutesByFullPath {
   '/profile': typeof AuthenticatedProfileRouteWithChildren
   '/rentals': typeof AuthenticatedRentalsRouteWithChildren
   '/settings': typeof AuthenticatedSettingsRoute
+  '/support': typeof AuthenticatedSupportRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
   '/admin/categories': typeof AdminCategoriesRoute
+  '/admin/content': typeof AdminContentRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/forbidden': typeof AdminForbiddenRoute
   '/admin/moderation': typeof AdminModerationRoute
@@ -464,6 +491,7 @@ export interface FileRoutesByFullPath {
   '/admin/reports': typeof AdminReportsRoute
   '/admin/returns': typeof AdminReturnsRoute
   '/admin/reviews': typeof AdminReviewsRouteWithChildren
+  '/admin/roles': typeof AdminRolesRoute
   '/admin/sellers': typeof AdminSellersRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/users': typeof AdminUsersRoute
@@ -489,6 +517,7 @@ export interface FileRoutesByFullPath {
   '/profile/rentals': typeof AuthenticatedProfileRentalsRoute
   '/profile/wishlist': typeof AuthenticatedProfileWishlistRoute
   '/rentals/$rentalId': typeof AuthenticatedRentalsRentalIdRoute
+  '/support/$ticketId': typeof AuthenticatedSupportTicketIdRoute
   '/admin/reviews/sellers': typeof AdminReviewsSellersRoute
   '/seller/products/new': typeof SellerProductsNewRoute
   '/seller/products/$productId/edit': typeof SellerProductsProductIdEditRoute
@@ -515,8 +544,10 @@ export interface FileRoutesByTo {
   '/profile': typeof AuthenticatedProfileRouteWithChildren
   '/rentals': typeof AuthenticatedRentalsRouteWithChildren
   '/settings': typeof AuthenticatedSettingsRoute
+  '/support': typeof AuthenticatedSupportRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
   '/admin/categories': typeof AdminCategoriesRoute
+  '/admin/content': typeof AdminContentRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/forbidden': typeof AdminForbiddenRoute
   '/admin/moderation': typeof AdminModerationRoute
@@ -531,6 +562,7 @@ export interface FileRoutesByTo {
   '/admin/reports': typeof AdminReportsRoute
   '/admin/returns': typeof AdminReturnsRoute
   '/admin/reviews': typeof AdminReviewsRouteWithChildren
+  '/admin/roles': typeof AdminRolesRoute
   '/admin/sellers': typeof AdminSellersRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/users': typeof AdminUsersRoute
@@ -556,6 +588,7 @@ export interface FileRoutesByTo {
   '/profile/rentals': typeof AuthenticatedProfileRentalsRoute
   '/profile/wishlist': typeof AuthenticatedProfileWishlistRoute
   '/rentals/$rentalId': typeof AuthenticatedRentalsRentalIdRoute
+  '/support/$ticketId': typeof AuthenticatedSupportTicketIdRoute
   '/admin/reviews/sellers': typeof AdminReviewsSellersRoute
   '/seller/products/new': typeof SellerProductsNewRoute
   '/seller/products/$productId/edit': typeof SellerProductsProductIdEditRoute
@@ -586,8 +619,10 @@ export interface FileRoutesById {
   '/_authenticated/profile': typeof AuthenticatedProfileRouteWithChildren
   '/_authenticated/rentals': typeof AuthenticatedRentalsRouteWithChildren
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/support': typeof AuthenticatedSupportRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
   '/admin/categories': typeof AdminCategoriesRoute
+  '/admin/content': typeof AdminContentRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/forbidden': typeof AdminForbiddenRoute
   '/admin/moderation': typeof AdminModerationRoute
@@ -602,6 +637,7 @@ export interface FileRoutesById {
   '/admin/reports': typeof AdminReportsRoute
   '/admin/returns': typeof AdminReturnsRoute
   '/admin/reviews': typeof AdminReviewsRouteWithChildren
+  '/admin/roles': typeof AdminRolesRoute
   '/admin/sellers': typeof AdminSellersRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/users': typeof AdminUsersRoute
@@ -627,6 +663,7 @@ export interface FileRoutesById {
   '/_authenticated/profile/rentals': typeof AuthenticatedProfileRentalsRoute
   '/_authenticated/profile/wishlist': typeof AuthenticatedProfileWishlistRoute
   '/_authenticated/rentals/$rentalId': typeof AuthenticatedRentalsRentalIdRoute
+  '/_authenticated/support_/$ticketId': typeof AuthenticatedSupportTicketIdRoute
   '/admin/reviews/sellers': typeof AdminReviewsSellersRoute
   '/seller/products/new': typeof SellerProductsNewRoute
   '/seller/products/$productId/edit': typeof SellerProductsProductIdEditRoute
@@ -656,8 +693,10 @@ export interface FileRouteTypes {
     | '/profile'
     | '/rentals'
     | '/settings'
+    | '/support'
     | '/admin/audit-logs'
     | '/admin/categories'
+    | '/admin/content'
     | '/admin/finance'
     | '/admin/forbidden'
     | '/admin/moderation'
@@ -672,6 +711,7 @@ export interface FileRouteTypes {
     | '/admin/reports'
     | '/admin/returns'
     | '/admin/reviews'
+    | '/admin/roles'
     | '/admin/sellers'
     | '/admin/settings'
     | '/admin/users'
@@ -697,6 +737,7 @@ export interface FileRouteTypes {
     | '/profile/rentals'
     | '/profile/wishlist'
     | '/rentals/$rentalId'
+    | '/support/$ticketId'
     | '/admin/reviews/sellers'
     | '/seller/products/new'
     | '/seller/products/$productId/edit'
@@ -723,8 +764,10 @@ export interface FileRouteTypes {
     | '/profile'
     | '/rentals'
     | '/settings'
+    | '/support'
     | '/admin/audit-logs'
     | '/admin/categories'
+    | '/admin/content'
     | '/admin/finance'
     | '/admin/forbidden'
     | '/admin/moderation'
@@ -739,6 +782,7 @@ export interface FileRouteTypes {
     | '/admin/reports'
     | '/admin/returns'
     | '/admin/reviews'
+    | '/admin/roles'
     | '/admin/sellers'
     | '/admin/settings'
     | '/admin/users'
@@ -764,6 +808,7 @@ export interface FileRouteTypes {
     | '/profile/rentals'
     | '/profile/wishlist'
     | '/rentals/$rentalId'
+    | '/support/$ticketId'
     | '/admin/reviews/sellers'
     | '/seller/products/new'
     | '/seller/products/$productId/edit'
@@ -793,8 +838,10 @@ export interface FileRouteTypes {
     | '/_authenticated/profile'
     | '/_authenticated/rentals'
     | '/_authenticated/settings'
+    | '/_authenticated/support'
     | '/admin/audit-logs'
     | '/admin/categories'
+    | '/admin/content'
     | '/admin/finance'
     | '/admin/forbidden'
     | '/admin/moderation'
@@ -809,6 +856,7 @@ export interface FileRouteTypes {
     | '/admin/reports'
     | '/admin/returns'
     | '/admin/reviews'
+    | '/admin/roles'
     | '/admin/sellers'
     | '/admin/settings'
     | '/admin/users'
@@ -834,6 +882,7 @@ export interface FileRouteTypes {
     | '/_authenticated/profile/rentals'
     | '/_authenticated/profile/wishlist'
     | '/_authenticated/rentals/$rentalId'
+    | '/_authenticated/support_/$ticketId'
     | '/admin/reviews/sellers'
     | '/seller/products/new'
     | '/seller/products/$productId/edit'
@@ -1038,6 +1087,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/support': {
+      id: '/_authenticated/support'
+      path: '/support'
+      fullPath: '/support'
+      preLoaderRoute: typeof AuthenticatedSupportRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/admin/': {
       id: '/admin/'
       path: '/'
@@ -1057,6 +1113,13 @@ declare module '@tanstack/react-router' {
       path: '/categories'
       fullPath: '/admin/categories'
       preLoaderRoute: typeof AdminCategoriesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/content': {
+      id: '/admin/content'
+      path: '/content'
+      fullPath: '/admin/content'
+      preLoaderRoute: typeof AdminContentRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/finance': {
@@ -1155,6 +1218,13 @@ declare module '@tanstack/react-router' {
       path: '/reviews'
       fullPath: '/admin/reviews'
       preLoaderRoute: typeof AdminReviewsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/roles': {
+      id: '/admin/roles'
+      path: '/roles'
+      fullPath: '/admin/roles'
+      preLoaderRoute: typeof AdminRolesRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/sellers': {
@@ -1325,6 +1395,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRentalsRentalIdRouteImport
       parentRoute: typeof AuthenticatedRentalsRoute
     }
+    '/_authenticated/support_/$ticketId': {
+      id: '/_authenticated/support_/$ticketId'
+      path: '/support/$ticketId'
+      fullPath: '/support/$ticketId'
+      preLoaderRoute: typeof AuthenticatedSupportTicketIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/admin/reviews/sellers': {
       id: '/admin/reviews/sellers'
       path: '/sellers'
@@ -1414,6 +1491,8 @@ interface AuthenticatedRouteChildren {
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRouteWithChildren
   AuthenticatedRentalsRoute: typeof AuthenticatedRentalsRouteWithChildren
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedSupportRoute: typeof AuthenticatedSupportRoute
+  AuthenticatedSupportTicketIdRoute: typeof AuthenticatedSupportTicketIdRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -1426,6 +1505,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedProfileRoute: AuthenticatedProfileRouteWithChildren,
   AuthenticatedRentalsRoute: AuthenticatedRentalsRouteWithChildren,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedSupportRoute: AuthenticatedSupportRoute,
+  AuthenticatedSupportTicketIdRoute: AuthenticatedSupportTicketIdRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
@@ -1447,6 +1528,7 @@ const AdminReviewsRouteWithChildren = AdminReviewsRoute._addFileChildren(
 interface AdminRouteChildren {
   AdminAuditLogsRoute: typeof AdminAuditLogsRoute
   AdminCategoriesRoute: typeof AdminCategoriesRoute
+  AdminContentRoute: typeof AdminContentRoute
   AdminFinanceRoute: typeof AdminFinanceRoute
   AdminForbiddenRoute: typeof AdminForbiddenRoute
   AdminModerationRoute: typeof AdminModerationRoute
@@ -1461,6 +1543,7 @@ interface AdminRouteChildren {
   AdminReportsRoute: typeof AdminReportsRoute
   AdminReturnsRoute: typeof AdminReturnsRoute
   AdminReviewsRoute: typeof AdminReviewsRouteWithChildren
+  AdminRolesRoute: typeof AdminRolesRoute
   AdminSellersRoute: typeof AdminSellersRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminUsersRoute: typeof AdminUsersRoute
@@ -1470,6 +1553,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAuditLogsRoute: AdminAuditLogsRoute,
   AdminCategoriesRoute: AdminCategoriesRoute,
+  AdminContentRoute: AdminContentRoute,
   AdminFinanceRoute: AdminFinanceRoute,
   AdminForbiddenRoute: AdminForbiddenRoute,
   AdminModerationRoute: AdminModerationRoute,
@@ -1484,6 +1568,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminReportsRoute: AdminReportsRoute,
   AdminReturnsRoute: AdminReturnsRoute,
   AdminReviewsRoute: AdminReviewsRouteWithChildren,
+  AdminRolesRoute: AdminRolesRoute,
   AdminSellersRoute: AdminSellersRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminUsersRoute: AdminUsersRoute,

@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowLeft, CalendarDays, Package } from "lucide-react";
 import { format } from "date-fns";
 import { OrderStatusBadge } from "./OrderStatusBadge";
+import { ReportButton } from "@/features/safety/components/ReportButton";
 import { orderTypeLabel, type OrderDetail } from "../types";
 
 /**
@@ -37,7 +38,15 @@ export function OrderDetailsHeader({ order }: { order: OrderDetail }) {
               Placed on {format(new Date(order.createdAt), "d MMMM yyyy")}
             </p>
           </div>
-          <OrderStatusBadge status={order.status} />
+          <div className="flex items-center gap-2">
+            <OrderStatusBadge status={order.status} />
+            <ReportButton
+              target={{ kind: "order", id: order.id, label: "this order" }}
+              variant="ghost"
+            >
+              Report
+            </ReportButton>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">

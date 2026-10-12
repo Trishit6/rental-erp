@@ -5,6 +5,8 @@ import { motion } from "framer-motion";
 import { Sheet } from "@/components/ui/sheet";
 import { AdminSidebar, AdminSidebarFooter } from "./AdminSidebar";
 import { AdminTopbar } from "./AdminTopbar";
+import { AdminCommandPalette } from "./AdminCommandPalette";
+import { useAdminAccess } from "../query";
 
 /**
  * The admin workspace shell.
@@ -40,7 +42,12 @@ import { AdminTopbar } from "./AdminTopbar";
  */
 export function AdminLayout({ children }: { children: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
   const pathname = useLocation({ select: (location) => location.pathname });
+  // PROMPT 22 — the rail is filtered to the modules this account may use. The hook
+  // is called before the forbidden early-return so the rules of hooks hold on the
+  // one route that renders this layout without chrome.
+  const { data: access } = useAdminAccess();
 
   if (pathname === "/admin/forbidden") {
     return <div className="min-h-screen bg-background">{children}</div>;
@@ -48,13 +55,16 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
-      <AdminTopbar onOpenNav={() => setNavOpen(true)} />
+      <AdminTopbar
+        onOpenNav={() => setNavOpen(true)}
+        onOpenCommand={() => setCommandOpen(true)}
+      />
 
       <div className="mx-auto flex w-full max-w-[1600px] gap-8 px-4 py-6 lg:px-8 lg:py-8">
         {/* Desktop rail */}
         <aside className="hidden w-60 shrink-0 lg:block">
           <div className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto pr-2">
-            <AdminSidebar />
+            <AdminSidebar access={access} />
             <div className="mt-6 border-t border-[var(--divider)] pt-4">
               <AdminSidebarFooter />
             </div>
@@ -79,8 +89,10 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         description="Jump to a part of the workspace."
       >
         {/* Navigating closes the sheet; otherwise it covers the page you just asked for. */}
-        <AdminSidebar onNavigate={() => setNavOpen(false)} />
+        <AdminSidebar access={access} onNavigate={() => setNavOpen(false)} />
       </Sheet>
+
+      <AdminCommandPalette open={commandOpen} onOpenChange={setCommandOpen} access={access} />
     </div>
   );
 }

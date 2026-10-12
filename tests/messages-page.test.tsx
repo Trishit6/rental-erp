@@ -38,6 +38,17 @@ vi.mock("@/lib/tanstack-db/sync", () => ({
   forgetConversationMessages: mocks.forget,
 }));
 
+/**
+ * The thread header now carries a block toggle. It is stubbed out here for two
+ * reasons: it fetches through its own query client (which this suite does not
+ * mount), and its accessible name contains the counterparty's name, which is the
+ * same string the "narrows the list" assertion uses to prove a row is gone.
+ * Blocking has its own suite in `tests/user-blocks-routes.test.ts`.
+ */
+vi.mock("@/features/safety/components/BlockUserButton", () => ({
+  BlockUserButton: () => null,
+}));
+
 function conversation(overrides: Partial<ConversationSummary> = {}): ConversationSummary {
   return {
     conversationId: 5,

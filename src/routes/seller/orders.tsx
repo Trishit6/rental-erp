@@ -1,17 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { DashboardOrdersPage } from "@/features/seller-orders";
+import { SellerOrdersPage } from "@/features/seller-orders";
 import { requireSeller } from "@/lib/auth/guards";
 
 /**
  * `/seller/orders` — the orders containing this seller's lines.
  *
- * `requireSeller` rather than `requireAuth`, and the reason is a correctness problem rather
- * than a tidiness one. This page reads `GET /orders`, which is *the customer's own* orders,
- * scoped to the session. Under `requireAuth` a customer who typed this URL saw their own
- * purchases presented as seller revenue — the wrong side of the table, under a heading that
- * says otherwise.
+ * `requireSeller` because every query behind this page is seller-scoped: the
+ * server reads the seller from the session and puts ownership in the `WHERE`
+ * clause, so a customer reaching this URL would be shown a page that only ever
+ * 403s. Gating at the route keeps the failure where it belongs instead of
+ * painting an error state under a seller heading.
  */
 export const Route = createFileRoute("/seller/orders")({
   beforeLoad: requireSeller,
-  component: DashboardOrdersPage,
+  component: SellerOrdersPage,
 });

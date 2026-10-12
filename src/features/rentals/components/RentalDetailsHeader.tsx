@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowLeft, CalendarRange } from "lucide-react";
 import { formatDateLong } from "./RentalDates";
 import { RentalStatusBadge } from "./RentalStatusBadge";
+import { ReportButton } from "@/features/safety/components/ReportButton";
 import type { Rental } from "../types";
 
 /**
@@ -41,7 +42,15 @@ export function RentalDetailsHeader({ rental }: { rental: Rental }) {
               {formatDateLong(rental.startDate)} → {formatDateLong(rental.endDate)}
             </p>
           </div>
-          <RentalStatusBadge status={rental.status} />
+          <div className="flex items-center gap-2">
+            <RentalStatusBadge status={rental.status} />
+            <ReportButton
+              target={{ kind: "rental", id: rental.id, label: "this rental" }}
+              variant="ghost"
+            >
+              Report
+            </ReportButton>
+          </div>
         </div>
 
         {rental.rentCreditApplied > 0 && (

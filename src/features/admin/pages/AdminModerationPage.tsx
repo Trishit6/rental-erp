@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { ModerationSection } from "@/features/reviews";
 import { AdminPageHeader } from "../components/AdminLayout";
 import { AdminReportsList } from "../components/AdminReportsList";
+import { AdminConfirmDialog } from "../components/AdminConfirmDialog";
 import { useAdminActions, useAdminUsers } from "../query";
 
 /**
@@ -45,6 +46,27 @@ export function AdminModerationPage() {
   const [tab, setTab] = useState<Tab>("reports");
   const { data: users } = useAdminUsers(tab === "users");
   const { suspendUser } = useAdminActions();
+  const [suspendTarget, setSuspendTarget] = useState<{
+    id: number;
+    name: string;
+    suspend: boolean;
+  } | null>(null);
+  const [suspending, setSuspending] = useState(false);
+
+  /**
+   * The account actions here are audited with a mandatory reason (PROMPT 22), so
+   * the row button opens a dialog that collects it rather than firing immediately.
+   */
+  async function confirmSuspension(reason: string) {
+    if (!suspendTarget) return;
+    setSuspending(true);
+    try {
+      await suspendUser(suspendTarget.id, suspendTarget.suspend, reason);
+      setSuspendTarget(null);
+    } finally {
+      setSuspending(false);
+    }
+  }
 
   return (
     <div className="space-y-5 pb-10">
@@ -112,7 +134,9 @@ export function AdminModerationPage() {
                           <Button
                             size="sm"
                             variant="secondary"
-                            onClick={() => void suspendUser(user.id, true)}
+                            onClick={() =>
+                              setSuspendTarget({ id: user.id, name: user.name, suspend: true })
+                            }
                           >
                             <Ban size={13} aria-hidden /> Suspend
                           </Button>
@@ -120,7 +144,9 @@ export function AdminModerationPage() {
                           <Button
                             size="sm"
                             variant="secondary"
-                            onClick={() => void suspendUser(user.id, false)}
+                            onClick={() =>
+                              setSuspendTarget({ id: user.id, name: user.name, suspend: false })
+                            }
                           >
                             <CheckCircle2 size={13} aria-hidden /> Restore
                           </Button>
@@ -134,6 +160,28 @@ export function AdminModerationPage() {
           )}
         </Card>
       )}
+
+      <AdminConfirmDialog
+        open={suspendTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setSuspendTarget(null);
+        }}
+        subject={suspendTarget ? suspendTarget.name : ""}
+        title={suspendTarget?.suspend ? "Suspend this account?" : "Restore this account?"}
+        requireReason
+        reasonLabel={suspendTarget?.suspend ? "Reason for suspending" : "Reason for restoring"}
+        body={
+          <p>
+            {suspendTarget?.suspend
+              ? "They will be signed out and blocked from signing in, buying, renting and messaging."
+              : "They will be able to use their account again."}
+          </p>
+        }
+        confirmLabel={suspendTarget?.suspend ? "Suspend account" : "Restore access"}
+        tone={suspendTarget?.suspend ? "destructive" : "default"}
+        isSubmitting={suspending}
+        onConfirm={(reason) => void confirmSuspension(reason)}
+      />
     </div>
   );
 }

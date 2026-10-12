@@ -64,6 +64,46 @@ export type SellerSummary = {
   reviews: { average: number; count: number; awaitingReply: number };
 };
 
+/* --------------------------------- alerts ---------------------------------- */
+
+/**
+ * `GET /api/seller/alerts` — the two nudges a crowded listing page cannot give.
+ *
+ * Both lists are the seller's own: low-stock listings at or below the server's
+ * threshold, and rentals of their items due back within the server's window
+ * (already-overdue ones included). The server computes `daysUntilDue` so the
+ * client never re-derives "how many days" from a date and a clock that may
+ * disagree — a client-side countdown that is one day off is a seller who
+ * misses a return.
+ */
+export type SellerLowStockAlert = {
+  id: number;
+  title: string;
+  slug: string;
+  imageUrl: string | null;
+  availableQuantity: number;
+  quantity: number;
+  status: string;
+};
+
+export type SellerReturningSoonAlert = {
+  id: number;
+  productId: number;
+  title: string;
+  slug: string | null;
+  imageUrl: string | null;
+  renterName: string | null;
+  status: string;
+  endDate: string;
+  /** Negative when the rental is already overdue. */
+  daysUntilDue: number;
+};
+
+export type SellerAlerts = {
+  lowStock: SellerLowStockAlert[];
+  returningSoon: SellerReturningSoonAlert[];
+};
+
 /* ------------------------------- onboarding ------------------------------- */
 
 /**

@@ -59,14 +59,22 @@ async function performRefresh(): Promise<boolean> {
   if (!refreshInFlight) {
     refreshInFlight = (async () => {
       try {
+        // The refresh POST is itself a state-changing request that carries the
+        // refresh cookie, so it needs the CSRF token too — and on a cold page the
+        // token may not have been seen yet. Prime it first.
+        await primeCsrfToken();
+        const headers = new Headers({ "Content-Type": "application/json" });
+        if (csrfToken) headers.set(CSRF_HEADER, csrfToken);
+
         const response = await fetch("/api/auth/refresh", {
           method: "POST",
           credentials: "include",
-          headers: { "Content-Type": "application/json" },
+          headers,
           // Deliberately empty: the cookie is the credential, and a body is where
           // an implementation is most likely to put a token by accident.
           body: "{}",
         });
+        rememberCsrfToken(response);
         if (response.ok) return true;
         // 401/403 mean "no usable refresh cookie" — anything else (a 429 from the
         // limiter, a 500) is temporary, so it must not latch the app into
@@ -98,6 +106,59 @@ export function resetRefreshState(): void {
   refreshRefused = false;
 }
 
+/* ------------------------------- csrf handling ----------------------------- */
+
+/** The header the server echoes the double-submit token in, and expects back. */
+const CSRF_HEADER = "X-CSRF-Token";
+
+/**
+ * The CSRF token, held in memory and never in storage.
+ *
+ * The server sets an HttpOnly `revaro_csrf` cookie and echoes the same value in
+ * the `X-CSRF-Token` **response** header. This module sends it back on every
+ * state-changing request. It deliberately does *not* read the browser cookie jar
+ * (the cookie is HttpOnly, and this codebase's rule is that client JavaScript
+ * never touches it) — the response header is the channel, and a cross-site
+ * attacker cannot read it either.
+ */
+let csrfToken: string | null = null;
+
+/**
+ * An in-flight call to `GET /api/auth/csrf`, shared so a burst of mutations on a
+ * cold page primes once rather than once per request.
+ */
+let csrfPriming: Promise<void> | null = null;
+
+function rememberCsrfToken(response: Response): void {
+  const value = response.headers.get(CSRF_HEADER);
+  if (value) csrfToken = value;
+}
+
+/**
+ * Guarantee a token before the first mutation on a cold page.
+ *
+ * Any prior response would have carried the header, but a page whose very first
+ * request is a mutation (a deep link straight to "add to cart") has seen none yet.
+ * `GET /api/auth/csrf` exists exactly for this: it mints the cookie and returns
+ * the header without racing the mutation that needs it.
+ */
+async function primeCsrfToken(): Promise<void> {
+  if (csrfToken) return;
+  if (!csrfPriming) {
+    csrfPriming = fetch("/api/auth/csrf", { credentials: "include" })
+      .then(rememberCsrfToken)
+      .catch(() => {
+        // A failed prime is not fatal: the mutation will proceed without the
+        // header and the server will refuse it with CSRF_TOKEN_INVALID, which is
+        // the honest answer rather than a silent, unexplained failure.
+      })
+      .finally(() => {
+        csrfPriming = null;
+      });
+  }
+  return csrfPriming;
+}
+
 /* ---------------------------------- request -------------------------------- */
 
 async function request<T>(
@@ -105,11 +166,22 @@ async function request<T>(
   options: RequestInit = {},
   attempt = 0,
 ): Promise<{ data: T; pagination?: ApiEnvelope<T>["pagination"]; response: Response }> {
+  const method = (options.method ?? "GET").toUpperCase();
+  const mutating = method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
+  if (mutating) await primeCsrfToken();
+
+  const headers = new Headers(options.headers);
+  if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (mutating && csrfToken) headers.set(CSRF_HEADER, csrfToken);
+
   const response = await fetch(path.startsWith("/api") ? path : `/api${path}`, {
-    credentials: "include",
-    headers: options.body ? { "Content-Type": "application/json" } : undefined,
     ...options,
+    credentials: "include",
+    headers,
   });
+
+  // The server may rotate the token at any time; adopt whatever this response carried.
+  rememberCsrfToken(response);
 
   let body: ApiEnvelope<T> | null = null;
   try {

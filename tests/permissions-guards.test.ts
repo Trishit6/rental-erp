@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { HttpError, onErrorHandler } from "../server/lib/api";
 import { SESSION_USER_KEY, type SessionUser } from "../server/lib/auth";
+import { DEV_ADMIN_EMAIL, isDevMfaBypass } from "../server/lib/config";
 import { Router } from "../server/lib/http";
 import {
   accessGrants,
@@ -20,12 +21,12 @@ import { startRouter, type Harness } from "./support/http-harness";
  * no-DB suite.
  */
 
-function session(mfaEnabled: boolean): SessionUser {
+function session(mfaEnabled: boolean, email = "mfa-gate@revaro.local"): SessionUser {
   return {
     id: 7,
     role: "ADMIN",
     name: "Admin Test",
-    email: "admin@revaro.local",
+    email,
     verified: true,
     avatarUrl: null,
     status: "ACTIVE",
@@ -35,7 +36,7 @@ function session(mfaEnabled: boolean): SessionUser {
   };
 }
 
-function gateRouter(mfaEnabled: boolean): Router {
+function gateRouter(mfaEnabled: boolean, email?: string): Router {
   const protectedRouter = new Router();
   protectedRouter.use("*", requireMfaEnrolment());
   protectedRouter.get("/secret", (c) => c.json({ success: true, data: { granted: true } }));
@@ -43,7 +44,7 @@ function gateRouter(mfaEnabled: boolean): Router {
   const outer = new Router();
   outer.onError(onErrorHandler);
   outer.use(async (c, next) => {
-    c.set(SESSION_USER_KEY, session(mfaEnabled));
+    c.set(SESSION_USER_KEY, session(mfaEnabled, email));
     await next();
   });
   outer.route("/", protectedRouter);
@@ -138,6 +139,29 @@ describe("staff MFA gate (requireMfaEnrolment)", () => {
       expect(response.status).toBe(200);
     } finally {
       await enabled.close();
+    }
+  });
+
+  it.skipIf(process.env.NODE_ENV === "production")(
+    "admits the development admin without a second factor",
+    async () => {
+      const bypass = await startRouter(gateRouter(false, DEV_ADMIN_EMAIL));
+      try {
+        const response = await bypass.request("/secret");
+        expect(response.status).toBe(200);
+      } finally {
+        await bypass.close();
+      }
+    },
+  );
+
+  it("ignores the bypass in production", () => {
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      expect(isDevMfaBypass(DEV_ADMIN_EMAIL)).toBe(false);
+    } finally {
+      process.env.NODE_ENV = previous;
     }
   });
 });

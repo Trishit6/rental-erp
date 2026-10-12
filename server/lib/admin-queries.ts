@@ -5,8 +5,10 @@ import {
   desc,
   eq,
   exists,
+  gte,
   inArray,
   like,
+  lte,
   ne,
   or,
   sql,
@@ -36,6 +38,7 @@ import {
   RENTAL_STATUSES,
   type ResolvedOrderFilters,
 } from "./order-queries";
+import { normalizePriceRange } from "./product-filters";
 import { buildRentalFilters, buildRentalSort, resolveRentalFilters } from "./rental-queries";
 
 /**
@@ -78,6 +81,9 @@ export const adminOrdersQuerySchema = paginationQuerySchema.extend({
   customer: z.string().trim().max(120).catch("").default(""),
   seller: z.coerce.number().int().positive().nullish(),
   paymentStatus: z.string().trim().optional().catch(undefined),
+  /** Order-total bounds, in paise — the unit `orders.total` is stored in. */
+  minAmount: z.coerce.number().int().min(0).nullish(),
+  maxAmount: z.coerce.number().int().min(0).nullish(),
 });
 
 export type AdminOrdersQuery = z.infer<typeof adminOrdersQuerySchema>;
@@ -123,6 +129,15 @@ function adminOrderConditions(query: AdminOrdersQuery): SQL[] {
       conditions.push(eq(orders.paymentStatus, query.paymentStatus));
     }
   }
+  // Amount bounds, in paise. `normalizePriceRange` swaps a reversed range so "max
+  // below min" widens to the range the person meant rather than silently matching
+  // nothing.
+  const { minPrice: minAmount, maxPrice: maxAmount } = normalizePriceRange(
+    query.minAmount ?? undefined,
+    query.maxAmount ?? undefined,
+  );
+  if (minAmount !== undefined) conditions.push(gte(orders.total, minAmount));
+  if (maxAmount !== undefined) conditions.push(lte(orders.total, maxAmount));
 
   return conditions;
 }
@@ -685,6 +700,11 @@ function isNotNullSellerReply(): SQL {
 export const adminAuditQuerySchema = paginationQuerySchema.extend({
   action: z.string().trim().max(40).catch("").default(""),
   entityType: z.string().trim().max(20).catch("").default(""),
+  adminId: z.coerce.number().int().positive().optional().catch(undefined),
+  entityId: z.coerce.number().int().positive().optional().catch(undefined),
+  search: z.string().trim().max(120).catch("").default(""),
+  from: z.string().trim().max(30).catch("").default(""),
+  to: z.string().trim().max(30).catch("").default(""),
 });
 
 export type AdminAuditQuery = z.infer<typeof adminAuditQuerySchema>;
@@ -693,12 +713,27 @@ export type AdminAuditRow = {
   id: number;
   adminId: number;
   adminName: string;
+  actorRole: string | null;
   action: string;
   entityType: string;
   entityId: number | null;
   details: string | null;
+  reason: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  requestId: string | null;
+  beforeState: string | null;
+  afterState: string | null;
   createdAt: Date;
 };
+
+/** A `yyyy-mm-dd` (or full ISO) bound as a `Date`, or null when it will not parse. */
+function parseBound(value: string, endOfDay: boolean): Date | null {
+  if (!value) return null;
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const parsed = new Date(dateOnly && endOfDay ? `${value}T23:59:59.999Z` : value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 
 export async function listAdminAuditLog(query: AdminAuditQuery): Promise<{
   rows: AdminAuditRow[];
@@ -707,6 +742,23 @@ export async function listAdminAuditLog(query: AdminAuditQuery): Promise<{
   const conditions: SQL[] = [];
   if (query.action) conditions.push(like(adminAuditLog.action, `%${query.action}%`));
   if (query.entityType) conditions.push(eq(adminAuditLog.entityType, query.entityType));
+  if (query.adminId) conditions.push(eq(adminAuditLog.adminId, query.adminId));
+  if (query.entityId) conditions.push(eq(adminAuditLog.entityId, query.entityId));
+  const from = parseBound(query.from, false);
+  const to = parseBound(query.to, true);
+  if (from) conditions.push(gte(adminAuditLog.createdAt, from));
+  if (to) conditions.push(lte(adminAuditLog.createdAt, to));
+  if (query.search) {
+    const term = `%${query.search}%`;
+    const searchCondition = or(
+      like(users.name, term),
+      like(adminAuditLog.action, term),
+      like(adminAuditLog.details, term),
+      like(adminAuditLog.reason, term),
+      like(adminAuditLog.actorRole, term),
+    );
+    if (searchCondition) conditions.push(searchCondition);
+  }
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
   const [rows, [totalRow]] = await Promise.all([
@@ -715,10 +767,17 @@ export async function listAdminAuditLog(query: AdminAuditQuery): Promise<{
         id: adminAuditLog.id,
         adminId: adminAuditLog.adminId,
         adminName: users.name,
+        actorRole: adminAuditLog.actorRole,
         action: adminAuditLog.action,
         entityType: adminAuditLog.entityType,
         entityId: adminAuditLog.entityId,
         details: adminAuditLog.details,
+        reason: adminAuditLog.reason,
+        ip: adminAuditLog.ip,
+        userAgent: adminAuditLog.userAgent,
+        requestId: adminAuditLog.requestId,
+        beforeState: adminAuditLog.beforeState,
+        afterState: adminAuditLog.afterState,
         createdAt: adminAuditLog.createdAt,
       })
       .from(adminAuditLog)

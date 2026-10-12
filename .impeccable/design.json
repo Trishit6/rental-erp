@@ -1,0 +1,199 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-11T00:00:00.000Z",
+  "title": "Design System: Revaro",
+  "extensions": {
+    "colorMeta": {
+      "background": {
+        "role": "neutral",
+        "displayName": "Ivory Canvas",
+        "canonical": "#eceae2",
+        "tonalRamp": ["#f2efe7", "#efede3", "#eceae2", "#e6e1d7", "#e1ddd2", "#dcd8cd", "#d8d1c3"]
+      },
+      "foreground": {
+        "role": "neutral",
+        "displayName": "Charcoal Earth",
+        "canonical": "#2e2a25",
+        "tonalRamp": ["#3a342d", "#342f28", "#2e2a25", "#282520", "#221f1b", "#1d1a16", "#171512"]
+      },
+      "primary": {
+        "role": "primary",
+        "displayName": "Rust Earth",
+        "canonical": "#a86132",
+        "tonalRamp": ["#c97b4a", "#b86d3d", "#a86132", "#96572d", "#844e28", "#724423", "#613a1e"]
+      },
+      "accent": {
+        "role": "secondary",
+        "displayName": "Olive Grove",
+        "canonical": "#6b7c5e",
+        "tonalRamp": ["#8fa07e", "#7c8f6e", "#6b7c5e", "#5d6c54", "#4f5c4a", "#414d41", "#343d37"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Section titles and prominent headings"
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Default reading text and interface content"
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Badges, chips, and metadata labels"
+      }
+    },
+    "shadows": [
+      {
+        "name": "inset",
+        "value": "inset 2px 2px 6px var(--shadow-color-dark), inset -2px -2px 4px var(--shadow-color-light)",
+        "purpose": "Recessed surfaces for pressed/toggled states"
+      },
+      {
+        "name": "card",
+        "value": "2px 2px 8px var(--shadow-color-dark), -2px -2px 4px var(--shadow-color-light)",
+        "purpose": "Default resting elevation for cards and tiles"
+      },
+      {
+        "name": "card-hover",
+        "value": "4px 4px 14px var(--shadow-color-dark), -3px -3px 8px var(--shadow-color-light)",
+        "purpose": "Elevated state on interaction"
+      },
+      {
+        "name": "raised",
+        "value": "4px 4px 16px var(--shadow-color-dark), -3px -3px 8px var(--shadow-color-light)",
+        "purpose": "Panels and elements floating above content"
+      },
+      {
+        "name": "floating",
+        "value": "3px 3px 12px var(--shadow-color-dark), -2px -2px 6px var(--shadow-color-light)",
+        "purpose": "Floating action dock and persistent UI"
+      },
+      {
+        "name": "modal",
+        "value": "0 12px 32px var(--shadow-color-dark), 0 2px 8px var(--shadow-color-dark)",
+        "purpose": "Dialogs and modal overlays"
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-standard",
+        "value": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Default easing for state transitions"
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Primary action button with warm rust earth background and pill shape",
+      "html": "<button class=\"ds-btn-primary\">Get Started</button>",
+      "css": ".ds-btn-primary { background: #a86132; color: #fff7ed; padding: 0.6875rem 1.25rem; font-size: 0.875rem; font-weight: 600; border-radius: 9999px; border: none; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; transition: all 200ms ease; box-shadow: 2px 2px 6px var(--shadow-color-dark), inset 0 1px 0 rgb(255 255 255 / 12%); cursor: pointer; } .ds-btn-primary:hover { filter: brightness(1.03); box-shadow: 3px 3px 10px var(--shadow-color-dark), inset 0 1px 0 rgb(255 255 255 / 15%); } .ds-btn-primary:active { transform: translateY(0); filter: brightness(0.98); box-shadow: inset 2px 2px 6px var(--shadow-color-dark), inset 0 1px 0 rgb(255 255 255 / 10%); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 2px #a86132, 0 0 0 4px rgba(168, 97, 50, 0.2); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Tactile card surface with neumorphic elevation",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-content\">Card content</div></div>",
+      "css": ".ds-card { background: #eceae2; border: 1px solid rgba(255, 255, 255, 0.55); border-radius: 1.5rem; padding: 1.25rem; box-shadow: 2px 2px 8px var(--shadow-color-dark), -2px -2px 4px var(--shadow-color-light); transition: box-shadow 250ms ease; } .ds-card:hover { box-shadow: 4px 4px 14px var(--shadow-color-dark), -3px -3px 8px var(--shadow-color-light); }"
+    },
+    {
+      "name": "Input Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Inset surface input with pill shape",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Search anything...\">",
+      "css": ".ds-input { background: #e3dfd5; border: 1px solid rgba(255, 255, 255, 0.4); border-radius: 9999px; height: 2.75rem; padding: 0 1rem; font-size: 0.875rem; color: #2e2a25; outline: none; box-shadow: inset 2px 2px 6px var(--shadow-color-dark), inset -2px -2px 4px var(--shadow-color-light); transition: all 200ms ease; } .ds-input::placeholder { color: #82796d; } .ds-input:focus-visible { box-shadow: inset 2px 2px 6px var(--shadow-color-dark), inset -2px -2px 4px var(--shadow-color-light), 0 0 0 2px rgba(168, 97, 50, 0.5); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Warm Hearth",
+    "overview": "Revaro embraces a warm, tactile neumorphic aesthetic that feels like a familiar space rather than a sterile interface. Drawing from the comforting textures of handcrafted goods and well-worn furniture, the design creates an environment that encourages the sharing economy - where pre-loved items feel valued and transactions feel neighborly. The palette is built around warm beiges and earthy tones, creating a soft backdrop that never competes with product imagery. Subtle raised and inset surfaces add physicality through depth, using light and shadow to suggest real materials rather than flat digital planes.",
+    "keyCharacteristics": [
+      "Tactile & Human: Neumorphic surfaces create a sense of physical depth that feels approachable and warm",
+      "Earthy & Grounded: A warm beige palette with natural accent tones creates a calming, neighborly atmosphere",
+      "Subtly Expressive: Depth and elevation communicate hierarchy without harsh contrast or aggressive colors",
+      "Product-First: The soft backdrop ensures product imagery and content remain the focal point",
+      "Light/Dark Aware: Both themes maintain the same warm character, adjusted for comfort in different lighting conditions"
+    ],
+    "rules": [
+      {
+        "name": "The Soft Contrast Rule",
+        "body": "Text never relies on pure black or stark white. Every foreground color is softened to reduce eye fatigue while maintaining WCAG-compliant readability.",
+        "section": "colors"
+      },
+      {
+        "name": "The Warm Inversion Rule",
+        "body": "Dark mode doesn't flip to cold grays - it deepens the warm palette with near-black browns and amber-tinted highlights, preserving the brand's hearth-like character.",
+        "section": "colors"
+      },
+      {
+        "name": "The Breathing Room Rule",
+        "body": "Body text maintains a comfortable line height of 1.5 to support extended reading without fatigue.",
+        "section": "typography"
+      },
+      {
+        "name": "The Physical Light Rule",
+        "body": "All shadows simulate a consistent top-left light source. The dual-shadow approach (inner light edge, outer dark edge) models real-world surface relief.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Subtly Lifted Rule",
+        "body": "Elevation changes are incremental and purposeful. Cards lift just one rung on hover - enough to feel responsive without feeling cartoonish.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Soft Edge Rule",
+        "body": "Harsh 90-degree corners are avoided entirely. Every interactive surface uses a generous radius that contributes to the overall sense of warmth and tactility.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Tactile Affordance Rule",
+        "body": "Interactive elements must feel pressable. This is achieved through elevation changes on hover/active states, never through color alone.",
+        "section": "components"
+      },
+      {
+        "name": "The One System Rule",
+        "body": "Buttons, inputs, chips, and badges share the pill shape language. This consistency reinforces the friendly, unified character across every surface.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do embrace the neumorphic depth - it's core to Revaro's warm, human character",
+      "Do preserve the warm palette in dark mode rather than inverting to cold grays",
+      "Do use incremental elevation changes (rest → hover → active) to communicate interactivity",
+      "Do keep product imagery as the hero - the soft background and subtle surfaces are designed to recede",
+      "Do respect prefers-reduced-motion by providing static fallbacks for animated elements",
+      "Do maintain soft contrast ratios using the muted foreground colors rather than pure black/white"
+    ],
+    "donts": [
+      "Don't use harsh, high-contrast shadows or pure white highlights that create a glow effect",
+      "Don't introduce cold blues, stark grays, or neon colors that would break the earthy warmth",
+      "Don't flatten the interface - the tactile depth is a deliberate brand differentiator",
+      "Don't rely on color alone to indicate state; use elevation, shadows, and rings for clarity",
+      "Don't use sharp rectangular corners - the soft pill and large-radius language is integral to the character",
+      "Don't override the elevation system with ad-hoc box-shadows that don't respect the dual-light-source model"
+    ]
+  }
+}

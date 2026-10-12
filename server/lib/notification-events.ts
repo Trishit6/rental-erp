@@ -106,7 +106,9 @@ type Destination =
   | { readonly kind: "adminOrders" }
   | { readonly kind: "adminProducts" }
   | { readonly kind: "adminModeration" }
-  | { readonly kind: "profileActivity" };
+  | { readonly kind: "profileActivity" }
+  /** A support ticket the user raised — `/support/:ticketId`. */
+  | { readonly kind: "supportTicket"; readonly idFrom: "ticketId" };
 
 /**
  * The data an event can supply, and nothing more.
@@ -125,6 +127,8 @@ export type NotificationEventContext = {
   productSlug?: string | null;
   conversationId?: number | null;
   transactionId?: number | null;
+  /** The support ticket a reply notification points at. */
+  ticketId?: number | null;
   /** Used by the order destination's fallback when there is no order number. */
   orderIdFallbackLabel?: string;
 };
@@ -272,6 +276,19 @@ export const NOTIFICATION_TYPES = define({
     destination: { kind: "order", numberFrom: "orderNumber", idFrom: "orderId" },
   },
   /**
+   * An administrator decided a dispute on the order.
+   *
+   * Addressed to both parties, so the copy is neutral and the destination is the
+   * order rather than the dispute — neither party has a dispute page of their own.
+   */
+  DISPUTE_RESOLVED: {
+    category: "ORDERS",
+    label: "Dispute decided",
+    supported: true,
+    entity: "ORDER",
+    destination: { kind: "order", numberFrom: "orderNumber", idFrom: "orderId" },
+  },
+  /**
    * Seed-only token, kept so old rows still render with a real icon.
    *
    * `supported: false` because nothing emits it — `PAYMENT_SUCCESSFUL` is what the
@@ -346,6 +363,20 @@ export const NOTIFICATION_TYPES = define({
   RENTAL_CANCELLED: {
     category: "RENTALS",
     label: "Rental cancelled",
+    supported: true,
+    entity: "RENTAL",
+    destination: { kind: "rental", idFrom: "rentalId" },
+  },
+  /**
+   * An administrator approved or refused an extension request.
+   *
+   * The renter asked for it, so the decision is addressed to them; the copy
+   * carries whether it was granted. Distinct from the return reminders because
+   * those are derived from dates, whereas this answers a request.
+   */
+  RENTAL_EXTENSION_DECIDED: {
+    category: "RENTALS",
+    label: "Extension decision",
     supported: true,
     entity: "RENTAL",
     destination: { kind: "rental", idFrom: "rentalId" },
@@ -515,6 +546,20 @@ export const NOTIFICATION_TYPES = define({
     supported: true,
     entity: "ACCOUNT",
     destination: { kind: "adminModeration" },
+  },
+
+  /* --------------------------------- support ------------------------------- */
+
+  // A staff reply is the one support event that *must* reach the requester: the whole
+  // point of a ticket is that someone is waiting. It sits in `ORDERS` because the
+  // preference categories are a fixed, user-facing axis and a category with a single
+  // event is a toggle that controls one notification.
+  SUPPORT_TICKET_REPLY: {
+    category: "ORDERS",
+    label: "Support replied",
+    supported: true,
+    entity: "ACCOUNT",
+    destination: { kind: "supportTicket", idFrom: "ticketId" },
   },
 });
 
@@ -698,6 +743,12 @@ export function notificationDestination(
       return "/admin/moderation";
     case "profileActivity":
       return "/profile/activity";
+    case "supportTicket": {
+      const id = context.ticketId;
+      // No ticket id in the payload means there is no single ticket to open, so the
+      // support centre itself is the honest destination rather than a broken link.
+      return id && id > 0 ? `/support/${id}` : "/support";
+    }
   }
 }
 

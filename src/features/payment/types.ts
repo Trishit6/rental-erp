@@ -143,6 +143,31 @@ export type PaymentIntent = {
   isProductionReady: boolean;
   /** False once the intent is settled — it must not be paid a second time. */
   resumable: boolean;
+  /**
+   * The UPI collect code, when this is a UPI intent and the deployment has a payee
+   * VPA configured. Rendering it is a courtesy to a customer who prefers to scan;
+   * it is never treated as evidence that money moved.
+   */
+  upi?: UpiPayment;
+};
+
+/**
+ * A server-built UPI collect request. Mirrors `server/lib/payments/upi.ts`.
+ *
+ * Every field is a fact the server decided: the amount is the transaction's own,
+ * the reference is the row id, and the VPA is the deployment's. The client only
+ * displays them — nothing here is editable, and nothing here confirms a payment.
+ */
+export type UpiPayment = {
+  payload: string;
+  imageDataUrl: string;
+  payeeVpa: string;
+  payeeName: string;
+  /** Exact amount in integer paise, matching the transaction. */
+  amount: number;
+  currency: string;
+  reference: string;
+  note: string;
 };
 
 export type PaymentStatusResponse = {
@@ -155,6 +180,8 @@ export type PaymentStatusResponse = {
   failureReason: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Same collect code as the intent, so a reloaded page can still show it. */
+  upi?: UpiPayment;
 };
 
 /** The safe order confirmation. No provider credentials, no internal ids. */

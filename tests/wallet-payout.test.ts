@@ -1,9 +1,11 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { onErrorHandler } from "../server/lib/api";
 import { SESSION_USER_KEY, type SessionUser } from "../server/lib/auth";
 import { Router } from "../server/lib/http";
 import { walletRoute } from "../server/routes/wallet";
 import { adminRoute } from "../server/routes/admin";
+import { primeAccessCache } from "../server/lib/permissions";
+import { PERMISSION_KEYS } from "../server/lib/permission-catalogue";
 import { startRouter, type Harness } from "./support/http-harness";
 import {
   clampTimezoneOffset,
@@ -101,6 +103,14 @@ function harnessFor(role: "SELLER" | "ADMIN" | "CUSTOMER", mount: Router): Promi
   }
   return pending;
 }
+
+// PROMPT 22: every `/api/admin` route carries a `requirePermission` gate. The
+// ADMIN requests below have to clear it to reach the handler they test, so the
+// suite primes the resolved-access cache with the full grant set the identity
+// joins would have produced. These suites deliberately have no database.
+beforeEach(() => {
+  primeAccessCache(42, { roles: new Set(["ADMIN"]), permissions: new Set(PERMISSION_KEYS) });
+});
 
 /** Mounts every server up front, so no test races a half-started listener. */
 beforeAll(async () => {

@@ -152,8 +152,11 @@ describe("every declared type has an emitter", () => {
     expect(emittersOf("PRODUCT_SOLD")).toContain("server/lib/order-creation.ts");
     expect(emittersOf("WISHLIST_PRICE_CHANGE")).toContain("server/routes/seller.ts");
     expect(emittersOf("LISTING_APPROVED")).toContain("server/routes/admin.ts");
-    expect(emittersOf("ORDER_READY_FOR_PICKUP")).toContain("server/routes/admin.ts");
-    expect(emittersOf("ORDER_COMPLETED")).toContain("server/routes/admin.ts");
+    // These two moved out of `routes/admin.ts` when the seller order desk began
+    // announcing the same statuses: one module now owns the status→type map for
+    // every writer, so the emitter is the shared library rather than either route.
+    expect(emittersOf("ORDER_READY_FOR_PICKUP")).toContain("server/lib/order-notifications.ts");
+    expect(emittersOf("ORDER_COMPLETED")).toContain("server/lib/order-notifications.ts");
   });
 });
 
@@ -380,7 +383,9 @@ describe("notificationEventKey", () => {
   });
 
   it("separates two entities of the same type in the same millisecond", () => {
-    expect(notificationEventKey("ORDER_PLACED", 1)).not.toBe(notificationEventKey("ORDER_PLACED", 2));
+    expect(notificationEventKey("ORDER_PLACED", 1)).not.toBe(
+      notificationEventKey("ORDER_PLACED", 2),
+    );
   });
 
   it("fits the column even for a pathological discriminator", () => {

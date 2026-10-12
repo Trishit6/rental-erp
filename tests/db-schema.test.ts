@@ -119,6 +119,8 @@ describe("the tables the spec asks for", () => {
     "messages",
     "notifications",
     "reports",
+    // A directed block between two accounts (PROMPT 17 safety).
+    "user_blocks",
     // The spec's `audit_logs`; it ships under this name.
     "admin_audit_log",
     // Foundation tables for features specified but not yet built.
@@ -164,7 +166,7 @@ describe("the tables the spec asks for", () => {
   it("introduces no table that does not exist in MariaDB", () => {
     // The other direction: a table left behind in the schema after being dropped
     // would make every query against it fail at runtime and only at runtime.
-    expect(tablesByName.size).toBe(57);
+    expect(tablesByName.size).toBe(59);
   });
 
   it("gives every table a created_at", () => {
@@ -183,6 +185,7 @@ describe("the tables the spec asks for", () => {
       admin_audit_log: "append-only log; id + created_at is the whole record",
       conversations: "only `last_message_at` moves",
       favorites: "a favorite is created or removed, never edited",
+      user_blocks: "a block is created or removed, never edited",
       messages: "append-only transcript",
       order_events: "append-only timeline; events are never rewritten",
       product_tags: "junction row; created or removed",
@@ -329,6 +332,8 @@ describe("unique constraints the spec calls for", () => {
     ["support_tickets", "support_tickets_number_unique"],
     ["export_jobs", "export_jobs_key_unique"],
     ["mfa_recovery_codes", "mfa_recovery_codes_hash_unique"],
+    // PROMPT 17 safety: at most one block per direction of a pair.
+    ["user_blocks", "user_blocks_blocker_blocked_unique"],
   ])("enforces %s.%s", (tableName, indexName) => {
     expect(hasIndex(tableName, indexName), `${tableName}.${indexName}`).toBe(true);
   });
@@ -389,6 +394,12 @@ describe("check constraints", () => {
     // forbids. Tracked as Follow-up F2 in docs/database.md.
     expect(hasCheck("stock_reservations", "stock_reservations_window_ordered")).toBe(true);
     expect(hasCheck("rentals", "rentals_end_after_start")).toBe(false);
+  });
+
+  it("forbids blocking yourself", () => {
+    // The handler refuses it too, but a constraint is the only version a future
+    // writer cannot skip — and a self-pair would make the mutual check ambiguous.
+    expect(hasCheck("user_blocks", "user_blocks_not_self")).toBe(true);
   });
 
   it("gives the database a meaningful number of checks overall", () => {
@@ -498,6 +509,18 @@ describe("delete rules", () => {
     expect(deleteRules("stock_reservations")).toContainEqual({
       column: "product_id",
       to: "products",
+      onDelete: "cascade",
+    });
+    // A block is state that belongs to the accounts; delete either and the row
+    // has nothing left to describe.
+    expect(deleteRules("user_blocks")).toContainEqual({
+      column: "blocker_id",
+      to: "users",
+      onDelete: "cascade",
+    });
+    expect(deleteRules("user_blocks")).toContainEqual({
+      column: "blocked_id",
+      to: "users",
       onDelete: "cascade",
     });
   });

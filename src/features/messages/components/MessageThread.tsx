@@ -3,6 +3,7 @@ import { AlertTriangle, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { ReportButton } from "@/features/safety/components/ReportButton";
 import { cn } from "@/lib/utils/cn";
 import type { MessageRecord } from "../types";
 import {
@@ -129,9 +130,25 @@ export function MessageThread({
                 {group.messages.map((message) => (
                   <li
                     key={message.id}
-                    className={cn("flex", message.isMine ? "justify-end" : "justify-start")}
+                    className={cn(
+                      "group flex items-center gap-1",
+                      message.isMine ? "justify-end" : "justify-start",
+                    )}
                   >
                     <Bubble message={message} />
+                    {/* A message the server has confirmed (not an optimistic pending
+                        one) is reportable by its recipient. The control is always in
+                        the DOM so it is keyboard- and screen-reader-reachable; it only
+                        *looks* hidden until the row is hovered. */}
+                    {!message.isMine && !isPendingMessage(message) && (
+                      <ReportButton
+                        target={{ kind: "message", id: message.id, label: "this message" }}
+                        variant="ghost"
+                        className="shrink-0 opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100"
+                      >
+                        {null}
+                      </ReportButton>
+                    )}
                   </li>
                 ))}
               </ul>

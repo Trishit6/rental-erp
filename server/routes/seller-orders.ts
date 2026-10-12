@@ -2,11 +2,12 @@ import { Router } from "../lib/http";
 import { z } from "zod";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "../db";
-import { orderItems } from "../schema";
+import { orderItems, orders } from "../schema";
 import { buildPagination, HttpError, ok } from "../lib/api";
 import { requireSeller } from "../lib/seller-access";
 import { restoreCancelledOrderStock } from "../lib/product-inventory";
 import { recordEarningReversal, recordSaleEarning } from "../lib/wallet";
+import { notifyOrderProgress } from "../lib/order-notifications";
 import {
   assertCancellable,
   assertFulfillmentTransition,
@@ -117,9 +118,153 @@ sellerOrdersRoute.patch("/:id/fulfillment", async (c) => {
     }
   });
 
+  // The customer is the other party to this line and cannot see the seller's
+  // workspace, so a step that changes what they are waiting for is news to them.
+  // The seller's id is the discriminator: in a multi-seller order each seller
+  // announcing their own lines must not collapse onto the same notification key.
+  const [owner] = await db
+    .select({ userId: orders.userId })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+  if (owner) {
+    await notifyOrderProgress(db, {
+      orderId,
+      orderNumber: detail.order.orderNumber,
+      userId: owner.userId,
+      status: input.status,
+      discriminator: user.id,
+    });
+  }
+
   // Re-read rather than echoing the request, so the client renders the state the
   // database actually holds.
   return c.json(ok(await getSellerOrder(user.id, orderId)));
+});
+
+/* ---------------------------- bulk fulfillment ----------------------------- */
+
+const bulkFulfillmentSchema = z
+  .object({
+    references: z.array(z.string().trim().min(1).max(40)).min(1).max(50),
+    status: z.string().trim().min(1).max(20),
+  })
+  .strict();
+
+type BulkFulfillmentTarget = {
+  orderId: number;
+  orderNumber: string | null;
+  userId: number;
+  lineIds: number[];
+};
+
+/**
+ * `PATCH /api/seller/orders/bulk-fulfillment` — move several orders one step.
+ *
+ * ## Atomic, and that is a deliberate choice
+ *
+ * Every selected order is re-resolved through the caller's own lines and every
+ * line is checked against the state machine **before** anything is written.
+ * Either all of the seller's selected orders move, or none do and the response
+ * names the order that blocked the batch. A partial apply would leave the list
+ * in a state the seller did not choose: some shipped, some not, and no way to
+ * tell from the toast which was which. Refusing the whole batch also means the
+ * client can present it as a single delayed action with one undo, rather than a
+ * mixture of committed and uncommitted rows.
+ *
+ * ## Why the client delays the call rather than the server holding it
+ *
+ * The "undo window" lives on the client (see `useUndoWindow`): nothing is sent
+ * until the window elapses, so an undo is simply not making the request. No
+ * pending-state table, no expiry sweeper, and no window in which the database
+ * holds a change its owner has not confirmed.
+ */
+sellerOrdersRoute.patch("/bulk-fulfillment", async (c) => {
+  const user = requireSeller(c);
+  const input = bulkFulfillmentSchema.parse(await c.req.json());
+
+  if (!isSellerFulfillmentState(input.status)) {
+    throw new HttpError(400, "BAD_REQUEST", "That is not a fulfillment step a seller can set.");
+  }
+
+  // Deduplicate first: two references to one order must not double-write its
+  // lines or try to record the same earning twice.
+  const references = [...new Set(input.references)];
+
+  const targets: BulkFulfillmentTarget[] = [];
+  for (const reference of references) {
+    // Resolves ownership and 404s for another seller's order in one step.
+    const detail = await getSellerOrder(user.id, reference);
+    const orderId = detail.order.id;
+
+    if (!detail.actions.canSetFulfillment) {
+      throw new HttpError(
+        409,
+        "INVALID_TRANSITION",
+        `${detail.order.orderNumber ?? `#${orderId}`} has no items to fulfil.`,
+      );
+    }
+
+    const lineStatuses = await db
+      .select({ id: orderItems.id, fulfillmentStatus: orderItems.fulfillmentStatus })
+      .from(orderItems)
+      .where(and(eq(orderItems.orderId, orderId), eq(orderItems.sellerId, user.id)))
+      .orderBy(asc(orderItems.id));
+
+    for (const line of lineStatuses) {
+      assertFulfillmentTransition(detail.order.status, line.fulfillmentStatus, input.status);
+    }
+
+    const [owner] = await db
+      .select({ userId: orders.userId })
+      .from(orders)
+      .where(eq(orders.id, orderId))
+      .limit(1);
+
+    targets.push({
+      orderId,
+      orderNumber: detail.order.orderNumber,
+      userId: owner?.userId ?? 0,
+      lineIds: lineStatuses.map((line) => line.id),
+    });
+  }
+
+  await db.transaction(async (tx) => {
+    for (const target of targets) {
+      await tx
+        .update(orderItems)
+        .set({ fulfillmentStatus: input.status })
+        .where(and(eq(orderItems.orderId, target.orderId), eq(orderItems.sellerId, user.id)));
+
+      // Delivery earns the sale, recorded inside the same transaction as the
+      // status change — the single-line reasoning applies unchanged here.
+      if (input.status === "DELIVERED") {
+        for (const lineId of target.lineIds) {
+          await recordSaleEarning(tx, lineId);
+        }
+      }
+    }
+  });
+
+  // Notify only after the write commits, so a transaction that rolls back sends
+  // nothing. One notification per order, not per line.
+  for (const target of targets) {
+    if (target.userId <= 0) continue;
+    await notifyOrderProgress(db, {
+      orderId: target.orderId,
+      orderNumber: target.orderNumber,
+      userId: target.userId,
+      status: input.status,
+      discriminator: user.id,
+    });
+  }
+
+  return c.json(
+    ok({
+      updated: targets.length,
+      references: targets.map((target) => target.orderNumber ?? String(target.orderId)),
+    }),
+  );
 });
 
 /* -------------------------------- cancellation ------------------------------ */

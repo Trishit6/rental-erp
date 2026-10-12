@@ -4,7 +4,9 @@ import { eq } from "drizzle-orm";
 import { getCookie } from "../lib/http";
 import { db } from "../db";
 import { users } from "../schema";
-import { fail, ok, rateLimit, HttpError } from "../lib/api";
+import { fail, ok, HttpError } from "../lib/api";
+import { rateLimit } from "../lib/rate-limit";
+import { limitBody, emailAddress, trimmed } from "../lib/validation";
 import {
   ACCESS_TOKEN_COOKIE,
   REFRESH_TOKEN_COOKIE,
@@ -70,16 +72,20 @@ const passwordRules = z
   .min(PASSWORD_MIN_LENGTH, `Use at least ${PASSWORD_MIN_LENGTH} characters`)
   .max(PASSWORD_MAX_LENGTH, "Password is too long");
 
-const registerSchema = z.object({
-  name: z.string().trim().min(2).max(80),
-  email: z.string().trim().toLowerCase().email().max(160),
-  password: passwordRules,
-});
+const registerSchema = z
+  .object({
+    name: trimmed(2, 80),
+    email: emailAddress,
+    password: passwordRules,
+  })
+  .strict();
 
-const loginSchema = z.object({
-  email: z.string().trim().toLowerCase().email(),
-  password: z.string().min(1),
-});
+const loginSchema = z
+  .object({
+    email: emailAddress,
+    password: z.string().min(1),
+  })
+  .strict();
 
 const changePasswordSchema = z
   .object({
@@ -88,9 +94,11 @@ const changePasswordSchema = z
   })
   .strict();
 
-const forgotPasswordSchema = z.object({
-  email: z.string().trim().toLowerCase().email(),
-});
+const forgotPasswordSchema = z
+  .object({
+    email: emailAddress,
+  })
+  .strict();
 
 const resetPasswordSchema = z
   .object({
@@ -99,10 +107,12 @@ const resetPasswordSchema = z
   })
   .strict();
 
-const mfaChallengeSchema = z.object({
-  ticket: z.string().min(10),
-  code: z.string().trim().min(6).max(20),
-});
+const mfaChallengeSchema = z
+  .object({
+    ticket: z.string().min(10),
+    code: z.string().trim().min(6).max(20),
+  })
+  .strict();
 
 const mfaCodeSchema = z.object({ code: z.string().trim().min(6).max(20) }).strict();
 
@@ -151,19 +161,39 @@ export function publicUser(user: typeof users.$inferSelect, mfaEnabled = false) 
 
 /* --------------------------------- limits ---------------------------------- */
 
-auth.use("/register", rateLimit(5, 60_000));
-auth.use("/login", rateLimit(10, 60_000));
-auth.use("/change-password", rateLimit(5, 60_000));
-auth.use("/refresh", rateLimit(30, 60_000));
+// Every auth endpoint is small by design: a name, an email, a password, a code.
+// The global parser allows 2 MB; nothing here needs more than 32 KB, and an
+// oversized auth body is itself a smell rather than a real request.
+auth.use(limitBody(32 * 1024));
+
+auth.use("/register", rateLimit("auth.register"));
+auth.use("/login", rateLimit("auth.login"));
+auth.use("/change-password", rateLimit("auth.password"));
+auth.use("/refresh", rateLimit("auth.refresh"));
 // The reset endpoints are unauthenticated and send mail / consume tokens, so they
-// get the tight limits a "someone is grinding addresses" pattern deserves.
-auth.use("/forgot-password", rateLimit(5, 15 * 60_000));
-auth.use("/reset-password", rateLimit(10, 15 * 60_000));
-auth.use("/mfa/challenge", rateLimit(10, 60_000));
-auth.use("/mfa/setup", rateLimit(5, 60_000));
-auth.use("/mfa/verify", rateLimit(10, 60_000));
-auth.use("/mfa/disable", rateLimit(5, 60_000));
-auth.use("/sessions", rateLimit(40, 60_000));
+// get the tight limits a "someone is grinding addresses" pattern deserves. They
+// keep separate budgets because the two have different abuse shapes and costs.
+auth.use("/forgot-password", rateLimit("auth.forgot"));
+auth.use("/reset-password", rateLimit("auth.reset"));
+auth.use("/mfa/challenge", rateLimit("auth.mfa"));
+auth.use("/mfa/setup", rateLimit("auth.mfa"));
+auth.use("/mfa/verify", rateLimit("auth.mfa"));
+auth.use("/mfa/disable", rateLimit("auth.mfa"));
+auth.use("/mfa/recovery-codes", rateLimit("auth.mfa"));
+auth.use("/sessions", rateLimit("auth.sessions"));
+
+/* ------------------------------------ csrf ---------------------------------- */
+
+/**
+ * `GET /api/auth/csrf` — hand the client a CSRF token to echo.
+ *
+ * The middleware in `lib/security.ts` issues the `revaro_csrf` cookie and echoes
+ * the token in the `X-CSRF-Token` response header on every request, so this route
+ * exists only so a cold page that is about to mutate something can prime that
+ * header without reading the cookie jar (which client JavaScript deliberately
+ * never does) and without racing its own first mutation.
+ */
+auth.get("/csrf", (c) => c.json(ok({ csrf: true })));
 
 /* -------------------------------- register --------------------------------- */
 

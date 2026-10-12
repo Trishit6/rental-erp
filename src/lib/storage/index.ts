@@ -116,7 +116,7 @@ function putWithProgress(
  * the closed list the key pattern is built from — a value outside it is a 400, so the two
  * cannot drift into "the client asks for a scope the server will not mint".
  */
-export type StorageScope = "products" | "avatars";
+export type StorageScope = "products" | "avatars" | "tickets" | "cms";
 
 /** Mint a target, upload the bytes, and hand back the key and public URL. */
 export async function uploadImage(
@@ -150,6 +150,14 @@ export async function uploadAvatarImage(
   return uploadImage("avatars", file, onProgress);
 }
 
+/** Storefront art an administrator uploads for the CMS (hero banners). */
+export async function uploadCmsImage(
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<UploadedImage> {
+  return uploadImage("cms", file, onProgress);
+}
+
 /** Remove an object the caller owns. Best-effort: a listing edit is not blocked by it. */
 export async function deleteProductImage(key: string): Promise<void> {
   await api.delete("/storage/object", { key });
@@ -164,6 +172,8 @@ export async function deleteProductImage(key: string): Promise<void> {
  */
 export function objectKeyFromUrl(url: string): string | null {
   const decoded = decodeURIComponent(url);
-  const match = /(?:products|avatars)\/\d+\/[a-z0-9]{8,32}\.(?:jpg|png|webp|avif)/.exec(decoded);
+  const match = /(?:products|avatars|tickets|cms)\/\d+\/[a-z0-9]{8,32}\.(?:jpg|png|webp|avif)/.exec(
+    decoded,
+  );
   return match ? match[0] : null;
 }

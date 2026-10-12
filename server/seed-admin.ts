@@ -69,7 +69,12 @@ import {
   users,
 } from "./schema";
 import { mulberry32 } from "./data/seed-realistic";
-import { DEV_PASSWORD, PLATFORM_RENTAL_FEE_PERCENT, PLATFORM_SALE_FEE_PERCENT } from "./lib/config";
+import {
+  DEV_ADMIN_EMAIL,
+  DEV_PASSWORD,
+  PLATFORM_RENTAL_FEE_PERCENT,
+  PLATFORM_SALE_FEE_PERCENT,
+} from "./lib/config";
 import { hashPassword } from "./lib/password";
 import { encryptSecretWith, hashRecoveryCode } from "./lib/mfa";
 
@@ -249,9 +254,11 @@ async function main() {
 
   /**
    * Demo MFA is *real* MFA: an actual AES-256-GCM-encrypted base32 secret with a
-   * plaintext derived from this run's PRNG, so the staff demo accounts can
+   * plaintext derived from this run's PRNG, so the super-admin demo account can
    * genuinely complete a challenge — the secret is printed below, once, to be
-   * loaded into an authenticator app. Two things keep the seeding deterministic:
+   * loaded into an authenticator app. The local demo admin (`admin@admin.com`) is
+   * deliberately **not** enrolled: it is the reusable password-only login, admitted
+   * by `isDevMfaBypass` (development only). Two things keep the seeding deterministic:
    *
    * - The IV is derived from the user id (SHA-256, first 12 bytes) instead of
    *   being random, so two `pnpm db:seed` runs write byte-identical ciphertext.
@@ -276,17 +283,11 @@ async function main() {
     );
     return `${chars.slice(0, 4).join("")}-${chars.slice(4).join("")}`;
   };
-  const mfaStaff = [adminUser.id, superAdminId] as const;
+  const mfaStaff = [superAdminId] as const;
   const mfaRecoveryByUser = new Map<number, string[]>();
 
   console.log("Seeding MFA enrolments...");
   await db.insert(userMfa).values([
-    {
-      userId: adminUser.id,
-      secretEncrypted: mfaEnvelope(adminUser.id),
-      enabledAt: daysAgo(120),
-      lastUsedAt: daysAgo(0),
-    },
     {
       userId: superAdminId,
       secretEncrypted: mfaEnvelope(superAdminId),
@@ -307,9 +308,10 @@ async function main() {
     });
   }
   await db.insert(mfaRecoveryCodes).values(recoveryRows);
-  // These two accounts finish the demo with a working second factor, so the
-  // "must enrol" flag (set by `seed.ts` for every staff account) is cleared —
-  // otherwise the profile prompt and the real state would disagree forever.
+  // Both accounts leave the seed without an outstanding enrolment: the super
+  // admin has a real factor above, and the local demo admin is the deliberate
+  // password-only login (`isDevMfaBypass`). Clearing the flag keeps the profile
+  // prompt and the real state in agreement.
   await db.update(users).set({ mustEnrollMfa: false }).where(eq(users.id, adminUser.id));
   await db.update(users).set({ mustEnrollMfa: false }).where(eq(users.id, superAdminId));
 
@@ -972,9 +974,9 @@ async function main() {
   console.log("\nAdmin seed complete.");
   console.log(`  staff: ${STAFF.length} (super admin ${STAFF[0]!.email})`);
   console.log(`  tickets: ${insertedTickets.length}, refunds: ${refundRows.length}, disputes: ${disputeRows.length}`);
-  console.log(`  staff password: ${DEV_PASSWORD} (change on first login)`);
-  console.log(`  MFA secret: ${DEMO_MFA_SECRET}  (load into any authenticator app)`);
-  console.log(`  admin recovery: ${mfaRecoveryByUser.get(adminUser.id)!.join("  ")}`);
+  console.log(`  staff password: ${DEV_PASSWORD}`);
+  console.log(`  admin login: ${DEV_ADMIN_EMAIL} (password-only, no OTP)`);
+  console.log(`  MFA secret: ${DEMO_MFA_SECRET}  (super admin, load into any authenticator app)`);
   console.log(`  root recovery:  ${mfaRecoveryByUser.get(superAdminId)!.join("  ")}`);
   console.log(`  other staff: enrol MFA after first login (mandatory for staff areas)`);
 }
