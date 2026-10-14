@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Percent, Plus } from "lucide-react";
+import { Download, Percent, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Pagination } from "@/components/shared/pagination";
@@ -33,6 +33,7 @@ import {
   COUPON_STATUSES,
   COUPON_STATUS_LABELS,
   EMPTY_ADMIN_COUPON_FILTERS,
+  adminCouponsExportUrl,
   type AdminCouponRow,
   type AdminCouponScope,
   type AdminCouponStatus,
@@ -41,13 +42,12 @@ import {
 /**
  * `/admin/coupons` — the coupon desk (PROMPT 31).
  *
- * ## What this screen is, and what it is not
+ * ## What this screen is
  *
  * This is the *administration* of discount codes: their terms, their window, their
- * usage and who redeemed them. It is deliberately not the checkout integration — that
- * is a change to the pricing path the brief for this prompt does not touch. The list
- * therefore reports `redemptionCount` honestly, which will read `0` for every coupon
- * until redemption is wired at checkout.
+ * usage and who redeemed them. Redemption happens inside the checkout's order
+ * transaction (`server/lib/coupon.ts`), so the counts here are the real ones — a
+ * coupon reading `0` has genuinely never been applied.
  *
  * ## Actions are gated on the permission that authorises them
  *
@@ -89,12 +89,20 @@ export function AdminCouponsPage() {
         title="Coupons"
         description="Discount codes, their terms and their redemption history."
         actions={
-          canManage ? (
-            <Button type="button" onClick={() => setDialogId(null)}>
-              <Plus size={15} aria-hidden />
-              New coupon
+          <div className="flex items-center gap-2">
+            <Button asChild variant="secondary">
+              <a href={adminCouponsExportUrl(filters)} download>
+                <Download size={15} aria-hidden />
+                Export CSV
+              </a>
             </Button>
-          ) : null
+            {canManage ? (
+              <Button type="button" onClick={() => setDialogId(null)}>
+                <Plus size={15} aria-hidden />
+                New coupon
+              </Button>
+            ) : null}
+          </div>
         }
       />
 
@@ -152,14 +160,7 @@ export function AdminCouponsPage() {
                   </p>
                 </TableCell>
                 <TableCell className="whitespace-nowrap">{discountText(row)}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {
-                    COUPON_SCOPE_LABELS[
-                      (row.appliesTo === "CATEGORY" ? "CATEGORY" : "ALL") as AdminCouponScope
-                    ]
-                  }
-                  {row.categoryName ? ` · ${row.categoryName}` : ""}
-                </TableCell>
+                <TableCell className="text-muted-foreground">{scopeText(row)}</TableCell>
                 <TableCell className="whitespace-nowrap">
                   <p>
                     {formatAdminCount(row.usedCount)}
@@ -229,4 +230,19 @@ function discountText(row: AdminCouponRow): string {
     return cap ? `${percent}% up to ${cap}` : `${percent}%`;
   }
   return `${formatAdminMoney(row.discountValue, "INR")} off`;
+}
+
+/** What the coupon applies to, naming the target when the scope has one. */
+function scopeText(row: AdminCouponRow): string {
+  const label =
+    COUPON_SCOPE_LABELS[row.appliesTo as AdminCouponScope] ?? humanizeEnum(row.appliesTo);
+  const target =
+    row.appliesTo === "CATEGORY"
+      ? row.categoryName
+      : row.appliesTo === "SELLER"
+        ? row.sellerName
+        : row.appliesTo === "PRODUCT"
+          ? row.productTitle
+          : null;
+  return target ? `${label} · ${target}` : label;
 }

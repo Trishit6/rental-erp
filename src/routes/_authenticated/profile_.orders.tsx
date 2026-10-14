@@ -11,6 +11,6 @@ import { ordersRouteOptions } from "@/features/orders/route";
  * profile, while older links — notifications, order confirmation screens, bookmarks —
  * still point at `/orders`, and those must keep working without a redirect hop.
  */
-export const Route = createFileRoute("/_authenticated/profile/orders")({
+export const Route = createFileRoute("/_authenticated/profile_/orders")({
   ...ordersRouteOptions,
 });

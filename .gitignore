@@ -5,6 +5,16 @@ dist
 !.env.example
 *.log
 
+# Local seed credentials. `pnpm db:seed` generates this file when no
+# ADMIN_PASSWORD / DEMO_PASSWORD is configured; it must never be committed.
+.seed-credentials.local
+
+# Ad-hoc scratch files that have accumulated in the repo root.
+dbg.mjs
+dash.log
+dev.log
+tests-baseline.log
+
 # Development storage adapter (server/lib/storage/dev.ts) writes real uploads here.
 server/uploads
 .aider*

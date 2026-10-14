@@ -84,6 +84,15 @@ const JWT_SHAPE = /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/
 const BEARER_SHAPE = /\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi;
 /** 32+ hex characters: an HMAC, a session id, a 256-bit key — never prose. */
 const LONG_HEX_SHAPE = /\b[a-f0-9]{32,}\b/gi;
+/**
+ * `scheme://user:password@host` — the userinfo half of a connection string or a
+ * signed URL. This is the shape `DATABASE_URL`, `MIGRATE_DB_*` and a signed image
+ * link all take, and the one a driver error most often quotes back verbatim
+ * (`ER_ACCESS_DENIED_ERROR` names the account it tried). The password is replaced
+ * and the account is kept, so the log still says *who* failed without saying how
+ * to become them.
+ */
+const URL_USERINFO_SHAPE = /([a-z][a-z0-9+.-]*:\/\/)([^/\s:@]+):([^/\s@]+)@/gi;
 /** A 6–10 digit code in a `code` field: an OTP or a TOTP, not an enum. */
 const OTP_SHAPE = /^\d{5,10}$/;
 
@@ -92,6 +101,7 @@ export function redactString(value: string): string {
   return value
     .replace(JWT_SHAPE, "[redacted-jwt]")
     .replace(BEARER_SHAPE, "Bearer [redacted]")
+    .replace(URL_USERINFO_SHAPE, "$1$2:[redacted]@")
     .replace(LONG_HEX_SHAPE, "[redacted-secret]");
 }
 
@@ -103,7 +113,11 @@ export function redactString(value: string): string {
  * through (an `Error` keeps only its `message`, via the caller extracting it), and
  * anything else non-plain is stringified defensively.
  */
-export function redact(value: unknown, key?: string, seen: WeakSet<object> = new WeakSet()): unknown {
+export function redact(
+  value: unknown,
+  key?: string,
+  seen: WeakSet<object> = new WeakSet(),
+): unknown {
   if (key !== undefined && isSensitiveKey(key)) return REDACTED;
   if (value === null || value === undefined) return value;
   if (typeof value === "string") {
@@ -127,7 +141,9 @@ export function redact(value: unknown, key?: string, seen: WeakSet<object> = new
 }
 
 /** Headers are redacted more aggressively: `authorization`, `cookie`, `set-cookie`, CSRF. */
-export function redactHeaders(headers: Record<string, unknown> | undefined): Record<string, string> {
+export function redactHeaders(
+  headers: Record<string, unknown> | undefined,
+): Record<string, string> {
   if (!headers) return {};
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
@@ -192,12 +208,7 @@ export const logger = {
  * logger is ever added: passwords, reset tokens, MFA codes, card/UPI data and
  * payment intents all travel through these prefixes.
  */
-const BODY_SECRET_PREFIXES = [
-  "/api/auth",
-  "/api/payments",
-  "/api/seller/wallet",
-  "/api/storage",
-];
+const BODY_SECRET_PREFIXES = ["/api/auth", "/api/payments", "/api/seller/wallet", "/api/storage"];
 
 export function mayLogBody(pathname: string): boolean {
   return !BODY_SECRET_PREFIXES.some((prefix) => pathname.startsWith(prefix));
@@ -207,4 +218,26 @@ export function mayLogBody(pathname: string): boolean {
 export function describeForLog(value: unknown): string {
   if (typeof value === "string") return redactString(value);
   return inspect(redact(value), { depth: 3, breakLength: 120 });
+}
+
+/**
+ * The only fields of an error that may reach a log line.
+ *
+ * A thrown error is the most tempting thing to log whole and the most dangerous: a
+ * driver error can carry the failing statement and its bound values, and a message
+ * can quote a token or a connection string. This reduces any error to its `name`,
+ * its `message` (passed through `redactString`, so a secret embedded in the text is
+ * still scrubbed) and the driver's `code` — an enum like `ER_DUP_ENTRY`, never a
+ * value. Anything without a `name` is stringified and redacted.
+ */
+export function redactError(error: unknown): { name: string; message: string; code?: string } {
+  if (error instanceof Error) {
+    const code = (error as { code?: unknown }).code;
+    return {
+      name: error.name,
+      message: redactString(error.message),
+      ...(typeof code === "string" || typeof code === "number" ? { code: String(code) } : {}),
+    };
+  }
+  return { name: "Error", message: redactString(String(error)) };
 }

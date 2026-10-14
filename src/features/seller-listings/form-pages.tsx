@@ -122,7 +122,7 @@ export function NewProductPage() {
  * than a 403 that would confirm the listing exists.
  */
 export function EditProductPage() {
-  const { productId } = useParams({ from: "/seller/products/$productId/edit" });
+  const { productId } = useParams({ from: "/seller/products_/$productId/edit" });
   const navigate = useNavigate();
   const id = Number(productId);
 

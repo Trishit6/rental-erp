@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { and, count, desc, eq, like, or, sql } from "drizzle-orm";
 import { db } from "../db";
-import { categories, couponRedemptions, coupons, orders, users } from "../schema";
+import { categories, couponRedemptions, coupons, orders, products, users } from "../schema";
 import { buildPagination, HttpError } from "./api";
 
 /**
@@ -21,21 +21,22 @@ import { buildPagination, HttpError } from "./api";
  * offered for a coupon nobody has used — a used coupon is paused, because deleting it
  * would cascade the evidence of the discount away with it.
  *
- * ## `PRODUCT` scope exists in the vocabulary, not in the table
+ * ## `PRODUCT` and `SELLER` scope
  *
- * `COUPON_SCOPES` names `PRODUCT`, but `coupons` has no product column to point at,
- * so a `PRODUCT` coupon could not name its product. Rather than ship a scope that
- * silently matches everything, the write schema accepts `ALL` and `CATEGORY` only.
+ * `COUPON_SCOPES` names `ALL | CATEGORY | SELLER | PRODUCT`, and the table now
+ * carries `seller_id` and `product_id` to match, so every scope the vocabulary
+ * offers can actually name its target. A scoped coupon with no target is refused
+ * by the write schema rather than silently widening to everything.
  */
 
-export const COUPON_STATUSES = ["ACTIVE", "PAUSED", "SCHEDULED", "EXPIRED"] as const;
+export const COUPON_STATUSES = ["ACTIVE", "PAUSED", "SCHEDULED", "EXPIRED", "RETIRED"] as const;
 export type CouponStatus = (typeof COUPON_STATUSES)[number];
 
 export const COUPON_DISCOUNT_TYPES = ["PERCENT", "FLAT"] as const;
 export type CouponDiscountType = (typeof COUPON_DISCOUNT_TYPES)[number];
 
-/** The scopes an admin may actually set — see the module note on `PRODUCT`. */
-export const COUPON_WRITABLE_SCOPES = ["ALL", "CATEGORY"] as const;
+/** The scopes an admin may set. Every one of them has a column to name a target. */
+export const COUPON_WRITABLE_SCOPES = ["ALL", "CATEGORY", "SELLER", "PRODUCT"] as const;
 export type CouponWritableScope = (typeof COUPON_WRITABLE_SCOPES)[number];
 
 const positiveId = z.number().int().positive();
@@ -64,6 +65,12 @@ export const couponWriteSchema = z
     status: z.enum(COUPON_STATUSES).default("ACTIVE"),
     appliesTo: z.enum(COUPON_WRITABLE_SCOPES).default("ALL"),
     categoryId: positiveId.nullish(),
+    sellerId: positiveId.nullish(),
+    productId: positiveId.nullish(),
+    /** Combinable with another promotion. See the `coupons` schema note. */
+    stackable: z.boolean().default(false),
+    /** May the discount be taken out of the refundable deposit. */
+    allowDepositDiscount: z.boolean().default(false),
   })
   .strict()
   .refine((value) => value.discountType !== "PERCENT" || value.discountValue <= 10_000, {
@@ -73,6 +80,14 @@ export const couponWriteSchema = z
   .refine((value) => value.appliesTo !== "CATEGORY" || value.categoryId != null, {
     message: "A category coupon must name a category",
     path: ["categoryId"],
+  })
+  .refine((value) => value.appliesTo !== "SELLER" || value.sellerId != null, {
+    message: "A seller coupon must name a seller",
+    path: ["sellerId"],
+  })
+  .refine((value) => value.appliesTo !== "PRODUCT" || value.productId != null, {
+    message: "A product coupon must name a product",
+    path: ["productId"],
   })
   .refine(
     (value) =>
@@ -110,6 +125,12 @@ export type CouponAdminRow = {
   appliesTo: string;
   categoryId: number | null;
   categoryName: string | null;
+  sellerId: number | null;
+  sellerName: string | null;
+  productId: number | null;
+  productTitle: string | null;
+  stackable: boolean;
+  allowDepositDiscount: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -153,11 +174,19 @@ export async function listCouponsForAdmin(
       appliesTo: coupons.appliesTo,
       categoryId: coupons.categoryId,
       categoryName: categories.name,
+      sellerId: coupons.sellerId,
+      sellerName: users.name,
+      productId: coupons.productId,
+      productTitle: products.title,
+      stackable: coupons.stackable,
+      allowDepositDiscount: coupons.allowDepositDiscount,
       createdAt: coupons.createdAt,
       updatedAt: coupons.updatedAt,
     })
     .from(coupons)
     .leftJoin(categories, eq(categories.id, coupons.categoryId))
+    .leftJoin(users, eq(users.id, coupons.sellerId))
+    .leftJoin(products, eq(products.id, coupons.productId))
     .where(where)
     .orderBy(desc(coupons.createdAt))
     .limit(filters.pageSize)
@@ -206,11 +235,19 @@ async function loadCouponRow(id: number): Promise<CouponAdminRow> {
       appliesTo: coupons.appliesTo,
       categoryId: coupons.categoryId,
       categoryName: categories.name,
+      sellerId: coupons.sellerId,
+      sellerName: users.name,
+      productId: coupons.productId,
+      productTitle: products.title,
+      stackable: coupons.stackable,
+      allowDepositDiscount: coupons.allowDepositDiscount,
       createdAt: coupons.createdAt,
       updatedAt: coupons.updatedAt,
     })
     .from(coupons)
     .leftJoin(categories, eq(categories.id, coupons.categoryId))
+    .leftJoin(users, eq(users.id, coupons.sellerId))
+    .leftJoin(products, eq(products.id, coupons.productId))
     .where(eq(coupons.id, id))
     .limit(1);
   if (!row) throw new HttpError(404, "NOT_FOUND", "That coupon does not exist.");
@@ -270,6 +307,25 @@ function toDate(value: Date | string | null | undefined): Date | null {
   return value instanceof Date ? value : new Date(value);
 }
 
+/**
+ * The three scope columns, of which only the one the scope names is kept.
+ *
+ * A coupon switched from `CATEGORY` to `ALL` must not keep a stale `category_id`
+ * that a later query could still match on. Clearing the others keeps `applies_to`
+ * the single source of truth for what the coupon applies to.
+ */
+function scopeFields(input: CouponWriteInput): {
+  categoryId: number | null;
+  sellerId: number | null;
+  productId: number | null;
+} {
+  return {
+    categoryId: input.appliesTo === "CATEGORY" ? (input.categoryId ?? null) : null,
+    sellerId: input.appliesTo === "SELLER" ? (input.sellerId ?? null) : null,
+    productId: input.appliesTo === "PRODUCT" ? (input.productId ?? null) : null,
+  };
+}
+
 export async function createCoupon(
   adminId: number,
   input: CouponWriteInput,
@@ -290,7 +346,9 @@ export async function createCoupon(
     endsAt: toDate(input.endsAt),
     status: input.status,
     appliesTo: input.appliesTo,
-    categoryId: input.appliesTo === "CATEGORY" ? (input.categoryId ?? null) : null,
+    ...scopeFields(input),
+    stackable: input.stackable,
+    allowDepositDiscount: input.allowDepositDiscount,
     createdBy: adminId,
   });
   return { id: result[0]!.insertId, code };
@@ -329,7 +387,9 @@ export async function updateCoupon(
       endsAt: toDate(input.endsAt),
       status: input.status,
       appliesTo: input.appliesTo,
-      categoryId: input.appliesTo === "CATEGORY" ? (input.categoryId ?? null) : null,
+      ...scopeFields(input),
+      stackable: input.stackable,
+      allowDepositDiscount: input.allowDepositDiscount,
     })
     .where(eq(coupons.id, id));
 
@@ -359,7 +419,7 @@ export async function deleteCoupon(id: number): Promise<{ id: number; code: stri
 
 export const couponStatusSchema = z.object({ status: z.enum(COUPON_STATUSES) }).strict();
 
-/** The quick pause/activate a listing needs: one field, no rest of the coupon resent. */
+/** The quick pause/activate a coupon needs: one field, no rest of the coupon resent. */
 export async function setCouponStatus(
   id: number,
   status: CouponStatus,
@@ -367,4 +427,124 @@ export async function setCouponStatus(
   const existing = await loadCouponRow(id);
   await db.update(coupons).set({ status }).where(eq(coupons.id, id));
   return { id, code: existing.code, status };
+}
+
+/* ---------------------------------- export --------------------------------- */
+
+/**
+ * Every coupon as CSV, for the desk's export button.
+ *
+ * ## Formula injection, neutralised
+ *
+ * A description is free text and a spreadsheet treats a cell beginning `=`, `+`,
+ * `-` or `@` as a formula. Prefixing such a cell with an apostrophe defuses it
+ * without changing what a reader sees, so exporting the desk cannot execute a
+ * formula someone wrote into a coupon.
+ *
+ * ## Capped, on purpose
+ *
+ * A hard limit keeps one click from streaming an unbounded table into memory.
+ * The coupon desk is bounded by human scale, so a few thousand rows is every
+ * coupon an operator could plausibly audit here; larger exports belong to
+ * `export_jobs` (PROMPT 33).
+ */
+export async function exportCouponsCsv(filters: {
+  search: string;
+  status: CouponStatus | null;
+  discountType: CouponDiscountType | null;
+}): Promise<string> {
+  const conditions = [];
+  if (filters.status) conditions.push(eq(coupons.status, filters.status));
+  if (filters.discountType) conditions.push(eq(coupons.discountType, filters.discountType));
+  if (filters.search) {
+    const pattern = `%${filters.search}%`;
+    conditions.push(or(like(coupons.code, pattern), like(coupons.description, pattern))!);
+  }
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const rows = await db
+    .select({
+      code: coupons.code,
+      description: coupons.description,
+      discountType: coupons.discountType,
+      discountValue: coupons.discountValue,
+      minimumOrderPaise: coupons.minimumOrderPaise,
+      maxDiscountPaise: coupons.maxDiscountPaise,
+      usageLimit: coupons.usageLimit,
+      perUserLimit: coupons.perUserLimit,
+      usedCount: coupons.usedCount,
+      status: coupons.status,
+      appliesTo: coupons.appliesTo,
+      categoryName: categories.name,
+      sellerName: users.name,
+      productTitle: products.title,
+      stackable: coupons.stackable,
+      allowDepositDiscount: coupons.allowDepositDiscount,
+      startsAt: coupons.startsAt,
+      endsAt: coupons.endsAt,
+    })
+    .from(coupons)
+    .leftJoin(categories, eq(categories.id, coupons.categoryId))
+    .leftJoin(users, eq(users.id, coupons.sellerId))
+    .leftJoin(products, eq(products.id, coupons.productId))
+    .where(where)
+    .orderBy(desc(coupons.createdAt))
+    .limit(5_000);
+
+  const header = [
+    "Code",
+    "Description",
+    "Type",
+    "Value",
+    "Minimum order",
+    "Max discount",
+    "Usage limit",
+    "Per-user limit",
+    "Used",
+    "Status",
+    "Applies to",
+    "Category",
+    "Seller",
+    "Product",
+    "Stackable",
+    "Discounts deposit",
+    "Starts at",
+    "Ends at",
+  ];
+  const lines = [header.map(csvCell).join(",")];
+  for (const row of rows) {
+    lines.push(
+      [
+        row.code,
+        row.description,
+        row.discountType,
+        // The raw stored value: paise for FLAT, basis points for PERCENT.
+        row.discountValue,
+        row.minimumOrderPaise,
+        row.maxDiscountPaise,
+        row.usageLimit,
+        row.perUserLimit,
+        row.usedCount,
+        row.status,
+        row.appliesTo,
+        row.categoryName,
+        row.sellerName,
+        row.productTitle,
+        row.stackable ? "yes" : "no",
+        row.allowDepositDiscount ? "yes" : "no",
+        row.startsAt ? row.startsAt.toISOString() : "",
+        row.endsAt ? row.endsAt.toISOString() : "",
+      ]
+        .map(csvCell)
+        .join(","),
+    );
+  }
+  return lines.join("\r\n");
+}
+
+/** One CSV cell: always quoted, with a leading formula trigger defused. */
+function csvCell(value: unknown): string {
+  const text = value == null ? "" : String(value);
+  const defused = /^[=+\-@]/.test(text) ? `'${text}` : text;
+  return `"${defused.replace(/"/g, '""')}"`;
 }

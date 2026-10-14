@@ -5,6 +5,7 @@ import { HttpError } from "./api";
 import { DELIVERY_FEE_PAISE } from "./config";
 import { priceCartLine, validateCartLine, type CartIssue, type CartLinePricing } from "./cart";
 import { assertRentalAvailability, type QueryExecutor } from "./rental-availability";
+import { resolveCouponForCart } from "./coupon";
 import { rentalDays } from "../../src/lib/pricing";
 
 /**
@@ -30,6 +31,7 @@ export type CheckoutLine = {
   cartItemId: number;
   productId: number;
   sellerId: number;
+  categoryId: number;
   title: string;
   imageUrl: string | null;
   mode: "BUY" | "RENT";
@@ -56,11 +58,22 @@ export type CheckoutBreakdown = {
   currency: string;
 };
 
+export type AppliedCoupon = {
+  id: number;
+  code: string;
+  /** What was actually taken off the order, in paise. */
+  discountPaise: number;
+};
+
 export type CheckoutQuote = {
   lines: CheckoutLine[];
   breakdown: CheckoutBreakdown;
   /** Everything blocking checkout, in cart-line vocabulary. */
   issues: CartIssue[];
+  /** The coupon a supplied code resolved to, or null. */
+  coupon: AppliedCoupon | null;
+  /** Why a supplied code did nothing. Null when there was no code, or it worked. */
+  couponIssue: { code: string; message: string } | null;
   /** True only when there is at least one line and nothing is blocking. */
   isPayable: boolean;
   deliveryMethod: DeliveryMethod;
@@ -84,6 +97,12 @@ export type BuildQuoteInput = {
   deliveryMethod: DeliveryMethod;
   deliveryAddressId?: number | null;
   /**
+   * A code the customer typed. Validated here so the quote reflects it; a code
+   * that does not apply yields `couponIssue` rather than an exception, so the
+   * page can show the cart and the reason side by side.
+   */
+  couponCode?: string | null;
+  /**
    * Run inside the caller's transaction so the quote and the order it creates
    * are computed against the same consistent snapshot.
    */
@@ -94,6 +113,7 @@ const productColumns = {
   id: products.id,
   title: products.title,
   sellerId: products.sellerId,
+  categoryId: products.categoryId,
   status: products.status,
   listingType: products.listingType,
   purchasePrice: products.purchasePrice,
@@ -234,6 +254,7 @@ export async function buildCheckoutQuote(input: BuildQuoteInput): Promise<Checko
       cartItemId: row.cartItemId,
       productId: product.id,
       sellerId: product.sellerId,
+      categoryId: product.categoryId,
       title: product.title,
       imageUrl: product.primaryImage,
       mode,
@@ -256,10 +277,36 @@ export async function buildCheckoutQuote(input: BuildQuoteInput): Promise<Checko
   const rentalAmount = lines.reduce((sum, l) => sum + l.pricing.rentalCharge, 0);
   const securityDeposit = lines.reduce((sum, l) => sum + l.pricing.depositTotal, 0);
   const deliveryFee = deliveryMethod === "DELIVERY" ? DELIVERY_FEE_PAISE : 0;
-  // No promotion engine in this feature. The columns exist so a discount can
-  // be added without another migration, but an unearned discount must not be
-  // expressible today, so both are fixed at zero here.
-  const discount = 0;
+
+  /* --- 4a. A coupon the customer typed, resolved against this cart. -------- */
+  // A code that does not apply is reported, never silently ignored: the customer
+  // typed it and is owed the reason it did nothing.
+  let discount = 0;
+  let coupon: AppliedCoupon | null = null;
+  let couponIssue: CheckoutQuote["couponIssue"] = null;
+  if (input.couponCode && input.couponCode.trim() !== "") {
+    const resolution = await resolveCouponForCart({
+      code: input.couponCode,
+      userId,
+      lines: lines.map((line) => ({
+        productId: line.productId,
+        sellerId: line.sellerId,
+        categoryId: line.categoryId,
+        // The charge this coupon may discount; the deposit is excluded here and
+        // only included when the coupon itself allows it.
+        charge: line.pricing.lineTotal - line.pricing.depositTotal,
+        deposit: line.pricing.depositTotal,
+      })),
+      subtotal,
+      executor,
+    });
+    if (resolution.ok) {
+      discount = resolution.discountPaise;
+      coupon = { id: resolution.coupon.id, code: resolution.coupon.code, discountPaise: discount };
+    } else {
+      couponIssue = { code: input.couponCode.trim().toUpperCase(), message: resolution.message };
+    }
+  }
   const tax = 0;
 
   const breakdown: CheckoutBreakdown = {
@@ -284,6 +331,8 @@ export async function buildCheckoutQuote(input: BuildQuoteInput): Promise<Checko
     lines,
     breakdown,
     issues,
+    coupon,
+    couponIssue,
     isPayable: issues.length === 0 && lines.length > 0,
     deliveryMethod,
     deliveryAddressId: input.deliveryAddressId ?? null,

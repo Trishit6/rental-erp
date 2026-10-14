@@ -273,8 +273,14 @@ export type VerificationDocumentType = (typeof VERIFICATION_DOCUMENT_TYPES)[numb
 export const DISCOUNT_TYPES = ["PERCENT", "FLAT"] as const;
 export type DiscountType = (typeof DISCOUNT_TYPES)[number];
 
-/** `coupons.applies_to`. */
-export const COUPON_SCOPES = ["ALL", "CATEGORY", "PRODUCT"] as const;
+/**
+ * `coupons.applies_to`.
+ *
+ * `SELLER` sits beside `CATEGORY`/`PRODUCT`: a marketplace coupon is often a
+ * single seller's promotion, and narrowing by seller is the only way to express
+ * "₹200 off anything from this shop" without listing every product id.
+ */
+export const COUPON_SCOPES = ["ALL", "CATEGORY", "SELLER", "PRODUCT"] as const;
 export type CouponScope = (typeof COUPON_SCOPES)[number];
 
 /** `commission_rules.scope` — a wider scope is consulted only when a narrower one is absent. */

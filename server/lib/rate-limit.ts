@@ -60,7 +60,21 @@ export type RateLimitBudget =
   | "payments.intent"
   | "coupon.apply"
   | "checkout.order"
-  | "admin.action";
+  | "orders.action"
+  | "reviews.write"
+  | "reviews.helpful"
+  | "reviews.reply"
+  | "favorites.write"
+  | "cart.write"
+  | "addresses.write"
+  | "notifications.write"
+  | "rentals.action"
+  | "wallet.payout"
+  | "wallet.methods"
+  | "seller.orders"
+  | "seller.products"
+  | "admin.action"
+  | "admin.mutation";
 
 export type RateLimitRule = {
   /** Requests allowed per `windowMs`. */
@@ -109,10 +123,65 @@ export const RATE_LIMITS: Record<RateLimitBudget, RateLimitRule> = {
   // stays separate from the grind of paying, without waiting for a new endpoint.
   "coupon.apply": { limit: 10, windowMs: 60_000, perAccount: true },
   "checkout.order": { limit: 10, windowMs: 60_000, perAccount: true },
+  // An order *action* (repeat a line, cancel) is a deliberate, single-purpose write
+  // and is not a checkout: it must not consume the budget that guards paying. A
+  // tight per-account bucket keeps a script from replaying "buy again" thousands of
+  // times, which would flood the cart and notify sellers.
+  "orders.action": { limit: 20, windowMs: 60_000, perAccount: true },
+  // A review write recomputes the product's cached rating aggregate and notifies the
+  // seller, so it is heavier than a read by orders of magnitude. 20/min is far past
+  // any human's reviewing speed but well under what would let one account grind the
+  // aggregate or the seller's notification feed.
+  "reviews.write": { limit: 20, windowMs: 60_000, perAccount: true },
+  // Marking reviews helpful is interactive: a reader browses a page and taps several.
+  // 60/min stays generous for that while bounding a script that would inflate counts.
+  "reviews.helpful": { limit: 60, windowMs: 60_000, perAccount: true },
+  // A seller answers each review at most once, so the budget only has to bound a
+  // reply flood; a per-account bucket is the whole point (the reply is public).
+  "reviews.reply": { limit: 20, windowMs: 60_000, perAccount: true },
+  // The wishlist: a heart tap. Generous because a shopper may save a whole page of
+  // cards in one sitting, but bounded so saved-list churn cannot be scripted.
+  "favorites.write": { limit: 60, windowMs: 60_000, perAccount: true },
+  // Cart edits are the normal activity of shopping — add, change quantity, remove.
+  // 120/min leaves a real shopper untouchable while refusing a scripted cart flood
+  // that would otherwise spam the seller's low-stock alerts.
+  "cart.write": { limit: 120, windowMs: 60_000, perAccount: true },
+  // A saved address is rarely touched; 30/min is a comfortable ceiling for a human
+  // fixing a typo repeatedly and a hard stop for address book enumeration scripts.
+  "addresses.write": { limit: 30, windowMs: 60_000, perAccount: true },
+  // Notification mutations are cheap but frequent (read a row, dismiss, read all).
+  // 120/min covers a person clearing a backlog; the per-account bucket stops a
+  // script from repeatedly rewriting the same setting or read state.
+  "notifications.write": { limit: 120, windowMs: 60_000, perAccount: true },
+  // Rental lifecycle actions (return request, extension request, return, cancel,
+  // rent-to-own) each write a state change, a rental event and notifications, and
+  // some move money. 30/min is far past human and the same bucket on every action
+  // means one cannot be used to grind another.
+  "rentals.action": { limit: 30, windowMs: 60_000, perAccount: true },
+  // A payout request reserves balance and opens a settlement; it is rare and it is
+  // money. A long window with a tight per-account bucket is the shape for it.
+  "wallet.payout": { limit: 10, windowMs: 15 * 60_000, perAccount: true },
+  // Adding or removing a payout destination is a deliberate settings change, not a
+  // browsing action; 20/min is generous for a human and stops destination churn.
+  "wallet.methods": { limit: 20, windowMs: 60_000, perAccount: true },
+  // Seller-side fulfillment (single and bulk) and cancellation. The bulk path accepts
+  // up to 50 orders in one request, so the count is requests, not orders: 60/min
+  // covers a seller working a queue and bounds a script that would churn state.
+  "seller.orders": { limit: 60, windowMs: 60_000, perAccount: true },
+  // Seller product writes: create, edit, inventory, status, duplicate, archive,
+  // delete. Each validates and writes a listing and may move inventory; 60/min is
+  // comfortable for a seller managing a catalogue and a stop for bulk scripting.
+  "seller.products": { limit: 60, windowMs: 60_000, perAccount: true },
   // RBAC grant and account-state changes take multiple round trips and must not
   // be grindable — and a single admin's mistake should not consume a shared
   // budget. 30/min per admin is dozens of role flips a minute, far past human.
   "admin.action": { limit: 30, windowMs: 60_000, perAccount: true },
+  // The backstop for *every* admin mutation, so a route that forgot its own budget
+  // is still bounded. Deliberately generous: an administrator doing real work may
+  // touch many resources in a minute (clearing a moderation queue, re-pricing the
+  // catalogue), and a per-account bucket means one admin's burst cannot lock out the
+  // rest of the staff. The high-risk surfaces keep their own tighter `admin.action`.
+  "admin.mutation": { limit: 300, windowMs: 60_000, perAccount: true },
 };
 
 /* ----------------------------------- store ---------------------------------- */
@@ -177,7 +246,10 @@ export class MariaDbCounterStore implements CounterStore {
     if (row?.count === 1) {
       // This key just started a fresh window — prune anything past its end (only
       // mutated rows, never all rows).
-      void db.delete(rateLimitCounters).where(lt(rateLimitCounters.expiresAt, now)).catch(() => {});
+      void db
+        .delete(rateLimitCounters)
+        .where(lt(rateLimitCounters.expiresAt, now))
+        .catch(() => {});
     }
     return { count: Number(row?.count ?? 1), windowStartedAt: Number(row?.windowStartedAt ?? now) };
   }
@@ -240,14 +312,19 @@ export function rateLimit(budgets: RateLimitBudget | readonly RateLimitBudget[])
 
     for (const budget of list) {
       const rule = RATE_LIMITS[budget];
-      const checks: Promise<WindowObservation>[] = [store.hit(`${budget}:ip:${ip}`, rule.windowMs, now)];
+      const checks: Promise<WindowObservation>[] = [
+        store.hit(`${budget}:ip:${ip}`, rule.windowMs, now),
+      ];
       if (rule.perAccount && account !== undefined) {
         checks.push(store.hit(`${budget}:acct:${account}`, rule.windowMs, now));
       }
       const observations = await Promise.all(checks);
       for (const observation of observations) {
         if (observation.count > rule.limit) {
-          const retryAfter = Math.max(1, Math.ceil((observation.windowStartedAt + rule.windowMs - now) / 1000));
+          const retryAfter = Math.max(
+            1,
+            Math.ceil((observation.windowStartedAt + rule.windowMs - now) / 1000),
+          );
           c.res.setHeader("Retry-After", String(retryAfter));
           return c.json(fail("RATE_LIMITED", "Too many requests. Please slow down."), 429);
         }

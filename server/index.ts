@@ -7,7 +7,7 @@ import { createApp, Router, type Ctx } from "./lib/http";
 import { originGuard, securityHeaders, cors, csrfProtection } from "./lib/security";
 import { requestId, requestIdOf } from "./lib/request-id";
 import { configureRateLimitStoreFromEnv } from "./lib/rate-limit";
-import { logger, redactUrl } from "./lib/logger";
+import { logger, redactError, redactUrl } from "./lib/logger";
 import { auth } from "./routes/auth";
 import { productsRoute, categoriesRoute } from "./routes/products";
 import { cmsRoute } from "./routes/cms";
@@ -111,7 +111,7 @@ router.get("/api/health", async (c: Ctx) => {
     await db.execute(sql`SELECT 1`);
     return c.json(ok({ status: "ok", database: "connected" }));
   } catch (error) {
-    console.error("Database health check failed:", error);
+    logger.error("Database health check failed", redactError(error));
     return c.json(
       ok({
         status: "unavailable",
@@ -155,7 +155,7 @@ router.get("/api/stats", async (c: Ctx) => {
       }),
     );
   } catch (error) {
-    console.error("Stats failed:", error);
+    logger.error("Stats failed", redactError(error));
     return c.json(ok({ activeListings: 0, availableRentals: 0, verifiedSellers: 0 }));
   }
 });

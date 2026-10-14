@@ -15,7 +15,7 @@ import { ProductImage } from "./product-image";
 
 function ModeBadge({ listingType }: { listingType: string }) {
   return (
-    <Badge className="absolute left-3 top-3 bg-background/90 text-foreground shadow-sm">
+    <Badge className="absolute left-3 top-3 bg-background/90 text-foreground elev-1">
       {LISTING_MODE_LABELS[listingType] ?? listingType}
     </Badge>
   );
@@ -56,7 +56,7 @@ export function ProductCard({
     <Card
       onMouseEnter={onPrefetch}
       onFocus={onPrefetch}
-      className="group overflow-hidden p-3.5 transition-transform duration-300 hover:-translate-y-1 card-surface-hover"
+      className="group flex h-full flex-col overflow-hidden p-3.5 transition-transform duration-300 hover:-translate-y-1 card-surface-hover"
     >
       <div className="inset-surface rounded-[20px] p-2.5">
         <div className="relative overflow-hidden rounded-2xl">
@@ -83,7 +83,10 @@ export function ProductCard({
           />
         </div>
       </div>
-      <div className="px-1 pb-1 pt-3">
+      {/* `flex-1` + `mt-auto` on the footer pins the price/CTA row to the bottom,
+          so every card in a row finishes on the same line regardless of how many
+          title lines it wrapped to or whether the "or buy for" line is present. */}
+      <div className="flex flex-1 flex-col px-1 pb-1 pt-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="mb-1 truncate text-xs font-semibold text-muted-foreground">
@@ -118,8 +121,12 @@ export function ProductCard({
           <span className="truncate">{product.location}</span>
         </div>
         <div className="neumo-divider my-3" />
-        <div className="flex items-end justify-between gap-2">
-          <div>
+        <div className="mt-auto grid grid-cols-[1fr_auto] items-end gap-2">
+          {/* Fixed-height price block: a one-line price (rent-only/buy-only) and a
+              two-line price (price plus "or buy for …") reserve the same box, so
+              the action button beside it lands on the same baseline across the
+              whole grid row instead of drifting up on the shorter cards. */}
+          <div className="flex min-h-12 flex-col justify-end">
             {leadWithRental && rentable ? (
               <p className="font-heading text-lg font-extrabold">
                 {formatInr(product.rentalPricePerDay!)}

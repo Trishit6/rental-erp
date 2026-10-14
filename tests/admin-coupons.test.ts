@@ -59,10 +59,12 @@ describe("the coupon vocabularies", () => {
     }
   });
 
-  it("does not offer the PRODUCT scope the table cannot express", () => {
-    // `COUPON_SCOPES` in the enum names PRODUCT, but there is no product column on
-    // `coupons`; the writable set is deliberately narrower.
-    expect([...COUPON_WRITABLE_SCOPES]).not.toContain("PRODUCT");
+  it("offers every scope the table can express, PRODUCT included", () => {
+    // `coupons` now carries `category_id`, `seller_id` and `product_id`, so every
+    // scope the vocabulary names can point at its target — the writable set and the
+    // enum agree.
+    expect([...COUPON_WRITABLE_SCOPES]).toEqual([...CLIENT_SCOPES]);
+    expect([...COUPON_WRITABLE_SCOPES]).toEqual(["ALL", "CATEGORY", "SELLER", "PRODUCT"]);
   });
 });
 
@@ -116,7 +118,35 @@ describe("couponWriteSchema", () => {
   it("refuses an unknown status, type or scope", () => {
     expect(() => couponWriteSchema.parse({ ...validPercent, status: "LIVE" })).toThrow();
     expect(() => couponWriteSchema.parse({ ...validPercent, discountType: "BOGO" })).toThrow();
-    expect(() => couponWriteSchema.parse({ ...validPercent, appliesTo: "PRODUCT" })).toThrow();
+    expect(() => couponWriteSchema.parse({ ...validPercent, appliesTo: "BASKET" })).toThrow();
+  });
+
+  it("refuses a SELLER coupon with no seller, and accepts one with a seller", () => {
+    expect(() =>
+      couponWriteSchema.parse({ ...validPercent, appliesTo: "SELLER", sellerId: null }),
+    ).toThrow();
+    expect(
+      couponWriteSchema.parse({ ...validPercent, appliesTo: "SELLER", sellerId: 12 }),
+    ).toMatchObject({ appliesTo: "SELLER", sellerId: 12 });
+  });
+
+  it("refuses a PRODUCT coupon with no product, and accepts one with a product", () => {
+    expect(() =>
+      couponWriteSchema.parse({ ...validPercent, appliesTo: "PRODUCT", productId: null }),
+    ).toThrow();
+    expect(
+      couponWriteSchema.parse({ ...validPercent, appliesTo: "PRODUCT", productId: 99 }),
+    ).toMatchObject({ appliesTo: "PRODUCT", productId: 99 });
+  });
+
+  it("defaults stacking off and deposit discounting off", () => {
+    const parsed = couponWriteSchema.parse(validPercent);
+    expect(parsed.stackable).toBe(false);
+    expect(parsed.allowDepositDiscount).toBe(false);
+  });
+
+  it("accepts a RETIRED coupon as a status", () => {
+    expect(couponWriteSchema.parse({ ...validPercent, status: "RETIRED" }).status).toBe("RETIRED");
   });
 
   it("refuses an end before the start", () => {

@@ -122,7 +122,7 @@ export function ReviewImages({
                   type="button"
                   onClick={() => removeImage(url)}
                   aria-label="Remove this photo"
-                  className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full bg-background text-foreground shadow-sm ring-1 ring-border transition hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full bg-background text-foreground elev-1 ring-1 ring-border transition hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   <X size={13} aria-hidden />
                 </button>

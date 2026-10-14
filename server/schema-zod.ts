@@ -289,10 +289,15 @@ export const couponInsertSchema = z
     usedCount: z.number().int().nonnegative().default(0),
     startsAt: timestampSchema.nullish(),
     endsAt: timestampSchema.nullish(),
-    status: z.enum(["ACTIVE", "PAUSED", "EXPIRED", "SCHEDULED"]).default("ACTIVE"),
+    status: z.enum(["ACTIVE", "PAUSED", "SCHEDULED", "EXPIRED", "RETIRED"]).default("ACTIVE"),
     appliesTo: couponScopeSchema.default("ALL"),
     categoryId: idSchema.nullish(),
     sellerId: idSchema.nullish(),
+    productId: idSchema.nullish(),
+    /** Combinable with another promotion. See the `coupons` schema note. */
+    stackable: z.boolean().default(false),
+    /** May the discount be taken out of the refundable deposit. */
+    allowDepositDiscount: z.boolean().default(false),
     createdBy: idSchema.nullish(),
   })
   .refine((value) => value.discountType !== "PERCENT" || value.discountValue <= 10_000, {
@@ -302,6 +307,14 @@ export const couponInsertSchema = z
   .refine(
     (value) => value.appliesTo !== "CATEGORY" || value.categoryId != null,
     { message: "A CATEGORY coupon must name a category", path: ["categoryId"] },
+  )
+  .refine(
+    (value) => value.appliesTo !== "SELLER" || value.sellerId != null,
+    { message: "A SELLER coupon must name a seller", path: ["sellerId"] },
+  )
+  .refine(
+    (value) => value.appliesTo !== "PRODUCT" || value.productId != null,
+    { message: "A PRODUCT coupon must name a product", path: ["productId"] },
   )
   .refine(
     (value) => value.endsAt == null || value.startsAt == null || value.endsAt > value.startsAt,
@@ -326,10 +339,13 @@ export const couponSelectSchema = z
     usedCount: z.number().int().nonnegative(),
     startsAt: timestampSchema.nullable(),
     endsAt: timestampSchema.nullable(),
-    status: z.enum(["ACTIVE", "PAUSED", "EXPIRED", "SCHEDULED"]),
+    status: z.enum(["ACTIVE", "PAUSED", "SCHEDULED", "EXPIRED", "RETIRED"]),
     appliesTo: couponScopeSchema,
     categoryId: idSchema.nullable(),
     sellerId: idSchema.nullable(),
+    productId: idSchema.nullable(),
+    stackable: z.boolean(),
+    allowDepositDiscount: z.boolean(),
     createdBy: idSchema.nullable(),
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
@@ -341,6 +357,14 @@ export const couponSelectSchema = z
   .refine(
     (value) => value.appliesTo !== "CATEGORY" || value.categoryId != null,
     { message: "A CATEGORY coupon must name a category", path: ["categoryId"] },
+  )
+  .refine(
+    (value) => value.appliesTo !== "SELLER" || value.sellerId != null,
+    { message: "A SELLER coupon must name a seller", path: ["sellerId"] },
+  )
+  .refine(
+    (value) => value.appliesTo !== "PRODUCT" || value.productId != null,
+    { message: "A PRODUCT coupon must name a product", path: ["productId"] },
   )
   .refine(
     (value) => value.endsAt == null || value.startsAt == null || value.endsAt > value.startsAt,

@@ -22,7 +22,7 @@ export function TicketList({ tickets }: { tickets: TicketSummary[] }) {
             params={{ ticketId: String(ticket.id) }}
             className="block rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
-            <Card className="flex items-center justify-between gap-4 p-4 transition hover:border-primary/40 hover:shadow-sm">
+            <Card className="flex items-center justify-between gap-4 p-4 transition hover:border-primary/40 hover:elev-2">
               <div className="min-w-0">
                 <p className="truncate font-semibold">{ticket.subject}</p>
                 <p className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">

@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { homeFor, requireAdmin, requireAuth, requireGuest, requireSeller, safeRedirect } from "../src/lib/auth/guards";
+import {
+  getPostAuthTarget,
+  homeFor,
+  requireAdmin,
+  requireAuth,
+  requireGuest,
+  requireSeller,
+  safeRedirect,
+} from "../src/lib/auth/guards";
 import type { User } from "../src/features/auth/types";
 
 /**
@@ -105,6 +113,72 @@ describe("where a signed-in user belongs", () => {
     expect(homeFor(user("ADMIN"))).toBe("/dashboard");
     expect(homeFor(user("USER"))).toBe("/dashboard");
     expect(homeFor(null)).toBe("/dashboard");
+  });
+});
+
+describe("getPostAuthTarget — the single post-login destination", () => {
+  /**
+   * The exact table from the brief. Every row is a value that can arrive in
+   * `/login?redirect=…`, which means every row is attacker-controllable. A pure
+   * function is the only way this can be exhaustively pinned.
+   */
+  const table: Array<[unknown, string]> = [
+    ["/orders/42", "/orders/42"],
+    ["", "/dashboard"],
+    [undefined, "/dashboard"],
+    ["//evil.com", "/dashboard"],
+    ["https://evil.com", "/dashboard"],
+    ["/\\evil.com", "/dashboard"],
+    ["/%2F/evil.com", "/dashboard"],
+    ["javascript:alert(1)", "/dashboard"],
+    ["/login", "/dashboard"],
+  ];
+
+  it.each(table)("maps %o to %s", (raw, expected) => {
+    expect(getPostAuthTarget(raw)).toBe(expected);
+  });
+
+  it("keeps a real path and its query string", () => {
+    expect(getPostAuthTarget("/browse?search=drill&mode=rent")).toBe(
+      "/browse?search=drill&mode=rent",
+    );
+  });
+
+  it("refuses the guest pages in their other spellings", () => {
+    expect(getPostAuthTarget("/register")).toBe("/dashboard");
+    // The path is `/login`, so the query does not save it — this is the loop case.
+    expect(getPostAuthTarget("/login?next=/orders")).toBe("/dashboard");
+    // `/login/` is a different path from `/login` and does not loop, so it survives.
+    expect(getPostAuthTarget("/login/")).toBe("/login/");
+  });
+
+  it("refuses scheme-relative, backslash, at-sign and colon shapes", () => {
+    for (const hostile of [
+      "//evil.com/path",
+      "/%2F%2Fevil.com",
+      "/%252F%2Fevil.com",
+      "/\\evil.com",
+      "/%5Cevil.com",
+      "/path@evil.com",
+      "/path:80",
+      "/path%40evil.com",
+      "/path%3A80",
+      "http:/evil.com",
+    ]) {
+      expect(getPostAuthTarget(hostile), hostile).toBe("/dashboard");
+    }
+  });
+
+  it("refuses control characters and over-long values", () => {
+    expect(getPostAuthTarget("/orders\n42")).toBe("/dashboard");
+    expect(getPostAuthTarget("/orders\u0000")).toBe("/dashboard");
+    expect(getPostAuthTarget(`/${"a".repeat(300)}`)).toBe("/dashboard");
+  });
+
+  it("refuses non-strings and malformed percent-encoding", () => {
+    for (const value of [null, 42, {}, [], true, "%E0%A4%A"]) {
+      expect(getPostAuthTarget(value)).toBe("/dashboard");
+    }
   });
 });
 

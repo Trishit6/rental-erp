@@ -11,7 +11,7 @@ import { requireSeller } from "@/lib/auth/guards";
  * once (`components/schema.ts` on the client, `product-validation.ts` on the
  * server) instead of twice and drifting.
  */
-export const Route = createFileRoute("/seller/products/new")({
+export const Route = createFileRoute("/seller/products_/new")({
   beforeLoad: requireSeller,
   component: NewProductPage,
 });

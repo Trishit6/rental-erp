@@ -2,6 +2,7 @@ import { z } from "zod";
 import { Router } from "../lib/http";
 import { ok, HttpError } from "../lib/api";
 import { requireUser } from "../lib/auth";
+import { guarded } from "../lib/rate-limit";
 import {
   countUnread,
   deleteNotification,
@@ -103,15 +104,18 @@ const preferencesSchema = z
   })
   .strict();
 
-notificationsRoute.patch("/preferences", async (c) => {
-  const user = c.get("user")!;
-  const input = preferencesSchema.parse(await c.req.json().catch(() => ({})));
+notificationsRoute.patch(
+  "/preferences",
+  guarded("notifications.write", async (c) => {
+    const user = c.get("user")!;
+    const input = preferencesSchema.parse(await c.req.json().catch(() => ({})));
 
-  // `wishlist` and `admin` have no email channel. Accepting an `email` there would be
-  // a value the server silently drops, which is the kind of setting that looks saved
-  // and does nothing — so the schema above refuses it outright.
-  return c.json(ok(await writeNotificationPreferences(user.id, input)));
-});
+    // `wishlist` and `admin` have no email channel. Accepting an `email` there would be
+    // a value the server silently drops, which is the kind of setting that looks saved
+    // and does nothing — so the schema above refuses it outright.
+    return c.json(ok(await writeNotificationPreferences(user.id, input)));
+  }),
+);
 
 /**
  * `POST /api/notifications/read-all`
@@ -119,11 +123,14 @@ notificationsRoute.patch("/preferences", async (c) => {
  * `POST` rather than `PATCH` on a collection, matching how the endpoint already
  * behaved, so the existing header call keeps working.
  */
-notificationsRoute.post("/read-all", async (c) => {
-  const user = c.get("user")!;
-  const { updated } = await markAllNotificationsRead(user.id);
-  return c.json(ok({ read: true, updated, unread: 0 }));
-});
+notificationsRoute.post(
+  "/read-all",
+  guarded("notifications.write", async (c) => {
+    const user = c.get("user")!;
+    const { updated } = await markAllNotificationsRead(user.id);
+    return c.json(ok({ read: true, updated, unread: 0 }));
+  }),
+);
 
 const readSchema = z.object({ read: z.boolean() }).strict().default({ read: true });
 
@@ -135,24 +142,30 @@ const readSchema = z.object({ read: z.boolean() }).strict().default({ read: true
  * exists because a user who taps a notification by accident needs a way back, and a
  * system that only moves forward cannot offer one.
  */
-notificationsRoute.patch("/:id{[0-9]+}/read", async (c) => {
-  const user = c.get("user")!;
-  const id = Number(c.req.param("id"));
-  const input = readSchema.parse(await c.req.json().catch(() => ({})));
-  const result = await setNotificationRead(user.id, id, input.read);
-  if (!result.updated) {
-    throw new HttpError(404, "NOT_FOUND", "Notification not found.");
-  }
-  return c.json(ok({ id, isRead: input.read, unread: await countUnread(user.id) }));
-});
+notificationsRoute.patch(
+  "/:id{[0-9]+}/read",
+  guarded("notifications.write", async (c) => {
+    const user = c.get("user")!;
+    const id = Number(c.req.param("id"));
+    const input = readSchema.parse(await c.req.json().catch(() => ({})));
+    const result = await setNotificationRead(user.id, id, input.read);
+    if (!result.updated) {
+      throw new HttpError(404, "NOT_FOUND", "Notification not found.");
+    }
+    return c.json(ok({ id, isRead: input.read, unread: await countUnread(user.id) }));
+  }),
+);
 
 /** `DELETE /api/notifications/:id` — dismiss one permanently. */
-notificationsRoute.delete("/:id{[0-9]+}", async (c) => {
-  const user = c.get("user")!;
-  const id = Number(c.req.param("id"));
-  const result = await deleteNotification(user.id, id);
-  if (!result.deleted) {
-    throw new HttpError(404, "NOT_FOUND", "Notification not found.");
-  }
-  return c.json(ok({ id, deleted: true, unread: await countUnread(user.id) }));
-});
+notificationsRoute.delete(
+  "/:id{[0-9]+}",
+  guarded("notifications.write", async (c) => {
+    const user = c.get("user")!;
+    const id = Number(c.req.param("id"));
+    const result = await deleteNotification(user.id, id);
+    if (!result.deleted) {
+      throw new HttpError(404, "NOT_FOUND", "Notification not found.");
+    }
+    return c.json(ok({ id, deleted: true, unread: await countUnread(user.id) }));
+  }),
+);

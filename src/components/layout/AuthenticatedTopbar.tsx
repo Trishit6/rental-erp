@@ -26,7 +26,7 @@ export function AuthenticatedTopbar({ onMenuClick }: { onMenuClick: () => void }
   }
 
   return (
-    <header className="sticky top-0 z-[var(--layer-header)] border-b border-white/70 bg-background/90 backdrop-blur-xl transition-all duration-300 dark:border-white/5">
+    <header className="sticky top-0 z-[var(--layer-header)] border-b border-border bg-background/90 backdrop-blur-xl transition-all duration-300">
       <div className="flex h-[72px] items-center gap-3 px-4 sm:px-6 lg:px-8">
         <Button
           type="button"

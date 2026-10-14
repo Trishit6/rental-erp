@@ -31,11 +31,10 @@ import {
 import { effectiveDailyRate, platformFee, rentalDays } from "../src/lib/pricing";
 import {
   DEV_ADMIN_EMAIL,
-  DEV_ADMIN_PASSWORD,
-  DEV_PASSWORD,
   PLATFORM_RENTAL_FEE_PERCENT,
   PLATFORM_SALE_FEE_PERCENT,
 } from "./lib/config";
+import { resolveSeedCredentials } from "./lib/seed-credentials";
 import { refreshProductRatings } from "./lib/rating-aggregate";
 import { TRUNCATED_TABLES } from "./lib/seed-truncate";
 import { ALL_ROLE_NAMES } from "./lib/enums";
@@ -183,9 +182,10 @@ async function seed() {
   const randInt = (min: number, max: number) => min + Math.floor(rand() * (max - min + 1));
 
   console.log("Seeding users...");
-  const passwordHash = await hashPassword(DEV_PASSWORD);
+  const credentials = resolveSeedCredentials();
+  const passwordHash = await hashPassword(credentials.demoPassword);
   // Hashed separately so `ADMIN_PASSWORD` can differ from the shared demo password.
-  const adminPasswordHash = await hashPassword(DEV_ADMIN_PASSWORD);
+  const adminPasswordHash = await hashPassword(credentials.adminPassword);
   const insertedUsers = await db
     .insert(users)
     .values([
@@ -1893,15 +1893,13 @@ async function seed() {
   ]);
 
   console.log("\nSeed complete!");
-  // Echoed so a fresh clone knows what to sign in with. These are the *seeded*
-  // credentials, read from the environment — see `lib/config` — and printing them
-  // here is the whole point: they only work against a local demo database.
-  console.log(`  Admin:  ${DEV_ADMIN_EMAIL} / ${DEV_ADMIN_PASSWORD}`);
-  console.log(`  Seller: seller@revaro.local / ${DEV_PASSWORD}`);
-  console.log(`  Buyer:  buyer@revaro.local / ${DEV_PASSWORD}`);
-  console.log(
-    `  Also:   daniel@revaro.local, priya@revaro.local, sara@revaro.local / ${DEV_PASSWORD}`,
-  );
+  // Deliberately no password in the output: the value lives only in the generated
+  // credentials file (or in the environment that supplied it). Printing it here put
+  // a working credential into terminal scrollback and CI logs.
+  console.log(`  Admin:  ${DEV_ADMIN_EMAIL}`);
+  console.log("  Seller: seller@revaro.local   Buyer: buyer@revaro.local");
+  console.log("  Also:   daniel@, priya@, sara@revaro.local");
+  console.log(`  Passwords: ${credentials.file} (gitignored) or ADMIN_PASSWORD / DEMO_PASSWORD.`);
 }
 
 seed()

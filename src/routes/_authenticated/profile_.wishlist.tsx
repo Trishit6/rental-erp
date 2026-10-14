@@ -6,6 +6,6 @@ import { favoritesRouteOptions } from "@/features/favorites/route";
  * The wishlist is the favorites feature; there is exactly one favorite system in
  * this app and this route adds a URL for it, not a second one.
  */
-export const Route = createFileRoute("/_authenticated/profile/wishlist")({
+export const Route = createFileRoute("/_authenticated/profile_/wishlist")({
   ...favoritesRouteOptions,
 });

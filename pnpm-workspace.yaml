@@ -1,2 +1,10 @@
 allowBuilds:
   esbuild: true
+
+# pnpm 11 reads settings from here (the `pnpm` field in package.json is ignored).
+# These override transitive advisories: shell-quote <1.11.0 and source-map-js <1.2.2
+# are dev-only, esbuild <0.25.0 is pulled in by drizzle-kit's loader.
+overrides:
+  shell-quote: ">=1.11.0"
+  source-map-js: ">=1.2.2"
+  esbuild: ">=0.25.0"

@@ -45,6 +45,26 @@ export function RootLayout() {
       state.matches?.some((match) => match.routeId.startsWith("/_authenticated")) ?? false,
   });
 
+  // The floating rail (and go-to-top) are ambient storefront affordances. On the
+  // auth screens they compete with the form's own submit, and on checkout they sit
+  // over the final call to action — so they are hidden there. Admin and the
+  // authenticated workspace already render no storefront chrome at all.
+  const hideFloating = useRouterState({
+    select: (state) => {
+      const path = state.location.pathname;
+      const isAuthRoute =
+        state.matches?.some((match) => match.routeId.startsWith("/_auth")) ?? false;
+      return (
+        isAuthRoute ||
+        path === "/cart" ||
+        path === "/checkout" ||
+        path.startsWith("/checkout/") ||
+        path === "/payment" ||
+        path.startsWith("/payment/")
+      );
+    },
+  });
+
   return (
     // Two providers wrap the whole app, in this order:
     //  - the cart drawer's open state is shared by the navbar, the floating dock
@@ -66,9 +86,10 @@ export function RootLayout() {
                 </main>
                 <SiteFooter />
                 {/* One fixed column owns the bottom-right corner. Controls render
-                    into it from wherever they are declared. */}
-                <FloatingRail />
-                <GoToTop />
+                    into it from wherever they are declared. Hidden on auth and
+                    checkout, where a floating control would sit over the form. */}
+                {!hideFloating && <FloatingRail />}
+                {!hideFloating && <GoToTop />}
                 <CartDrawerHost />
               </>
             )}

@@ -31,7 +31,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { fail } from "./api";
 import { appendSetCookie, parseCookies } from "./http";
-import { isProduction } from "./env";
+import { appBaseUrl, isProduction } from "./env";
 import type { Request, RequestHandler, Response } from "express";
 
 /* ------------------------------ security headers ---------------------------- */
@@ -98,10 +98,13 @@ export function allowedOrigins(req: Request): Set<string> {
   const self = `${req.protocol}://${req.get("host") ?? ""}`;
   if (self !== "http://") origins.add(normalizeOrigin(self));
 
-  for (const name of ["APP_URL", "API_URL"] as const) {
+  for (const name of ["API_URL"] as const) {
     const value = process.env[name];
     if (value) origins.add(normalizeOrigin(value));
   }
+  // `APP_URL` (or its deprecated `APP_BASE_URL` fallback) is the client origin.
+  const base = appBaseUrl();
+  if (base) origins.add(normalizeOrigin(base));
   for (const value of (process.env.AUTH_ALLOWED_ORIGINS ?? "").split(",")) {
     if (value.trim()) origins.add(normalizeOrigin(value));
   }

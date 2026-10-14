@@ -1,16 +1,58 @@
-<<<<<<< HEAD
 # Revaro — Rent. Buy. Sell. Reuse.
 
 A neighbour-to-neighbour marketplace to rent, buy and sell pre-loved things — sofas, cameras,
 dresses, drills — with real rentals, deposits, rent-to-own, seller dashboards and more.
 
 Same warm neumorphic design as the original Revaro, now a **real full-stack application**:
-React 19 + Vite + TanStack (Router/Query/Form/Table) frontend, Hono + Drizzle + MariaDB backend,
+React 19 + Vite + TanStack (Router/Query/Form/Table) frontend, Express 5 + Drizzle + MariaDB backend,
 with sessions, transactions and a rental availability engine.
+
+> **Products should have more than one life.**
+
+## What is Revaro?
+
+Revaro combines **rental commerce, traditional ecommerce, resale, and product reuse** into one platform.
+
+Users can:
+
+* 🛍️ Buy products
+* 🔄 Rent products
+* ♻️ Discover pre-loved products
+* 💰 Sell their own products
+* 🔁 Rent products with the possibility of purchasing later
+* ❤️ Save products to favorites
+* 🛒 Manage a persistent cart
+* 📦 Prepare purchases and rentals through checkout
+* 🔎 Search and filter products
+* 🏷️ Browse products by category
+
+## The Revaro Concept
+
+Traditional ecommerce primarily focuses on:
+
+```text
+Discover → Buy → Own
+```
+
+Revaro expands that model:
+
+```text
+Discover → Rent → Use → Return or Own
+```
+
+and:
+
+```text
+Sell → Reuse → Rent → Buy
+```
+
+This creates a marketplace where products can move between people instead of being limited to a single
+ownership journey.
 
 ## Features
 
-- **Auth** — register / login / logout with HTTP-only session cookies (bcrypt password hashing).
+- **Auth** — register / login / logout with HTTP-only session cookies (scrypt password hashing, with a
+  one-time bcrypt upgrade path for legacy hashes). Optional TOTP MFA for staff accounts.
 - **Products** — 12 categories, multi-image, tags, conditions, listing types (SALE / RENT / BOTH).
 - **Search & browse** — URL-shareable filters (query, category, type, price, sort), server-side
   search across title/description/brand/location/tags, pagination.
@@ -40,290 +82,85 @@ with sessions, transactions and a rental availability engine.
 - **Design** — original Revaro neumorphic design preserved: warm beige palette, soft raised/inset
   surfaces, DM Sans + Nunito, INR pricing, Framer Motion micro-interactions, skeletons, empty states.
 
-## Architecture
+## Feature Detail
 
-```
-├── server/            Hono API (tsx, no build step)
-│   ├── index.ts       entry: logger, onError, session attach, route mounting, /api/health, /api/stats
-│   ├── schema.ts      full relational schema (20 tables, FKs, indexes, unique constraints)
-│   ├── db.ts          mysql2 pool + Drizzle
-│   ├── seed.ts        realistic demo data (users, categories, 22 products, orders, rentals, reviews…)
-│   ├── lib/           api envelope + errors + rate limiting, auth (sessions), config (fees),
-│   │                  cart pricing engine, checkout quote, payment provider abstraction
-│   └── routes/        auth, products+search, market (favorites/cart/addresses),
-│                      orders+rentals engine, payments (intent/verify/webhook), social
-│                      (reviews/messages/notifications/users), seller, admin
-├── src/               React SPA
-│   ├── routes/        one page per route (TanStack Router, context-based auth guards)
-│   ├── components/    Revaro design system (cards, header, grids, skeletons, empty states, ui/)
-│   └── lib/           api-client, auth-context, query-keys, pricing (shared with server), types
-├── drizzle/           generated migrations
-└── tests/             vitest unit tests (pricing engine)
-```
+### Modern Marketplace
 
-**Money** is stored and computed in integer paise (`src/lib/pricing.ts`, shared by server and
-frontend). Deposits are tracked separately from rental fees and never counted as seller revenue.
+Revaro provides a polished marketplace experience with product discovery, featured products, rental
+products, pre-loved products, categories, search, filtering, sorting and responsive product grids.
 
-## Requirements
+### Flexible Product Modes
 
-- Node.js 20+
-- pnpm 9+
-- MariaDB 10.6+ (or MySQL 8+)
+Products can support three primary modes, surfaced by the API as `BUY` / `RENT` / `RENT_AND_BUY` and
+stored as the `listing_type` column values `SALE` / `RENT` / `BOTH`:
 
-## Installation
-=======
-# Revaro ♻️
-
-> **Rent. Buy. Sell. Reuse.**
-
-Revaro is a modern full-stack marketplace designed to make renting, buying, selling, and discovering pre-loved products simple and seamless.
-
-Whether you need something temporarily, want to purchase it, or have something valuable sitting unused, Revaro connects people through a flexible **rent • buy • sell • reuse** ecosystem.
-
----
-
-## ✨ What is Revaro?
-
-Revaro combines **rental commerce, traditional ecommerce, resale, and product reuse** into one platform.
-
-Users can:
-
-* 🛍️ Buy products
-* 🔄 Rent products
-* ♻️ Discover pre-loved products
-* 💰 Sell their own products
-* 🔁 Rent products with the possibility of purchasing later
-* ❤️ Save products to favorites
-* 🛒 Manage a persistent cart
-* 📦 Prepare purchases and rentals through checkout
-* 🔎 Search and filter products
-* 🏷️ Browse products by category
-
-Revaro is built around a simple idea:
-
-> **Products should have more than one life.**
-
----
-
-## 🎯 The Revaro Concept
-
-Traditional ecommerce primarily focuses on:
-
-```text
-Discover → Buy → Own
-```
-
-Revaro expands that model:
-
-```text
-Discover → Rent → Use → Return or Own
-```
-
-and:
-
-```text
-Sell → Reuse → Rent → Buy
-```
-
-This creates a marketplace where products can move between people instead of being limited to a single ownership journey.
-
----
-
-## 🚀 Core Features
-
-### 🏠 Modern Marketplace
-
-Revaro provides a polished marketplace experience with:
-
-* Product discovery
-* Featured products
-* Rental products
-* Pre-loved products
-* Categories
-* Search
-* Filtering
-* Sorting
-* Responsive product grids
-
----
-
-### 🔄 Flexible Product Modes
-
-Products can support three primary modes:
-
-| Mode           | Description                                         |
-| -------------- | --------------------------------------------------- |
-| `BUY`          | Purchase the product directly                       |
-| `RENT`         | Rent the product for a selected duration            |
-| `RENT_AND_BUY` | Rent first with the possibility of purchasing later |
+| Mode           | Stored as | Description                                         |
+| -------------- | --------- | --------------------------------------------------- |
+| `BUY`          | `SALE`    | Purchase the product directly                       |
+| `RENT`         | `RENT`    | Rent the product for a selected duration            |
+| `RENT_AND_BUY` | `BOTH`    | Rent first with the possibility of purchasing later |
 
 This allows sellers to offer products in different ways while giving users more flexibility.
 
----
+### Product Discovery
 
-### 🔎 Product Discovery
+Users can discover products through search, categories, price filters, condition filters, availability
+filters, listing type, sorting and pagination. Product discovery is designed to remain fast and
+cache-aware while maintaining URL-based filter state.
 
-Users can discover products through:
+### Favorites
 
-* Search
-* Categories
-* Price filters
-* Condition filters
-* Availability filters
-* Listing type
-* Sorting
-* Pagination
+Users can save products for later: add to favorites, remove from favorites, a favorites page,
+optimistic UI, undo actions, cross-feature synchronization and authentication-aware favorites.
 
-Product discovery is designed to remain fast and cache-aware while maintaining URL-based filter state.
+### Smart Cart
 
----
+The Revaro cart supports both purchases and rentals: add products, remove products, update
+quantities, rental duration, rental mode, security deposit, availability validation, price
+validation, a cart drawer, a full cart page and a responsive mobile summary. The server remains the
+authoritative source for pricing and availability.
 
-### ❤️ Favorites
+### Checkout
 
-Users can save products for later.
+Revaro includes a dedicated checkout architecture supporting saved addresses, new address creation,
+delivery options, pickup options, rental details, rental duration, rental dates, security deposits,
+coupon architecture, server-side cart validation, server-authoritative pricing and a checkout
+summary. Payment processing and final order creation are designed as separate modules.
 
-Features include:
+### Authentication
 
-* Add to favorites
-* Remove from favorites
-* Favorites page
-* Optimistic UI
-* Undo actions
-* Cross-feature synchronization
-* Authentication-aware favorites
+Authentication is built around secure server-side sessions: registration, login, logout, current
+user, protected routes, role-based access and session management. Supported roles are `USER`,
+`SELLER` and `ADMIN`. Authentication sessions use secure HTTP-only cookies rather than storing
+authentication tokens in localStorage.
 
----
+## Theme System
 
-### 🛒 Smart Cart
-
-The Revaro cart supports both purchases and rentals.
-
-Cart functionality includes:
-
-* Add products
-* Remove products
-* Update quantities
-* Rental duration
-* Rental mode
-* Security deposit
-* Availability validation
-* Price validation
-* Cart drawer
-* Full cart page
-* Responsive mobile summary
-
-The server remains the authoritative source for pricing and availability.
-
----
-
-### 🧾 Checkout
-
-Revaro includes a dedicated checkout architecture supporting:
-
-* Saved addresses
-* New address creation
-* Delivery options
-* Pickup options
-* Rental details
-* Rental duration
-* Rental dates
-* Security deposits
-* Coupon architecture
-* Server-side cart validation
-* Server-authoritative pricing
-* Checkout summary
-
-Payment processing and final order creation are designed as separate modules.
-
----
-
-### 🔐 Authentication
-
-Authentication is built around secure server-side sessions.
-
-The architecture supports:
-
-* Registration
-* Login
-* Logout
-* Current user
-* Protected routes
-* Role-based access
-* Session management
-
-Supported roles:
-
-```text
-USER
-SELLER
-ADMIN
-```
-
-Authentication sessions use secure HTTP-only cookies rather than storing authentication tokens in localStorage.
-
----
-
-## 🌓 Professional Theme System
-
-Revaro supports:
-
-* ☀️ Light mode
-* 🌙 Dark mode
-* 🖥️ System mode
-
-The visual system maintains the Revaro identity across both themes.
+Revaro supports ☀️ light mode, 🌙 dark mode and 🖥️ system mode, maintaining the Revaro identity across
+both themes.
 
 ### Light Mode
 
-Uses:
-
-* Warm ivory
-* Beige
-* Greige
-* Burnt orange
-* Olive
-* Dark brown typography
+Uses warm ivory, beige, greige, burnt orange, olive and dark brown typography.
 
 ### Dark Mode
 
-Uses:
+Uses warm near-black surfaces, dark brown-gray, cream typography, muted burnt orange and muted olive
+accents.
 
-* Warm near-black surfaces
-* Dark brown-gray
-* Cream typography
-* Muted burnt orange
-* Muted olive accents
+## Design Language
 
----
+Revaro uses a distinctive visual system rather than a generic ecommerce template: soft neumorphic
+surfaces, rounded cards, floating controls, subtle depth, a warm neutral palette, burnt-orange
+primary actions, olive accents, smooth transitions, responsive layouts and minimal visual clutter.
 
-## 🎨 Revaro Design Language
+The objective is to create a marketplace that feels **Modern · Warm · Premium · Simple · Approachable**.
 
-Revaro uses a distinctive visual system rather than a generic ecommerce template.
-
-Design characteristics include:
-
-* Soft neumorphic surfaces
-* Rounded cards
-* Floating controls
-* Subtle depth
-* Warm neutral palette
-* Burnt-orange primary actions
-* Olive accents
-* Smooth transitions
-* Responsive layouts
-* Minimal visual clutter
-
-The objective is to create a marketplace that feels:
-
-**Modern · Warm · Premium · Simple · Approachable**
-
----
-
-## 🧑‍💻 Technology Stack
+## Technology Stack
 
 ### Frontend
 
-* **React**
+* **React 19**
 * **TypeScript**
 * **Vite**
 * **TanStack Router**
@@ -331,7 +168,7 @@ The objective is to create a marketplace that feels:
 * **TanStack Form**
 * **TanStack Table**
 * **Tailwind CSS v4**
-* **shadcn/ui**
+* **Radix UI primitives**
 * **Framer Motion**
 * **Lucide React**
 * **Zod**
@@ -340,7 +177,7 @@ The objective is to create a marketplace that feels:
 
 * **Node.js**
 * **TypeScript**
-* **Hono**
+* **Express 5** (behind a small Hono-style router shim, `server/lib/http.ts`)
 
 ### Database
 
@@ -352,60 +189,28 @@ The objective is to create a marketplace that feels:
 
 * **pnpm**
 
----
+## Architecture
 
-## 🏗️ Architecture
-
-Revaro follows a feature-first architecture designed for scalability and maintainability.
-
-```text
-src/
-├── components/
-│   ├── ui/
-│   ├── layout/
-│   ├── navbar/
-│   ├── footer/
-│   └── shared/
-│
-├── features/
-│   ├── home/
-│   ├── login/
-│   ├── register/
-│   ├── forgot-password/
-│   ├── browse/
-│   ├── product-details/
-│   ├── categories/
-│   ├── favorites/
-│   ├── cart/
-│   ├── checkout/
-│   ├── orders/
-│   ├── rentals/
-│   ├── rent-to-own/
-│   ├── sell/
-│   ├── seller-dashboard/
-│   ├── seller-listings/
-│   ├── seller-orders/
-│   ├── seller-rentals/
-│   ├── messages/
-│   ├── notifications/
-│   ├── reviews/
-│   ├── profile/
-│   ├── addresses/
-│   ├── settings/
-│   └── admin/
-│
-├── lib/
-│   ├── api/
-│   ├── auth/
-│   ├── db/
-│   ├── query/
-│   └── storage/
-│
-├── routes/
-└── main.tsx
+```
+├── server/            Express 5 API (tsx, no build step)
+│   ├── index.ts       entry: logger, onError, session attach, route mounting, /api/health, /api/stats
+│   ├── schema.ts      full relational schema (FKs, indexes, unique constraints)
+│   ├── db.ts          mysql2 pool + Drizzle
+│   ├── seed.ts        realistic demo data (users, categories, products, orders, rentals, reviews…)
+│   ├── lib/           api envelope + errors + rate limiting, auth (sessions), config (fees),
+│   │                  cart pricing engine, checkout quote, payment provider abstraction
+│   └── routes/        auth, products+search, market (favorites/cart/addresses),
+│                      orders+rentals engine, payments (intent/verify/webhook), social
+│                      (reviews/messages/notifications/users), seller, admin
+├── src/               React SPA
+│   ├── routes/        one page per route (TanStack Router, context-based auth guards)
+│   ├── components/    Revaro design system (cards, header, grids, skeletons, empty states, ui/)
+│   └── lib/           api-client, auth-context, query-keys, pricing (shared with server), types
+├── drizzle/           generated migrations
+└── tests/             vitest unit tests
 ```
 
-Each feature follows a consistent structure:
+Each feature is isolated under `src/features/<name>/` and follows one shape:
 
 ```text
 feature/
@@ -431,61 +236,23 @@ feature/
 | `types.ts`    | TypeScript types         |
 | `route.tsx`   | TanStack Router route    |
 
-This separation keeps UI, API, validation, state, and routing concerns organized.
+This separation keeps UI, API, validation, state and routing concerns organized. Cross-feature
+imports are avoided; shared code lives in `src/components/shared/` or `src/lib/`.
 
----
+## Data Fetching & Caching
 
-## ⚡ Data Fetching & Caching
+Revaro uses **TanStack Query** for server state, with query key factories (from
+`src/lib/query/keys.ts`), appropriate `staleTime` / `gcTime`, query invalidation, optimistic updates
+where appropriate, prefetching where useful, mutation synchronization and cache-aware navigation.
+Previously loaded information should not unnecessarily reload when navigating through the
+application. Checkout-critical information is always revalidated against the server.
 
-Revaro uses **TanStack Query** for server state.
+## Database Architecture
 
-The caching strategy is designed to prevent unnecessary requests while maintaining correct server state.
-
-The application uses:
-
-* Query key factories
-* Appropriate `staleTime`
-* Appropriate `gcTime`
-* Query invalidation
-* Optimistic updates where appropriate
-* Prefetching where useful
-* Mutation synchronization
-* Cache-aware navigation
-
-Previously loaded information should not unnecessarily reload when navigating through the application.
-
-Checkout-critical information is always revalidated against the server.
-
----
-
-## 🗄️ Database Architecture
-
-The planned database architecture includes:
-
-```text
-users
-sessions
-addresses
-categories
-products
-product_images
-favorites
-carts
-cart_items
-orders
-order_items
-rentals
-reviews
-seller_profiles
-transactions
-conversations
-conversation_participants
-messages
-notifications
-reports
-```
-
-Database architecture:
+The schema is a single source of truth in `server/schema.ts`, covering `users`, `sessions`,
+`addresses`, `categories`, `products`, `product_images`, `favorites`, `carts`, `cart_items`, `orders`,
+`order_items`, `rentals`, `reviews`, `seller_profiles`, `transactions`, `conversations`,
+`conversation_participants`, `messages`, `notifications`, `reports` and the admin/ops tables.
 
 ```text
 MariaDB
@@ -495,9 +262,10 @@ mysql2
 Drizzle ORM
 ```
 
----
+**Money** is stored and computed in integer paise (`src/lib/pricing.ts`, shared by server and
+frontend). Deposits are tracked separately from rental fees and never counted as seller revenue.
 
-## 🔐 Security Principles
+## Security
 
 Revaro follows security-first principles.
 
@@ -511,75 +279,32 @@ Revaro follows security-first principles.
 
 ### Validation
 
-Frontend:
-
-```text
-TanStack Form + Zod
-```
-
-Backend:
-
-```text
-Zod + server-side validation
-```
-
+Frontend uses TanStack Form + Zod; the backend validates with Zod + server-side checks.
 Client-submitted values are never treated as authoritative for sensitive operations.
 
 ### Pricing
 
-The backend remains authoritative for:
-
-* Product price
-* Rental price
-* Security deposit
-* Delivery charges
-* Discounts
-* Final totals
-* Availability
+The backend remains authoritative for product price, rental price, security deposit, delivery
+charges, discounts, final totals and availability.
 
 ### Authorization
 
-Users can only access resources belonging to their authenticated account.
+Users can only access resources belonging to their authenticated account, and staff permissions are
+enforced by the server (`server/lib/permissions.ts`), not by hiding UI.
 
----
+## Responsive Design
 
-## 📱 Responsive Design
+Revaro is designed for desktop, laptop, tablet and mobile. Mobile UX includes floating controls,
+compact summaries, mobile filter sheets, touch-friendly controls, responsive product grids and sticky
+actions where appropriate.
 
-Revaro is designed for:
+## Accessibility
 
-* Desktop
-* Laptop
-* Tablet
-* Mobile
+Revaro aims to provide semantic HTML, keyboard navigation, visible focus states, accessible forms,
+screen-reader-friendly errors, proper labels, ARIA attributes where necessary, sufficient contrast and
+reduced-motion support.
 
-Mobile UX includes:
-
-* Floating controls
-* Compact summaries
-* Mobile filter sheets
-* Touch-friendly controls
-* Responsive product grids
-* Sticky actions where appropriate
-
----
-
-## ♿ Accessibility
-
-Revaro aims to provide:
-
-* Semantic HTML
-* Keyboard navigation
-* Visible focus states
-* Accessible forms
-* Screen-reader-friendly errors
-* Proper labels
-* ARIA attributes where necessary
-* Sufficient contrast
-* Reduced-motion support
-
----
-
-## 📈 Development Roadmap
+## Development Roadmap
 
 ### Foundation
 
@@ -630,9 +355,13 @@ Revaro aims to provide:
 * [ ] Reports
 * [ ] Platform management
 
----
+## Requirements
 
-## 🛠️ Local Development
+- Node.js 20+
+- pnpm 9+
+- MariaDB 10.6+ (or MySQL 8+)
+
+## Installation
 
 ### 1. Clone the repository
 
@@ -642,13 +371,11 @@ cd revaro
 ```
 
 ### 2. Install dependencies
->>>>>>> a4c5636eb042adc0dbf0fd94b80e606076ae365e
 
 ```bash
 pnpm install
 ```
 
-<<<<<<< HEAD
 ### MariaDB setup
 
 ```sql
@@ -660,19 +387,10 @@ CREATE DATABASE reloop CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 ### Environment variables
 
-Copy `.env.example` → `.env` and adjust:
-
-```
-DATABASE_URL=mysql://root:password@localhost:3307/reloop
-NODE_ENV=development
-API_PORT=3001
-SESSION_SECRET=change_me
-APP_URL=http://localhost:5173
-API_URL=http://localhost:3001
-PAYMENT_PROVIDER=mock
-PLATFORM_SALE_FEE_PERCENT=5
-PLATFORM_RENTAL_FEE_PERCENT=10
-```
+Copy `.env.example` → `.env` and adjust. See `.env.example` for the complete annotated list. The API
+refuses to start without `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` and `MFA_ENCRYPTION_KEY`; the
+database connection accepts either split `DB_*` variables or a single `DATABASE_URL` (which takes
+precedence).
 
 `PAYMENT_PROVIDER=mock` (or leaving it empty) selects the **development-only** payment provider. It
 simulates payments, moves no money, and is refused when `NODE_ENV=production`. Set a real provider
@@ -725,7 +443,10 @@ The Vite dev server proxies `/api/*` to `http://localhost:3001`.
 
 ## Demo accounts (development seed)
 
-Password for all: `revaro-dev-2026`
+The seed resolves its passwords from `ADMIN_PASSWORD` and `DEMO_PASSWORD`. When neither is set it
+generates a random password **once** and writes it to `.seed-credentials.local` (gitignored), so the
+value never lives in the repository. Never prefix these with `VITE_`, and never commit the generated
+file.
 
 | Role | Email |
 | --- | --- |
@@ -754,88 +475,30 @@ by server-side availability checks inside the order transaction — see
 - Build the frontend with `pnpm build` (outputs to `dist/`), serve it behind any static host or CDN.
 - Run the API with `pnpm start:api` behind a process manager (pm2/systemd) — it serves `/api/*`
   on `API_PORT`.
-- Set strong `SESSION_SECRET`, `NODE_ENV=production` (enables `Secure` session cookies), real
-  MariaDB credentials via `DATABASE_URL`, and a real `PAYMENT_PROVIDER` with its keys. The
-  development payment mock is refused under `NODE_ENV=production` on purpose.
+- Set `NODE_ENV=production` (enables `Secure` session cookies), strong `JWT_ACCESS_SECRET` /
+  `JWT_REFRESH_SECRET` / `MFA_ENCRYPTION_KEY`, real MariaDB credentials via `DATABASE_URL`, and a real
+  `PAYMENT_PROVIDER` with its keys. The development payment mock is refused under
+  `NODE_ENV=production` on purpose.
 - The payment provider is an interface (`server/lib/payments/`); wire your gateway in as a new
   adapter behind the same order-creation transaction before taking real payments. The webhook
   endpoint is `POST /api/payments/webhook` and is signature-authenticated, not session-authenticated.
 - Platform fees are configurable via `PLATFORM_SALE_FEE_PERCENT` / `PLATFORM_RENTAL_FEE_PERCENT`.
-=======
-### 3. Configure environment variables
 
-Create:
-
-```text
-.env
-```
-
-Example:
-
-```env
-DB_HOST=localhost
-DB_PORT=3307
-DB_USER=root
-DB_PASSWORD=your_database_password
-DB_NAME=revaro
-```
-
-Never commit `.env` to Git.
-
-### 4. Start MariaDB
-
-Make sure MariaDB is running on:
-
-```text
-localhost:3307
-```
-
-and the database exists:
-
-```text
-revaro
-```
-
-### 5. Run migrations
-
-Use the project's configured Drizzle commands:
-
-```bash
-pnpm db:generate
-pnpm db:migrate
-```
-
-If the repository uses different script names, use the commands defined in `package.json`.
-
-### 6. Start development server
-
-```bash
-pnpm dev
-```
-
----
-
-## 🧪 Quality Checks
+## Quality Checks
 
 Before submitting changes:
 
 ```bash
 pnpm typecheck
 pnpm lint
+pnpm test
 pnpm build
 ```
 
-The project should have:
+The project should have no TypeScript errors, no lint errors, a passing test suite and a successful
+production build.
 
-* No TypeScript errors
-* No lint errors
-* Successful production build
-* Valid routes
-* Valid database schema
-
----
-
-## 🌳 Development Principles
+## Development Principles
 
 ### Feature-first development
 
@@ -843,13 +506,7 @@ Each major business capability is isolated into its own feature module.
 
 ### Strong typing
 
-TypeScript is used throughout the application.
-
-Avoid unnecessary:
-
-```ts
-any
-```
+TypeScript is used throughout the application. Avoid unnecessary `any`.
 
 ### Server-authoritative business logic
 
@@ -871,33 +528,18 @@ Already-loaded data should be reused whenever appropriate.
 
 New features should be added without unnecessarily restructuring existing modules.
 
----
+## Design Philosophy
 
-## 🎨 Design Philosophy
+Revaro is intentionally different from conventional ecommerce interfaces. Instead of relying on
+excessive gradients, generic SaaS dashboards, overly bright colors, dense product grids or
+unnecessary animations, Revaro focuses on **Warmth + Depth + Simplicity + Motion**. The interface
+combines marketplace functionality with a soft neumorphic visual language and carefully controlled
+floating interactions.
 
-Revaro is intentionally different from conventional ecommerce interfaces.
+## Future Vision
 
-Instead of relying on:
-
-* Excessive gradients
-* Generic SaaS dashboards
-* Overly bright colors
-* Dense product grids
-* Unnecessary animations
-
-Revaro focuses on:
-
-> **Warmth + Depth + Simplicity + Motion**
-
-The interface combines marketplace functionality with a soft neumorphic visual language and carefully controlled floating interactions.
-
----
-
-## 🔮 Future Vision
-
-Revaro is designed to become more than a traditional ecommerce platform.
-
-The core product lifecycle can evolve around:
+Revaro is designed to become more than a traditional ecommerce platform. The core product lifecycle
+can evolve around:
 
 ```text
              DISCOVER
@@ -927,23 +569,19 @@ SELL
 REUSE
 ```
 
-The goal is to create a marketplace where products can continue providing value across multiple users and multiple stages of their lifecycle.
+The goal is to create a marketplace where products can continue providing value across multiple users
+and multiple stages of their lifecycle.
 
----
-
-## 📌 Project Status
+## Project Status
 
 > 🚧 **Revaro is currently under active development.**
 
-The platform is being developed incrementally, with each major capability implemented as an independent feature while maintaining the overall architecture and design system.
+The platform is being developed incrementally, with each major capability implemented as an
+independent feature while maintaining the overall architecture and design system.
 
----
+## Contributing
 
-## 🤝 Contributing
-
-Contributions, suggestions, and improvements are welcome.
-
-Before submitting a pull request:
+Contributions, suggestions and improvements are welcome. Before submitting a pull request:
 
 1. Create a feature branch.
 2. Follow the existing feature architecture.
@@ -951,26 +589,13 @@ Before submitting a pull request:
 4. Add appropriate validation.
 5. Keep API logic separated from UI.
 6. Test your changes.
-7. Run typecheck, lint, and build.
+7. Run typecheck, lint, test and build.
 8. Maintain the Revaro design language.
 
----
-
-## 📄 License
+## License
 
 License information will be added as the project approaches its public release.
 
----
+## Built With
 
-## 👨‍💻 Built With
-
-**Revaro** is built with modern open-source technologies:
-
-**React · TypeScript · Vite · TanStack · Tailwind CSS · shadcn/ui · Framer Motion · Hono · Drizzle ORM · MariaDB**
-
----
-
-# Revaro ♻️
-
-### Rent. Buy. Sell. Reuse.
->>>>>>> a4c5636eb042adc0dbf0fd94b80e606076ae365e
+**React · TypeScript · Vite · TanStack · Tailwind CSS · Radix UI · Framer Motion · Express · Drizzle ORM · MariaDB**

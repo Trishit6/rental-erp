@@ -1,7 +1,12 @@
 import "dotenv/config";
 import { spawnSync } from "node:child_process";
 import mysql from "mysql2/promise";
-import { databaseCredentials, isLocalHost } from "./lib/db-credentials";
+import {
+  databaseCredentials,
+  databaseUrl,
+  isLocalHost,
+  migrateDatabaseCredentials,
+} from "./lib/db-credentials";
 
 /**
  * `pnpm db:verify:migrate` — prove the migration history runs from scratch on
@@ -118,9 +123,10 @@ await mysql.createConnection({ ...credentials, multipleStatements: true }).then(
 
 console.log(`db:verify:migrate — created empty "${TEST_DATABASE}", running all migrations...`);
 
-const testUrl = `mysql://${encodeURIComponent(credentials.user)}:${encodeURIComponent(
-  credentials.password,
-)}@${credentials.host}:${credentials.port}/${TEST_DATABASE}`;
+const testUrl = databaseUrl({
+  ...migrateDatabaseCredentials(),
+  database: TEST_DATABASE,
+});
 
 const migrate = spawnSync("pnpm", ["exec", "drizzle-kit", "migrate"], {
   // Piped rather than inherited: the spinner writes control characters over the

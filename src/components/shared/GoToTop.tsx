@@ -5,7 +5,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { FloatingSlotContent } from "@/lib/floating/rail";
 
 /** Appears after this much scrolling. */
-const SCROLL_THRESHOLD = 480;
+const SCROLL_THRESHOLD = 400;
 
 /**
  * The global "go to top" button.
@@ -64,7 +64,7 @@ export function GoToTop() {
         transition={{ duration: 0.2, ease: "easeOut" }}
         whileHover={{ y: -3 }}
         whileTap={{ scale: 0.94 }}
-        className="soft-button flex size-12 items-center justify-center rounded-full text-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        className="soft-button flex size-12 items-center justify-center rounded-full text-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         <ArrowUp size={18} aria-hidden />
       </motion.button>

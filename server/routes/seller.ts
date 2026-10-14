@@ -347,55 +347,58 @@ sellerRoute.get("/products/:id{[0-9]+}", async (c) => {
  *    was accepting any `http(s)` URL — so a listing could point every visitor at
  *    a third-party host nobody vetted.
  */
-sellerRoute.post("/products", async (c) => {
-  const user = requireSeller(c);
-  const input = productInputSchema.parse(await c.req.json());
+sellerRoute.post(
+  "/products",
+  guarded("seller.products", async (c) => {
+    const user = requireSeller(c);
+    const input = productInputSchema.parse(await c.req.json());
 
-  assertProductPricing({
-    listingType: input.listingType,
-    purchasePrice: input.purchasePrice,
-    rentalPricePerDay: input.rentalPricePerDay,
-    rentalPricePerWeek: input.rentalPricePerWeek,
-    rentalPricePerMonth: input.rentalPricePerMonth,
-    securityDeposit: input.securityDeposit,
-    minimumRentalDays: input.minimumRentalDays,
-    maximumRentalDays: input.maximumRentalDays,
-    // A new listing starts with every unit it declares, so the check is trivially
-    // satisfied — passed explicitly so the create path reads the same as the edit
-    // path rather than relying on the field being optional.
-    quantity: input.quantity,
-    availableQuantity: input.quantity,
-  });
-  assertImageHosts(input.images);
+    assertProductPricing({
+      listingType: input.listingType,
+      purchasePrice: input.purchasePrice,
+      rentalPricePerDay: input.rentalPricePerDay,
+      rentalPricePerWeek: input.rentalPricePerWeek,
+      rentalPricePerMonth: input.rentalPricePerMonth,
+      securityDeposit: input.securityDeposit,
+      minimumRentalDays: input.minimumRentalDays,
+      maximumRentalDays: input.maximumRentalDays,
+      // A new listing starts with every unit it declares, so the check is trivially
+      // satisfied — passed explicitly so the create path reads the same as the edit
+      // path rather than relying on the field being optional.
+      quantity: input.quantity,
+      availableQuantity: input.quantity,
+    });
+    assertImageHosts(input.images);
 
-  const created = await createSellerProduct(user.id, input);
+    const created = await createSellerProduct(user.id, input);
 
-  // Creating a listing does not publish it — the row lands as `DRAFT` — so both
-  // notices are about *where it now is*, not about it being live: the seller is told
-  // their draft exists, and the moderation queue is told there is something to look
-  // at. Keyed on the product, which is unique per listing, so a retried create (which
-  // makes a second product, and is a real bug elsewhere) cannot silently double-notify
-  // the same row.
-  await notify(db, {
-    userId: user.id,
-    type: "LISTING_SUBMITTED",
-    title: "Listing created",
-    body: `“${input.title}” was saved as a draft. Publish it when you are ready.`,
-    context: { productId: created.id, productSlug: created.slug },
-    eventKey: notificationEventKey("LISTING_SUBMITTED", created.id),
-  });
-  await notifyAdmins(db, {
-    type: "ADMIN_PRODUCT_PENDING",
-    title: "Listing pending review",
-    body: `${user.name} created the draft listing “${input.title}”.`,
-    relatedEntityType: "LISTING",
-    relatedEntityId: created.id,
-    eventKey: notificationEventKey("ADMIN_PRODUCT_PENDING", created.id),
-    metadata: { sellerId: user.id },
-  });
+    // Creating a listing does not publish it — the row lands as `DRAFT` — so both
+    // notices are about *where it now is*, not about it being live: the seller is told
+    // their draft exists, and the moderation queue is told there is something to look
+    // at. Keyed on the product, which is unique per listing, so a retried create (which
+    // makes a second product, and is a real bug elsewhere) cannot silently double-notify
+    // the same row.
+    await notify(db, {
+      userId: user.id,
+      type: "LISTING_SUBMITTED",
+      title: "Listing created",
+      body: `“${input.title}” was saved as a draft. Publish it when you are ready.`,
+      context: { productId: created.id, productSlug: created.slug },
+      eventKey: notificationEventKey("LISTING_SUBMITTED", created.id),
+    });
+    await notifyAdmins(db, {
+      type: "ADMIN_PRODUCT_PENDING",
+      title: "Listing pending review",
+      body: `${user.name} created the draft listing “${input.title}”.`,
+      relatedEntityType: "LISTING",
+      relatedEntityId: created.id,
+      eventKey: notificationEventKey("ADMIN_PRODUCT_PENDING", created.id),
+      metadata: { sellerId: user.id },
+    });
 
-  return c.json(ok(created), 201);
-});
+    return c.json(ok(created), 201);
+  }),
+);
 
 function assertImageHosts(images: readonly string[]): void {
   const problems = imageUrlErrors(images, allowedImageHosts());
@@ -515,107 +518,110 @@ const productUpdateSchema = productInputSchema
   .partial()
   .refine((value) => Object.keys(value).length > 0, { message: "Nothing to update." });
 
-sellerRoute.patch("/products/:id{[0-9]+}", async (c) => {
-  const user = requireSeller(c);
-  const id = Number(c.req.param("id"));
-  const input = productUpdateSchema.parse(await c.req.json());
+sellerRoute.patch(
+  "/products/:id{[0-9]+}",
+  guarded("seller.products", async (c) => {
+    const user = requireSeller(c);
+    const id = Number(c.req.param("id"));
+    const input = productUpdateSchema.parse(await c.req.json());
 
-  const existing = await loadOwnedProduct(user.id, id);
-  if (existing.status === "ARCHIVED") {
-    throw new HttpError(
-      409,
-      "LISTING_ARCHIVED",
-      "This listing is archived. Restore it before editing.",
-    );
-  }
-
-  if (input.categoryId !== undefined) await requireCategory(input.categoryId);
-  if (input.images) assertImageHosts(input.images);
-
-  // `quantity` is split out because it cannot be written on its own: stock is
-  // derived, so the total, the availability and the status move together.
-  const { images, tags, quantity, ...fields } = input;
-
-  assertProductPricing({
-    listingType: fields.listingType ?? existing.listingType,
-    purchasePrice: "purchasePrice" in fields ? fields.purchasePrice : existing.purchasePrice,
-    rentalPricePerDay:
-      "rentalPricePerDay" in fields ? fields.rentalPricePerDay : existing.rentalPricePerDay,
-    rentalPricePerWeek:
-      "rentalPricePerWeek" in fields ? fields.rentalPricePerWeek : existing.rentalPricePerWeek,
-    rentalPricePerMonth:
-      "rentalPricePerMonth" in fields ? fields.rentalPricePerMonth : existing.rentalPricePerMonth,
-    securityDeposit:
-      "securityDeposit" in fields ? fields.securityDeposit : existing.securityDeposit,
-    minimumRentalDays:
-      "minimumRentalDays" in fields ? fields.minimumRentalDays : existing.minimumRentalDays,
-    maximumRentalDays:
-      "maximumRentalDays" in fields ? fields.maximumRentalDays : existing.maximumRentalDays,
-    quantity: quantity ?? existing.quantity,
-    availableQuantity: existing.availableQuantity,
-  });
-
-  const stock =
-    quantity === undefined
-      ? null
-      : validateInventoryEdit(
-          { quantity: existing.quantity, availableQuantity: existing.availableQuantity },
-          { quantity },
-        );
-  if (stock && !stock.ok) throw new HttpError(400, "INVALID_STOCK", stock.message);
-
-  await db.transaction(async (tx) => {
-    if (Object.keys(fields).length > 0) {
-      await tx
-        .update(products)
-        .set({ ...fields, updatedAt: new Date() })
-        .where(and(eq(products.id, id), eq(products.sellerId, user.id)));
+    const existing = await loadOwnedProduct(user.id, id);
+    if (existing.status === "ARCHIVED") {
+      throw new HttpError(
+        409,
+        "LISTING_ARCHIVED",
+        "This listing is archived. Restore it before editing.",
+      );
     }
 
-    // Inside the transaction, so a failure rolls the whole edit back rather than
-    // leaving a listing whose photos were deleted and never replaced.
-    if (images) {
-      await tx.delete(productImages).where(eq(productImages.productId, id));
-      if (images.length) {
+    if (input.categoryId !== undefined) await requireCategory(input.categoryId);
+    if (input.images) assertImageHosts(input.images);
+
+    // `quantity` is split out because it cannot be written on its own: stock is
+    // derived, so the total, the availability and the status move together.
+    const { images, tags, quantity, ...fields } = input;
+
+    assertProductPricing({
+      listingType: fields.listingType ?? existing.listingType,
+      purchasePrice: "purchasePrice" in fields ? fields.purchasePrice : existing.purchasePrice,
+      rentalPricePerDay:
+        "rentalPricePerDay" in fields ? fields.rentalPricePerDay : existing.rentalPricePerDay,
+      rentalPricePerWeek:
+        "rentalPricePerWeek" in fields ? fields.rentalPricePerWeek : existing.rentalPricePerWeek,
+      rentalPricePerMonth:
+        "rentalPricePerMonth" in fields ? fields.rentalPricePerMonth : existing.rentalPricePerMonth,
+      securityDeposit:
+        "securityDeposit" in fields ? fields.securityDeposit : existing.securityDeposit,
+      minimumRentalDays:
+        "minimumRentalDays" in fields ? fields.minimumRentalDays : existing.minimumRentalDays,
+      maximumRentalDays:
+        "maximumRentalDays" in fields ? fields.maximumRentalDays : existing.maximumRentalDays,
+      quantity: quantity ?? existing.quantity,
+      availableQuantity: existing.availableQuantity,
+    });
+
+    const stock =
+      quantity === undefined
+        ? null
+        : validateInventoryEdit(
+            { quantity: existing.quantity, availableQuantity: existing.availableQuantity },
+            { quantity },
+          );
+    if (stock && !stock.ok) throw new HttpError(400, "INVALID_STOCK", stock.message);
+
+    await db.transaction(async (tx) => {
+      if (Object.keys(fields).length > 0) {
         await tx
-          .insert(productImages)
-          .values(images.map((url, index) => ({ productId: id, url, sortOrder: index })));
+          .update(products)
+          .set({ ...fields, updatedAt: new Date() })
+          .where(and(eq(products.id, id), eq(products.sellerId, user.id)));
       }
-    }
 
-    if (tags) {
-      await tx.delete(productTags).where(eq(productTags.productId, id));
-      if (tags.length) {
+      // Inside the transaction, so a failure rolls the whole edit back rather than
+      // leaving a listing whose photos were deleted and never replaced.
+      if (images) {
+        await tx.delete(productImages).where(eq(productImages.productId, id));
+        if (images.length) {
+          await tx
+            .insert(productImages)
+            .values(images.map((url, index) => ({ productId: id, url, sortOrder: index })));
+        }
+      }
+
+      if (tags) {
+        await tx.delete(productTags).where(eq(productTags.productId, id));
+        if (tags.length) {
+          await tx
+            .insert(productTags)
+            .values(tags.map((tag) => ({ productId: id, tag: tag.toLowerCase() })));
+        }
+      }
+
+      if (stock && stock.ok) {
         await tx
-          .insert(productTags)
-          .values(tags.map((tag) => ({ productId: id, tag: tag.toLowerCase() })));
+          .update(products)
+          .set({
+            quantity: stock.quantity,
+            // Raising the total does not conjure units: availability is clamped
+            // down to the new total, never up.
+            availableQuantity: Math.min(existing.availableQuantity, stock.quantity),
+            status: deriveProductStatus(
+              existing.status,
+              Math.min(existing.availableQuantity, stock.quantity),
+            ),
+            updatedAt: new Date(),
+          })
+          .where(eq(products.id, id));
       }
-    }
+    });
 
-    if (stock && stock.ok) {
-      await tx
-        .update(products)
-        .set({
-          quantity: stock.quantity,
-          // Raising the total does not conjure units: availability is clamped
-          // down to the new total, never up.
-          availableQuantity: Math.min(existing.availableQuantity, stock.quantity),
-          status: deriveProductStatus(
-            existing.status,
-            Math.min(existing.availableQuantity, stock.quantity),
-          ),
-          updatedAt: new Date(),
-        })
-        .where(eq(products.id, id));
-    }
-  });
+    // After the transaction, not inside it. A rolled-back edit must not leave people
+    // told a price they are not getting.
+    await announcePriceChange(id, existing, fields);
 
-  // After the transaction, not inside it. A rolled-back edit must not leave people
-  // told a price they are not getting.
-  await announcePriceChange(id, existing, fields);
-
-  return c.json(ok({ id, updated: true }));
-});
+    return c.json(ok({ id, updated: true }));
+  }),
+);
 
 /**
  * Tell this listing's watchers it just got cheaper.
@@ -699,42 +705,45 @@ const inventorySchema = z
     message: "Send a total, an available count, or both.",
   });
 
-sellerRoute.patch("/products/:id{[0-9]+}/inventory", async (c) => {
-  const user = requireSeller(c);
-  const id = Number(c.req.param("id"));
-  const input = inventorySchema.parse(await c.req.json());
+sellerRoute.patch(
+  "/products/:id{[0-9]+}/inventory",
+  guarded("seller.products", async (c) => {
+    const user = requireSeller(c);
+    const id = Number(c.req.param("id"));
+    const input = inventorySchema.parse(await c.req.json());
 
-  const existing = await loadOwnedProduct(user.id, id);
+    const existing = await loadOwnedProduct(user.id, id);
 
-  const check = validateInventoryEdit(
-    { quantity: existing.quantity, availableQuantity: existing.availableQuantity },
-    // The schema has already guaranteed at least one of the two is present.
-    input as InventoryEdit,
-  );
-  if (!check.ok) throw new HttpError(400, "INVALID_STOCK", check.message);
+    const check = validateInventoryEdit(
+      { quantity: existing.quantity, availableQuantity: existing.availableQuantity },
+      // The schema has already guaranteed at least one of the two is present.
+      input as InventoryEdit,
+    );
+    if (!check.ok) throw new HttpError(400, "INVALID_STOCK", check.message);
 
-  const status = deriveProductStatus(existing.status, check.availableQuantity);
+    const status = deriveProductStatus(existing.status, check.availableQuantity);
 
-  await db
-    .update(products)
-    .set({
-      quantity: check.quantity,
-      availableQuantity: check.availableQuantity,
-      status,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(products.id, id), eq(products.sellerId, user.id)));
+    await db
+      .update(products)
+      .set({
+        quantity: check.quantity,
+        availableQuantity: check.availableQuantity,
+        status,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(products.id, id), eq(products.sellerId, user.id)));
 
-  return c.json(
-    ok({
-      id,
-      quantity: check.quantity,
-      availableQuantity: check.availableQuantity,
-      reservedQuantity: check.quantity - check.availableQuantity,
-      status,
-    }),
-  );
-});
+    return c.json(
+      ok({
+        id,
+        quantity: check.quantity,
+        availableQuantity: check.availableQuantity,
+        reservedQuantity: check.quantity - check.availableQuantity,
+        status,
+      }),
+    );
+  }),
+);
 
 /* ------------------------------ status changes ----------------------------- */
 
@@ -748,50 +757,55 @@ sellerRoute.patch("/products/:id{[0-9]+}/inventory", async (c) => {
  */
 const statusSchema = z.object({ status: z.string().trim().min(1).max(16) }).strict();
 
-sellerRoute.patch("/products/:id{[0-9]+}/status", async (c) => {
-  const user = requireSeller(c);
-  const id = Number(c.req.param("id"));
-  const { status } = statusSchema.parse(await c.req.json().catch(() => ({})));
+sellerRoute.patch(
+  "/products/:id{[0-9]+}/status",
+  guarded("seller.products", async (c) => {
+    const user = requireSeller(c);
+    const id = Number(c.req.param("id"));
+    const { status } = statusSchema.parse(await c.req.json().catch(() => ({})));
 
-  // A seller may not assert `OUT_OF_STOCK` (it is derived from inventory) nor
-  // `DRAFT` (that is a creation-time state, not a transition).
-  if (!(SELLER_SETTABLE_STATUSES as readonly string[]).includes(status)) {
-    throw new HttpError(400, "BAD_REQUEST", "Invalid status.");
-  }
+    // A seller may not assert `OUT_OF_STOCK` (it is derived from inventory) nor
+    // `DRAFT` (that is a creation-time state, not a transition).
+    if (!(SELLER_SETTABLE_STATUSES as readonly string[]).includes(status)) {
+      throw new HttpError(400, "BAD_REQUEST", "Invalid status.");
+    }
 
-  const existing = await loadOwnedProduct(user.id, id);
-  if (existing.status === "ARCHIVED" && status !== "ARCHIVED") {
-    throw new HttpError(
-      409,
-      "LISTING_ARCHIVED",
-      "This listing is archived and cannot be re-published.",
-    );
-  }
+    const existing = await loadOwnedProduct(user.id, id);
+    if (existing.status === "ARCHIVED" && status !== "ARCHIVED") {
+      throw new HttpError(
+        409,
+        "LISTING_ARCHIVED",
+        "This listing is archived and cannot be re-published.",
+      );
+    }
 
-  // Publishing a listing whose stock is gone must land on `OUT_OF_STOCK`, not on
-  // `PUBLISHED` — the availability the row actually holds wins.
-  const nextStatus =
-    status === "PUBLISHED" ? deriveProductStatus("PUBLISHED", existing.availableQuantity) : status;
+    // Publishing a listing whose stock is gone must land on `OUT_OF_STOCK`, not on
+    // `PUBLISHED` — the availability the row actually holds wins.
+    const nextStatus =
+      status === "PUBLISHED"
+        ? deriveProductStatus("PUBLISHED", existing.availableQuantity)
+        : status;
 
-  // Ownership is already proven by `loadOwnedProduct`, and the UPDATE repeats the
-  // seller predicate anyway, so there is no "did it land?" question to answer —
-  // which is convenient, because drizzle's mysql2 `update()` result carries no
-  // usable row count.
-  await db
-    .update(products)
-    .set({ status: nextStatus, updatedAt: new Date() })
-    .where(and(eq(products.id, id), eq(products.sellerId, user.id)));
+    // Ownership is already proven by `loadOwnedProduct`, and the UPDATE repeats the
+    // seller predicate anyway, so there is no "did it land?" question to answer —
+    // which is convenient, because drizzle's mysql2 `update()` result carries no
+    // usable row count.
+    await db
+      .update(products)
+      .set({ status: nextStatus, updatedAt: new Date() })
+      .where(and(eq(products.id, id), eq(products.sellerId, user.id)));
 
-  // Everyone who saved this listing while it was unavailable is told it is buyable
-  // again. Gated on the *transition* rather than on the target status, so a seller
-  // re-publishing an already-published listing does not re-notify — which is exactly
-  // the status a double-clicked button produces.
-  if (nextStatus === "PUBLISHED" && existing.status !== "PUBLISHED") {
-    await announceBackInStock(id, existing);
-  }
+    // Everyone who saved this listing while it was unavailable is told it is buyable
+    // again. Gated on the *transition* rather than on the target status, so a seller
+    // re-publishing an already-published listing does not re-notify — which is exactly
+    // the status a double-clicked button produces.
+    if (nextStatus === "PUBLISHED" && existing.status !== "PUBLISHED") {
+      await announceBackInStock(id, existing);
+    }
 
-  return c.json(ok({ id, status: nextStatus }));
-});
+    return c.json(ok({ id, status: nextStatus }));
+  }),
+);
 
 /**
  * Tell this listing's watchers it is available again.
@@ -834,81 +848,84 @@ async function announceBackInStock(
  * bought. Images are copied by URL, which is why the copy is a draft — the seller
  * looks at the pictures before anything becomes public.
  */
-sellerRoute.post("/products/:id{[0-9]+}/duplicate", async (c) => {
-  const user = requireSeller(c);
-  const id = Number(c.req.param("id"));
+sellerRoute.post(
+  "/products/:id{[0-9]+}/duplicate",
+  guarded("seller.products", async (c) => {
+    const user = requireSeller(c);
+    const id = Number(c.req.param("id"));
 
-  const [source] = await db
-    .select({
-      title: products.title,
-      description: products.description,
-      categoryId: products.categoryId,
-      brand: products.brand,
-      condition: products.condition,
-      listingType: products.listingType,
-      location: products.location,
-      latitude: products.latitude,
-      longitude: products.longitude,
-      purchasePrice: products.purchasePrice,
-      rentalPricePerDay: products.rentalPricePerDay,
-      rentalPricePerWeek: products.rentalPricePerWeek,
-      rentalPricePerMonth: products.rentalPricePerMonth,
-      securityDeposit: products.securityDeposit,
-      minimumRentalDays: products.minimumRentalDays,
-      maximumRentalDays: products.maximumRentalDays,
-      rentToOwnEnabled: products.rentToOwnEnabled,
-      rentToOwnPrice: products.rentToOwnPrice,
-      rentCreditPercentage: products.rentCreditPercentage,
-      rentCreditCap: products.rentCreditCap,
-      quantity: products.quantity,
-      allowsDelivery: products.allowsDelivery,
-      allowsPickup: products.allowsPickup,
-    })
-    .from(products)
-    .where(and(eq(products.id, id), eq(products.sellerId, user.id)))
-    .limit(1);
+    const [source] = await db
+      .select({
+        title: products.title,
+        description: products.description,
+        categoryId: products.categoryId,
+        brand: products.brand,
+        condition: products.condition,
+        listingType: products.listingType,
+        location: products.location,
+        latitude: products.latitude,
+        longitude: products.longitude,
+        purchasePrice: products.purchasePrice,
+        rentalPricePerDay: products.rentalPricePerDay,
+        rentalPricePerWeek: products.rentalPricePerWeek,
+        rentalPricePerMonth: products.rentalPricePerMonth,
+        securityDeposit: products.securityDeposit,
+        minimumRentalDays: products.minimumRentalDays,
+        maximumRentalDays: products.maximumRentalDays,
+        rentToOwnEnabled: products.rentToOwnEnabled,
+        rentToOwnPrice: products.rentToOwnPrice,
+        rentCreditPercentage: products.rentCreditPercentage,
+        rentCreditCap: products.rentCreditCap,
+        quantity: products.quantity,
+        allowsDelivery: products.allowsDelivery,
+        allowsPickup: products.allowsPickup,
+      })
+      .from(products)
+      .where(and(eq(products.id, id), eq(products.sellerId, user.id)))
+      .limit(1);
 
-  if (!source) throw new HttpError(404, "NOT_FOUND", "Product not found.");
+    if (!source) throw new HttpError(404, "NOT_FOUND", "Product not found.");
 
-  const [images, tags] = await Promise.all([
-    db
-      .select({ url: productImages.url })
-      .from(productImages)
-      .where(eq(productImages.productId, id))
-      .orderBy(productImages.sortOrder, productImages.id),
-    db.select({ tag: productTags.tag }).from(productTags).where(eq(productTags.productId, id)),
-  ]);
+    const [images, tags] = await Promise.all([
+      db
+        .select({ url: productImages.url })
+        .from(productImages)
+        .where(eq(productImages.productId, id))
+        .orderBy(productImages.sortOrder, productImages.id),
+      db.select({ tag: productTags.tag }).from(productTags).where(eq(productTags.productId, id)),
+    ]);
 
-  const created = await createSellerProduct(user.id, {
-    title: `${source.title} (copy)`.slice(0, 120),
-    description: source.description,
-    categoryId: source.categoryId,
-    brand: source.brand ?? undefined,
-    condition: source.condition as ProductInput["condition"],
-    listingType: source.listingType as ProductInput["listingType"],
-    location: source.location,
-    latitude: source.latitude ?? undefined,
-    longitude: source.longitude ?? undefined,
-    purchasePrice: source.purchasePrice,
-    rentalPricePerDay: source.rentalPricePerDay,
-    rentalPricePerWeek: source.rentalPricePerWeek,
-    rentalPricePerMonth: source.rentalPricePerMonth,
-    securityDeposit: source.securityDeposit,
-    minimumRentalDays: source.minimumRentalDays,
-    maximumRentalDays: source.maximumRentalDays,
-    rentToOwnEnabled: source.rentToOwnEnabled,
-    rentToOwnPrice: source.rentToOwnPrice,
-    rentCreditPercentage: source.rentCreditPercentage,
-    rentCreditCap: source.rentCreditCap,
-    quantity: source.quantity,
-    images: images.map((row) => row.url),
-    tags: tags.map((row) => row.tag),
-    allowsDelivery: source.allowsDelivery,
-    allowsPickup: source.allowsPickup,
-  });
+    const created = await createSellerProduct(user.id, {
+      title: `${source.title} (copy)`.slice(0, 120),
+      description: source.description,
+      categoryId: source.categoryId,
+      brand: source.brand ?? undefined,
+      condition: source.condition as ProductInput["condition"],
+      listingType: source.listingType as ProductInput["listingType"],
+      location: source.location,
+      latitude: source.latitude ?? undefined,
+      longitude: source.longitude ?? undefined,
+      purchasePrice: source.purchasePrice,
+      rentalPricePerDay: source.rentalPricePerDay,
+      rentalPricePerWeek: source.rentalPricePerWeek,
+      rentalPricePerMonth: source.rentalPricePerMonth,
+      securityDeposit: source.securityDeposit,
+      minimumRentalDays: source.minimumRentalDays,
+      maximumRentalDays: source.maximumRentalDays,
+      rentToOwnEnabled: source.rentToOwnEnabled,
+      rentToOwnPrice: source.rentToOwnPrice,
+      rentCreditPercentage: source.rentCreditPercentage,
+      rentCreditCap: source.rentCreditCap,
+      quantity: source.quantity,
+      images: images.map((row) => row.url),
+      tags: tags.map((row) => row.tag),
+      allowsDelivery: source.allowsDelivery,
+      allowsPickup: source.allowsPickup,
+    });
 
-  return c.json(ok({ ...created, status: "DRAFT" as const }), 201);
-});
+    return c.json(ok({ ...created, status: "DRAFT" as const }), 201);
+  }),
+);
 
 /* ---------------------------- archive vs delete ---------------------------- */
 
@@ -917,18 +934,21 @@ sellerRoute.post("/products/:id{[0-9]+}/duplicate", async (c) => {
  *
  * This is the action the UI should offer for anything that has ever sold.
  */
-sellerRoute.post("/products/:id{[0-9]+}/archive", async (c) => {
-  const user = requireSeller(c);
-  const id = Number(c.req.param("id"));
-  await loadOwnedProduct(user.id, id);
+sellerRoute.post(
+  "/products/:id{[0-9]+}/archive",
+  guarded("seller.products", async (c) => {
+    const user = requireSeller(c);
+    const id = Number(c.req.param("id"));
+    await loadOwnedProduct(user.id, id);
 
-  await db
-    .update(products)
-    .set({ status: "ARCHIVED", updatedAt: new Date() })
-    .where(and(eq(products.id, id), eq(products.sellerId, user.id)));
+    await db
+      .update(products)
+      .set({ status: "ARCHIVED", updatedAt: new Date() })
+      .where(and(eq(products.id, id), eq(products.sellerId, user.id)));
 
-  return c.json(ok({ id, status: "ARCHIVED" as const }));
-});
+    return c.json(ok({ id, status: "ARCHIVED" as const }));
+  }),
+);
 
 /**
  * `DELETE /api/seller/products/:id` — remove a listing that has never sold.
@@ -945,25 +965,28 @@ sellerRoute.post("/products/:id{[0-9]+}/archive", async (c) => {
  * client reads `references` from the edit endpoint and offers archive up front,
  * so this 409 is the backstop rather than the expected path.
  */
-sellerRoute.delete("/products/:id{[0-9]+}", async (c) => {
-  const user = requireSeller(c);
-  const id = Number(c.req.param("id"));
-  await loadOwnedProduct(user.id, id);
+sellerRoute.delete(
+  "/products/:id{[0-9]+}",
+  guarded("seller.products", async (c) => {
+    const user = requireSeller(c);
+    const id = Number(c.req.param("id"));
+    await loadOwnedProduct(user.id, id);
 
-  const references = await countProductReferences(id);
-  if (references.blocking > 0) {
-    throw new HttpError(
-      409,
-      "PRODUCT_HAS_HISTORY",
-      `This listing appears in ${references.orders} order(s) and ${references.reviews} review(s). Archive it instead so that history stays intact.`,
-    );
-  }
+    const references = await countProductReferences(id);
+    if (references.blocking > 0) {
+      throw new HttpError(
+        409,
+        "PRODUCT_HAS_HISTORY",
+        `This listing appears in ${references.orders} order(s) and ${references.reviews} review(s). Archive it instead so that history stays intact.`,
+      );
+    }
 
-  // Nothing references it: `product_images` and `product_tags` cascade, so one
-  // delete really does remove the listing and its media.
-  await db.delete(products).where(and(eq(products.id, id), eq(products.sellerId, user.id)));
-  return c.json(ok({ deleted: true }));
-});
+    // Nothing references it: `product_images` and `product_tags` cascade, so one
+    // delete really does remove the listing and its media.
+    await db.delete(products).where(and(eq(products.id, id), eq(products.sellerId, user.id)));
+    return c.json(ok({ deleted: true }));
+  }),
+);
 
 /**
  * How many rows elsewhere point at this product.

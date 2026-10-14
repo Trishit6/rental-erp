@@ -1,0 +1,74 @@
+# Revaro API — systemd unit.
+#
+# Install (once, as root):
+#
+#   sudo cp docs/deploy/revaro-api.service /etc/systemd/system/revaro-api.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable revaro-api
+#
+# The workflow deploys into /var/www/revaro/releases/<sha> and flips
+# /var/www/revaro/current to point at the new one, then runs
+# `sudo -n systemctl restart revaro-api`. Nothing here needs to change per
+# deploy — WorkingDirectory follows the symlink.
+#
+# Paths below assume SSH_PATH=/var/www/revaro and the service account `revaro`
+# from docs/deploy/VPS.md. Adjust both if your layout differs.
+
+[Unit]
+Description=Revaro API (Express, serves /api/*)
+Documentation=file:///var/www/revaro/current/README.md
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# Least privilege: a system account with no login shell and no sudo.
+User=revaro
+Group=revaro
+
+# Follows the `current` symlink, which is what makes a deploy a symlink flip
+# rather than a config change. `server/lib/storage/dev.ts` resolves the uploads
+# folder relative to this directory.
+WorkingDirectory=/var/www/revaro/current
+
+# The single source of production configuration: DB credentials, API_PORT,
+# JWT/MFA/session secrets, PAYMENT_PROVIDER. Mode 600, owned by revaro, never in
+# the repository. Note API_PORT must match the port the workflow health-checks
+# and nginx proxies to.
+EnvironmentFile=/var/www/revaro/shared/.env
+
+# `pnpm` must be on the default PATH of a non-interactive service environment.
+# Set it explicitly in case it was installed outside /usr/local/bin.
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+
+# `pnpm start:api` == `tsx server/index.ts`. Note that tsx is a dev dependency;
+# see the caveat in docs/deploy/VPS.md §4 before relying on a --prod install.
+ExecStart=/usr/local/bin/pnpm start:api
+
+# The process handles SIGTERM by closing the server and draining the MySQL pool
+# (see server/index.ts), so give it a moment before systemd escalates.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Crashes are restarted; a clean stop is not (that is an operator action).
+Restart=on-failure
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=revaro-api
+
+# Hardening. ProtectSystem=full makes /usr, /boot and /etc read-only while
+# leaving the release tree writable where it matters.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/var/www/revaro/current/server/uploads
+
+[Install]
+WantedBy=multi-user.target

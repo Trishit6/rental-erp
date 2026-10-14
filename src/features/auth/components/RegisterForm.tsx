@@ -1,11 +1,12 @@
 import { useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowRight, Loader2, UserPlus } from "lucide-react";
+import { ArrowRight, Check, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { homeFor } from "@/lib/auth/guards";
+import { getPostAuthTarget } from "@/lib/auth/guards";
+import { focusFirstInvalid } from "@/lib/utils/focus-first-invalid";
 import { useRegisterMutation } from "../query";
 import { AuthError } from "./AuthError";
 import { PasswordField } from "./PasswordField";
@@ -15,6 +16,56 @@ function serverMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong. Please try again.";
 }
 
+/**
+ * The password rules, shown while the user types.
+ *
+ * These are *exactly* the rules `passwordSchema` enforces — a checklist inventing
+ * "one uppercase, one symbol" that the server never checked would be worse than no
+ * checklist at all: the user satisfies it and registration still fails.
+ */
+const PASSWORD_RULES: { label: string; test: (value: string) => boolean }[] = [
+  { label: "At least 8 characters", test: (value) => value.length >= 8 },
+  { label: "No more than 100 characters", test: (value) => value.length <= 100 },
+];
+
+function PasswordChecklist({ value }: { value: string }) {
+  return (
+    <ul className="space-y-1" aria-label="Password requirements">
+      {PASSWORD_RULES.map((rule) => {
+        const met = rule.test(value);
+        return (
+          <li
+            key={rule.label}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+          >
+            <Check
+              size={13}
+              aria-hidden
+              className={met ? "text-success" : "text-muted-foreground/50"}
+            />
+            <span className={met ? "text-success" : undefined}>
+              {rule.label}
+              <span className="sr-only">{met ? " — met" : " — not met yet"}</span>
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * Create an account, then land on the authenticated workspace.
+ *
+ * Registration *is* a sign-in: the server creates the session and sets the cookies
+ * before this response arrives, and the mutation has written the returned user into the
+ * auth cache — so the navbar is signed in on the next render with no reload. The
+ * destination is resolved through `getPostAuthTarget`, the same function the login form
+ * and the route boundary use, so every entry point agrees that the home is `/dashboard`.
+ *
+ * `replace: true` keeps the register form out of the history stack, for the same reason
+ * the login form does it.
+ */
 export function RegisterForm() {
   const navigate = useNavigate();
   const registerMutation = useRegisterMutation();
@@ -31,18 +82,13 @@ export function RegisterForm() {
         return;
       }
       try {
-        const user = await registerMutation.mutateAsync({
+        await registerMutation.mutateAsync({
           name: parsed.data.name,
           email: parsed.data.email,
           password: parsed.data.password,
         });
         toast("Welcome to Revaro!");
-        // Registration signs the user in, exactly once: the server created the
-        // session and set the cookies before this response arrived, so there is
-        // no login step to repeat. The destination is the authenticated
-        // workspace home (`/dashboard`) — the same page `requireGuest` sends a
-        // signed-in visitor to — rather than a public page.
-        void navigate({ to: homeFor(user) });
+        void navigate({ to: getPostAuthTarget(undefined), replace: true });
       } catch (error) {
         setServerError(serverMessage(error));
       }
@@ -54,7 +100,8 @@ export function RegisterForm() {
       onSubmit={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        void form.handleSubmit();
+        const formEl = event.currentTarget;
+        void form.handleSubmit().then(() => focusFirstInvalid(formEl));
       }}
       className="space-y-4"
       noValidate
@@ -65,6 +112,10 @@ export function RegisterForm() {
         name="name"
         validators={{
           onChange: ({ value }) => {
+            const result = registerSchemaBase.shape.name.safeParse(value);
+            return result.success ? undefined : result.error.issues[0]?.message;
+          },
+          onBlur: ({ value }) => {
             const result = registerSchemaBase.shape.name.safeParse(value);
             return result.success ? undefined : result.error.issues[0]?.message;
           },
@@ -110,6 +161,10 @@ export function RegisterForm() {
             const result = registerSchemaBase.shape.email.safeParse(value);
             return result.success ? undefined : result.error.issues[0]?.message;
           },
+          onBlur: ({ value }) => {
+            const result = registerSchemaBase.shape.email.safeParse(value);
+            return result.success ? undefined : result.error.issues[0]?.message;
+          },
         }}
       >
         {(field) => {
@@ -123,6 +178,7 @@ export function RegisterForm() {
               <Input
                 id={inputId}
                 type="email"
+                inputMode="email"
                 autoComplete="email"
                 value={field.state.value}
                 onChange={(e) => field.handleChange(e.target.value)}
@@ -152,19 +208,26 @@ export function RegisterForm() {
             const result = registerSchemaBase.shape.password.safeParse(value);
             return result.success ? undefined : result.error.issues[0]?.message;
           },
+          onBlur: ({ value }) => {
+            const result = registerSchemaBase.shape.password.safeParse(value);
+            return result.success ? undefined : result.error.issues[0]?.message;
+          },
         }}
       >
         {(field) => (
-          <PasswordField
-            label="Password"
-            value={field.state.value}
-            onChange={(value) => field.handleChange(value)}
-            onBlur={field.handleBlur}
-            error={field.state.meta.errors[0]}
-            disabled={form.state.isSubmitting}
-            autoComplete="new-password"
-            placeholder="At least 8 characters"
-          />
+          <div className="space-y-2">
+            <PasswordField
+              label="Password"
+              value={field.state.value}
+              onChange={(value) => field.handleChange(value)}
+              onBlur={field.handleBlur}
+              error={field.state.meta.errors[0]}
+              disabled={form.state.isSubmitting}
+              autoComplete="new-password"
+              placeholder="At least 8 characters"
+            />
+            <PasswordChecklist value={field.state.value} />
+          </div>
         )}
       </form.Field>
 
@@ -172,6 +235,12 @@ export function RegisterForm() {
         name="confirmPassword"
         validators={{
           onChange: ({ value, fieldApi }) => {
+            const password = fieldApi.form.getFieldValue("password") as string;
+            if (value && value !== password) return "Passwords do not match";
+            const result = registerSchemaBase.shape.confirmPassword.safeParse(value);
+            return result.success ? undefined : result.error.issues[0]?.message;
+          },
+          onBlur: ({ value, fieldApi }) => {
             const password = fieldApi.form.getFieldValue("password") as string;
             if (value && value !== password) return "Passwords do not match";
             const result = registerSchemaBase.shape.confirmPassword.safeParse(value);
@@ -193,14 +262,11 @@ export function RegisterForm() {
         )}
       </form.Field>
 
-      <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
-        {([canSubmit, isSubmitting]) => (
-          <Button type="submit" size="lg" className="w-full" disabled={!canSubmit || isSubmitting}>
+      <form.Subscribe selector={(state) => state.isSubmitting}>
+        {(isSubmitting) => (
+          <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>
             {isSubmitting ? (
-              <>
-                <Loader2 size={15} className="animate-spin" aria-hidden />
-                Creating your account…
-              </>
+              "Creating your account…"
             ) : (
               <>
                 <UserPlus size={15} aria-hidden />

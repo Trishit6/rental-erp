@@ -81,7 +81,7 @@ export function SiteHeader() {
 
   return (
     <header
-      className={`sticky top-0 z-[var(--layer-header)] border-b border-white/70 bg-background/90 backdrop-blur-xl transition-all duration-300 dark:border-white/5 ${
+      className={`sticky top-0 z-[var(--layer-header)] border-b border-border bg-background/90 backdrop-blur-xl transition-all duration-300 ${
         scrolled ? "scrolled-header" : ""
       }`}
     >
@@ -173,10 +173,11 @@ export function SiteHeader() {
         </div>
 
         <button
-          className="soft-button flex size-10 items-center justify-center rounded-full md:hidden"
+          className="soft-button flex size-10 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background lg:hidden"
           type="button"
           aria-label={menuOpen ? "Close menu" : "Open menu"}
           aria-expanded={menuOpen}
+          aria-controls="site-header-menu"
           onClick={() => setMenuOpen((open) => !open)}
         >
           {menuOpen ? <X size={19} /> : <Menu size={19} />}
@@ -186,11 +187,12 @@ export function SiteHeader() {
       <AnimatePresence>
         {menuOpen && (
           <motion.div
+            id="site-header-menu"
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.22, ease: "easeOut" }}
-            className="overflow-hidden md:hidden"
+            className="overflow-hidden lg:hidden"
           >
             <div className="page-wrap flex flex-col gap-3 pb-5">
               <form className="relative" onSubmit={search} role="search">

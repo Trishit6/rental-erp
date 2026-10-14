@@ -147,7 +147,7 @@ export function ProductImages({
                   type="button"
                   onClick={() => removeImage(url)}
                   aria-label={`Remove photo ${index + 1}`}
-                  className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full bg-background text-foreground shadow-sm ring-1 ring-border transition hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full bg-background text-foreground elev-1 ring-1 ring-border transition hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   <X size={13} aria-hidden />
                 </button>
@@ -159,7 +159,7 @@ export function ProductImages({
                     onClick={() => move(index, -1)}
                     disabled={index === 0}
                     aria-label={`Move photo ${index + 1} earlier`}
-                    className="flex size-6 items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm ring-1 ring-border transition hover:bg-background disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    className="flex size-6 items-center justify-center rounded-full bg-background/90 text-foreground elev-1 ring-1 ring-border transition hover:bg-background disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   >
                     <ChevronLeft size={13} aria-hidden />
                   </button>
@@ -168,7 +168,7 @@ export function ProductImages({
                     onClick={() => move(index, 1)}
                     disabled={index === images.length - 1}
                     aria-label={`Move photo ${index + 1} later`}
-                    className="flex size-6 items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm ring-1 ring-border transition hover:bg-background disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    className="flex size-6 items-center justify-center rounded-full bg-background/90 text-foreground elev-1 ring-1 ring-border transition hover:bg-background disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   >
                     <ChevronRight size={13} aria-hidden />
                   </button>

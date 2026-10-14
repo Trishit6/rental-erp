@@ -9,6 +9,6 @@ import { orderDetailRouteOptions } from "@/features/orders/route";
  * here: a guard proves the visitor is *a* user, only the API can prove the order
  * is *theirs*.
  */
-export const Route = createFileRoute("/_authenticated/orders/$orderId")({
+export const Route = createFileRoute("/_authenticated/orders_/$orderId")({
   ...orderDetailRouteOptions,
 });

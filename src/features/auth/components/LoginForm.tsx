@@ -1,11 +1,12 @@
 import { useForm } from "@tanstack/react-form";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowRight, Loader2, LogIn, ShieldCheck } from "lucide-react";
+import { ArrowRight, LogIn, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { homeFor } from "@/lib/auth/guards";
+import { getPostAuthTarget } from "@/lib/auth/guards";
+import { focusFirstInvalid } from "@/lib/utils/focus-first-invalid";
 import { useLoginMutation, useMfaChallengeMutation } from "../query";
 import { AuthError } from "./AuthError";
 import { PasswordField } from "./PasswordField";
@@ -25,6 +26,21 @@ function serverMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong. Please try again.";
 }
 
+/**
+ * Sign in, then go where the user was actually headed.
+ *
+ * ## Where the destination comes from
+ *
+ * `redirectTo` reaches this form already resolved by `getPostAuthTarget` at the route
+ * boundary, so an attacker-controlled `?redirect=` can never be a different origin. It is
+ * run through the same function again here (it is idempotent) so the form is also correct
+ * when it is rendered without a route — a test, or a future inline sign-in — and always
+ * ends on `/dashboard` unless a guard sent the visitor somewhere real.
+ *
+ * `replace: true` is what stops Back from returning to the login form the user just left:
+ * without it the history entry pointing at `/login` is what makes a signed-in user appear
+ * signed out when they hit Back.
+ */
 export function LoginForm({ redirectTo }: { redirectTo?: string }) {
   const navigate = useNavigate();
   const loginMutation = useLoginMutation();
@@ -50,11 +66,10 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
           return;
         }
         toast("Welcome back!");
-        // `redirectTo` is the page the visitor was originally refused, already sanitised
-        // at the route boundary. Without one, the destination is the authenticated
-        // workspace home (`/dashboard`) — the same page `requireGuest` sends a
-        // signed-in visitor to, so the two never disagree about where a user belongs.
-        void navigate({ to: redirectTo ?? homeFor(result) });
+        // The mutation has already written the returned user into the auth cache, so
+        // the navbar is signed in on the next render — this navigation is not what
+        // makes the user "logged in".
+        void navigate({ to: getPostAuthTarget(redirectTo), replace: true });
       } catch (error) {
         setServerError(serverMessage(error));
       }
@@ -63,11 +78,17 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
 
   async function handleMfaSubmit() {
     if (!mfaTicket) return;
+    const parsed = mfaCodeSchema.safeParse(mfaCode);
+    if (!parsed.success) {
+      setServerError(parsed.error.issues[0]?.message ?? "Enter your verification code.");
+      focusFirstInvalid(document.getElementById("login-mfa-form") as HTMLFormElement | null);
+      return;
+    }
     setServerError(null);
     try {
-      const user = await mfaChallenge.mutateAsync({ ticket: mfaTicket, code: mfaCode.trim() });
+      await mfaChallenge.mutateAsync({ ticket: mfaTicket, code: mfaCode.trim() });
       toast("Welcome back!");
-      void navigate({ to: redirectTo ?? homeFor(user) });
+      void navigate({ to: getPostAuthTarget(redirectTo), replace: true });
     } catch (error) {
       setServerError(serverMessage(error));
     }
@@ -83,6 +104,7 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
 
     return (
       <form
+        id="login-mfa-form"
         onSubmit={(event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -122,12 +144,9 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
           authenticator app, or one of your unused recovery codes.
         </p>
 
-        <Button type="submit" size="lg" className="w-full" disabled={submitting || !mfaCode}>
+        <Button type="submit" size="lg" className="w-full" loading={submitting}>
           {submitting ? (
-            <>
-              <Loader2 size={15} className="animate-spin" aria-hidden />
-              Verifying…
-            </>
+            "Verifying…"
           ) : (
             <>
               <ShieldCheck size={15} aria-hidden />
@@ -156,7 +175,11 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
       onSubmit={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        void form.handleSubmit();
+        const formEl = event.currentTarget;
+        // If validation refuses the submit, `handleSubmit` resolves without calling
+        // `onSubmit`; the rAF inside the helper then moves focus to the first field it
+        // marked invalid.
+        void form.handleSubmit().then(() => focusFirstInvalid(formEl));
       }}
       className="space-y-4"
       noValidate
@@ -167,6 +190,10 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
         name="email"
         validators={{
           onChange: ({ value }) => {
+            const result = loginSchema.shape.email.safeParse(value);
+            return result.success ? undefined : result.error.issues[0]?.message;
+          },
+          onBlur: ({ value }) => {
             const result = loginSchema.shape.email.safeParse(value);
             return result.success ? undefined : result.error.issues[0]?.message;
           },
@@ -183,7 +210,8 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
               <Input
                 id={inputId}
                 type="email"
-                autoComplete="email"
+                inputMode="email"
+                autoComplete="username"
                 value={field.state.value}
                 onChange={(e) => field.handleChange(e.target.value)}
                 onBlur={field.handleBlur}
@@ -212,6 +240,10 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
             const result = loginSchema.shape.password.safeParse(value);
             return result.success ? undefined : result.error.issues[0]?.message;
           },
+          onBlur: ({ value }) => {
+            const result = loginSchema.shape.password.safeParse(value);
+            return result.success ? undefined : result.error.issues[0]?.message;
+          },
         }}
       >
         {(field) => (
@@ -233,20 +265,18 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
       </div>
 
       {/*
-        `isSubmitting` is TanStack Form's own in-flight flag, and the mutation is only
-        awaited inside `onSubmit`, so the two agree: the button disables for exactly as
-        long as the request is outstanding. That is what makes a double-submit impossible —
-        a second click finds the button disabled and a second Enter press finds
-        `canSubmit` false.
+        The submit button is disabled *only* while a request is in flight — not while the
+        form is empty. An empty form's errors are the point: pressing the button is how a
+        user discovers which field needs attention, and a permanently-disabled button
+        explains nothing. Double submits are still impossible, because `isSubmitting` is
+        true for exactly as long as the request is outstanding and the button blocks its
+        own clicks (`aria-busy` plus `disabled`).
       */}
-      <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
-        {([canSubmit, isSubmitting]) => (
-          <Button type="submit" size="lg" className="w-full" disabled={!canSubmit || isSubmitting}>
+      <form.Subscribe selector={(state) => state.isSubmitting}>
+        {(isSubmitting) => (
+          <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>
             {isSubmitting ? (
-              <>
-                <Loader2 size={15} className="animate-spin" aria-hidden />
-                Signing in…
-              </>
+              "Signing in…"
             ) : (
               <>
                 <LogIn size={15} aria-hidden />

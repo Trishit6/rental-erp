@@ -28,10 +28,13 @@ import {
 import {
   useAdminCategories,
   useAdminCouponDetail,
+  useAdminProducts,
+  useAdminSellersList,
   useCreateAdminCoupon,
   useDeleteAdminCoupon,
   useUpdateAdminCoupon,
 } from "../query";
+import { EMPTY_ADMIN_PRODUCT_FILTERS } from "../types";
 
 const PAISE_PER_RUPEE = 100;
 
@@ -69,6 +72,10 @@ export function AdminCouponDialog({
   const isEditing = couponId !== null;
   const detail = useAdminCouponDetail(open && isEditing ? couponId : null);
   const categories = useAdminCategories();
+  // The scope pickers need a list to choose from. Bounded to a single page: the
+  // desk is choosing one seller or one product, not paging a catalogue.
+  const sellers = useAdminSellersList({ search: "", status: null, page: 1, pageSize: 100 });
+  const products = useAdminProducts({ ...EMPTY_ADMIN_PRODUCT_FILTERS, pageSize: 100 });
   const create = useCreateAdminCoupon();
   const update = useUpdateAdminCoupon(couponId ?? 0);
   const remove = useDeleteAdminCoupon(couponId ?? 0);
@@ -86,6 +93,10 @@ export function AdminCouponDialog({
   const [status, setStatus] = useState<AdminCouponStatus>("ACTIVE");
   const [appliesTo, setAppliesTo] = useState<AdminCouponScope>("ALL");
   const [categoryId, setCategoryId] = useState("");
+  const [sellerId, setSellerId] = useState("");
+  const [productId, setProductId] = useState("");
+  const [stackable, setStackable] = useState(false);
+  const [allowDepositDiscount, setAllowDepositDiscount] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [seededKey, setSeededKey] = useState<string | null>(null);
 
@@ -115,8 +126,12 @@ export function AdminCouponDialog({
       setStartsAt(toLocalInput(coupon.startsAt));
       setEndsAt(toLocalInput(coupon.endsAt));
       setStatus(coupon.status as AdminCouponStatus);
-      setAppliesTo((coupon.appliesTo === "CATEGORY" ? "CATEGORY" : "ALL") as AdminCouponScope);
+      setAppliesTo(coupon.appliesTo as AdminCouponScope);
       setCategoryId(coupon.categoryId == null ? "" : String(coupon.categoryId));
+      setSellerId(coupon.sellerId == null ? "" : String(coupon.sellerId));
+      setProductId(coupon.productId == null ? "" : String(coupon.productId));
+      setStackable(coupon.stackable);
+      setAllowDepositDiscount(coupon.allowDepositDiscount);
     } else {
       setCode("");
       setDescription("");
@@ -131,6 +146,10 @@ export function AdminCouponDialog({
       setStatus("ACTIVE");
       setAppliesTo("ALL");
       setCategoryId("");
+      setSellerId("");
+      setProductId("");
+      setStackable(false);
+      setAllowDepositDiscount(false);
     }
   }
 
@@ -138,11 +157,15 @@ export function AdminCouponDialog({
   const amountValid = Number.isFinite(amount) && amount > 0;
   const percentValid = discountType !== "PERCENT" || amount <= 100;
   const categoryValid = appliesTo !== "CATEGORY" || categoryId !== "";
+  const sellerValid = appliesTo !== "SELLER" || sellerId !== "";
+  const productValid = appliesTo !== "PRODUCT" || productId !== "";
   const canSave =
     code.trim().length >= 2 &&
     amountValid &&
     percentValid &&
     categoryValid &&
+    sellerValid &&
+    productValid &&
     !create.isPending &&
     !update.isPending;
   const canDelete = isEditing && (detail.data?.redemptionCount ?? 0) === 0;
@@ -150,6 +173,14 @@ export function AdminCouponDialog({
   const categoryOptions = (categories.data ?? []).map((category) => ({
     value: String(category.id),
     label: category.name,
+  }));
+  const sellerOptions = (sellers.data?.rows ?? []).map((seller) => ({
+    value: String(seller.id),
+    label: seller.name,
+  }));
+  const productOptions = (products.data?.rows ?? []).map((product) => ({
+    value: String(product.id),
+    label: product.title,
   }));
 
   function buildInput(): AdminCouponWriteInput {
@@ -171,6 +202,10 @@ export function AdminCouponDialog({
       status,
       appliesTo,
       categoryId: appliesTo === "CATEGORY" ? Number(categoryId) : null,
+      sellerId: appliesTo === "SELLER" ? Number(sellerId) : null,
+      productId: appliesTo === "PRODUCT" ? Number(productId) : null,
+      stackable,
+      allowDepositDiscount,
     };
   }
 
@@ -367,6 +402,69 @@ export function AdminCouponDialog({
                 />
               </AdminField>
             ) : null}
+            {appliesTo === "SELLER" ? (
+              <AdminField
+                label="Seller"
+                htmlFor="coupon-seller"
+                error={!sellerValid ? "Choose the seller this coupon discounts." : null}
+              >
+                <NativeSelect
+                  id="coupon-seller"
+                  label="Seller"
+                  value={sellerId}
+                  onChange={(event) => setSellerId(event.target.value)}
+                  options={[{ value: "", label: "Choose a seller…" }, ...sellerOptions]}
+                />
+              </AdminField>
+            ) : null}
+            {appliesTo === "PRODUCT" ? (
+              <AdminField
+                label="Product"
+                htmlFor="coupon-product"
+                error={!productValid ? "Choose the product this coupon discounts." : null}
+              >
+                <NativeSelect
+                  id="coupon-product"
+                  label="Product"
+                  value={productId}
+                  onChange={(event) => setProductId(event.target.value)}
+                  options={[{ value: "", label: "Choose a product…" }, ...productOptions]}
+                />
+              </AdminField>
+            ) : null}
+
+            <AdminField
+              label="Stacks with other offers"
+              htmlFor="coupon-stackable"
+              hint="One code applies per order; this records the intent for reporting."
+            >
+              <NativeSelect
+                id="coupon-stackable"
+                label="Stacks with other offers"
+                value={stackable ? "yes" : "no"}
+                onChange={(event) => setStackable(event.target.value === "yes")}
+                options={[
+                  { value: "no", label: "No" },
+                  { value: "yes", label: "Yes" },
+                ]}
+              />
+            </AdminField>
+            <AdminField
+              label="Discount the refundable deposit"
+              htmlFor="coupon-deposit"
+              hint="Off by default: a deposit is the customer's money, not a price."
+            >
+              <NativeSelect
+                id="coupon-deposit"
+                label="Discount the refundable deposit"
+                value={allowDepositDiscount ? "yes" : "no"}
+                onChange={(event) => setAllowDepositDiscount(event.target.value === "yes")}
+                options={[
+                  { value: "no", label: "No" },
+                  { value: "yes", label: "Yes" },
+                ]}
+              />
+            </AdminField>
           </div>
 
           <div className="mt-5 flex flex-wrap items-center justify-between gap-2">

@@ -49,3 +49,37 @@ export function databaseCredentials(): DatabaseCredentials {
 export function isLocalHost(host: string): boolean {
   return new Set(["localhost", "127.0.0.1", "::1"]).has(host);
 }
+
+/**
+ * The credentials a migration should use.
+ *
+ * Migrations run DDL — `CREATE`, `ALTER`, `DROP`, `CREATE INDEX` — and the running
+ * API never should. In production the two are therefore different accounts:
+ * `MIGRATE_DB_USER` / `MIGRATE_DB_PASSWORD` name the privileged one (see
+ * `docs/deploy/db-least-privilege.sql`), while the API keeps `DB_USER` / `DB_PASSWORD`
+ * with the least it needs. Both migrate variables are optional and fall back to the
+ * runtime values, so a single-account development setup is unchanged and the split
+ * is opt-in.
+ *
+ * Read per call, like `databaseCredentials`, so a test can vary the environment.
+ */
+export function migrateDatabaseCredentials(): DatabaseCredentials {
+  const runtime = databaseCredentials();
+  return {
+    ...runtime,
+    user: process.env.MIGRATE_DB_USER ?? runtime.user,
+    password: process.env.MIGRATE_DB_PASSWORD ?? runtime.password,
+  };
+}
+
+/**
+ * A `mysql://` URL for a resolved credential set.
+ *
+ * The single place the user/password are percent-encoded; a `@` or `/` in a
+ * password would otherwise silently truncate the URL into the wrong connection.
+ */
+export function databaseUrl(credentials: DatabaseCredentials): string {
+  const auth = `${encodeURIComponent(credentials.user)}:${encodeURIComponent(credentials.password)}`;
+  const database = credentials.database ? `/${credentials.database}` : "";
+  return `mysql://${auth}@${credentials.host}:${credentials.port}${database}`;
+}

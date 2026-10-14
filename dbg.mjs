@@ -7,7 +7,7 @@ async function call(method, path, body) {
   const sc = res.headers.get("set-cookie"); if (sc) cookie = sc.split(";")[0];
   return { status: res.status, body: await res.json().catch(() => ({})) };
 }
-const login = await call("POST", "/auth/login", { email: "buyer@revaro.local", password: "revaro-dev-2026" });
+const login = await call("POST", "/auth/login", { email: "buyer@revaro.local", password: process.env.DEMO_PASSWORD ?? process.env.ADMIN_PASSWORD ?? "" });
 console.log("login", login.status);
 const list = await call("GET", "/products?pageSize=10");
 const items = list.body.data ?? [];

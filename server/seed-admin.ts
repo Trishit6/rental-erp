@@ -71,10 +71,10 @@ import {
 import { mulberry32 } from "./data/seed-realistic";
 import {
   DEV_ADMIN_EMAIL,
-  DEV_PASSWORD,
   PLATFORM_RENTAL_FEE_PERCENT,
   PLATFORM_SALE_FEE_PERCENT,
 } from "./lib/config";
+import { resolveSeedCredentials } from "./lib/seed-credentials";
 import { hashPassword } from "./lib/password";
 import { encryptSecretWith, hashRecoveryCode } from "./lib/mfa";
 
@@ -127,7 +127,8 @@ async function main() {
   }
 
   console.log("Revaro admin seed");
-  const passwordHash = await hashPassword(DEV_PASSWORD);
+  const credentials = resolveSeedCredentials();
+  const passwordHash = await hashPassword(credentials.demoPassword);
 
   /* ------------------------------ read the base ----------------------------- */
 
@@ -974,7 +975,7 @@ async function main() {
   console.log("\nAdmin seed complete.");
   console.log(`  staff: ${STAFF.length} (super admin ${STAFF[0]!.email})`);
   console.log(`  tickets: ${insertedTickets.length}, refunds: ${refundRows.length}, disputes: ${disputeRows.length}`);
-  console.log(`  staff password: ${DEV_PASSWORD}`);
+  console.log(`  staff password: see ${credentials.file} (ADMIN_PASSWORD / DEMO_PASSWORD)`);
   console.log(`  admin login: ${DEV_ADMIN_EMAIL} (password-only, no OTP)`);
   console.log(`  MFA secret: ${DEMO_MFA_SECRET}  (super admin, load into any authenticator app)`);
   console.log(`  root recovery:  ${mfaRecoveryByUser.get(superAdminId)!.join("  ")}`);

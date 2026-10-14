@@ -50,10 +50,30 @@ describe("password hashing (scrypt)", () => {
     expect(await verifyPassword("correct horse battery staple", hash)).toBe(true);
   });
 
-  it("refuses a tampered hash without throwing", async () => {
+  it("refuses a tampered digest without throwing", async () => {
+    // Deterministic tamper: flip one bit in the first byte of the digest and
+    // re-encode. Rewriting the trailing base64url characters is unsafe — the last
+    // group carries padding bits, so an "edit" can decode to the same bytes and the
+    // assertion then flips with the random salt.
     const hash = await hashPassword("a-b-c-d-e");
-    const tampered = hash.slice(0, -2) + (hash.endsWith("aa") ? "bb" : "aa");
-    expect(await verifyPassword("a-b-c-d-e", tampered)).toBe(false);
+    const parts = hash.split("$");
+    const digest = Buffer.from(parts[6]!, "base64url");
+    digest.writeUInt8(digest.readUInt8(0) ^ 0x01, 0);
+    const tampered = [...parts.slice(0, 6), digest.toString("base64url")].join("$");
+
+    expect(tampered).not.toBe(hash);
+    await expect(verifyPassword("a-b-c-d-e", tampered)).resolves.toBe(false);
+  });
+
+  it("refuses a tampered salt without throwing", async () => {
+    const hash = await hashPassword("a-b-c-d-e");
+    const parts = hash.split("$");
+    const salt = Buffer.from(parts[5]!, "base64url");
+    salt.writeUInt8(salt.readUInt8(0) ^ 0x01, 0);
+    const tampered = [...parts.slice(0, 5), salt.toString("base64url"), parts[6]!].join("$");
+
+    expect(tampered).not.toBe(hash);
+    await expect(verifyPassword("a-b-c-d-e", tampered)).resolves.toBe(false);
   });
 
   it("treats garbage as 'false', not as an exception", async () => {

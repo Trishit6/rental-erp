@@ -18,7 +18,7 @@ import { requireSeller } from "@/lib/auth/guards";
  * `server/lib/seller-access.ts` is the authoritative one. A listing is the seller's,
  * so this must never be reachable by a customer.
  */
-export const Route = createFileRoute("/seller/products/$productId/edit")({
+export const Route = createFileRoute("/seller/products_/$productId/edit")({
   beforeLoad: requireSeller,
   component: EditProductPage,
 });

@@ -47,6 +47,80 @@ export function safeRedirect(target: unknown, fallback: string): string {
   return target;
 }
 
+/** Where every successful sign-in or registration lands when nothing says otherwise. */
+export const POST_AUTH_FALLBACK = "/dashboard";
+
+/** Guest-only destinations that a post-auth target may never be. */
+const GUEST_ROUTES = new Set(["/login", "/register"]);
+
+/**
+ * True when the string contains an ASCII control character.
+ *
+ * Checked by code point rather than with a regex because the correct regex
+ * (`[\u0000-\u001f\u007f]`) trips `no-control-regex` — and disabling a lint rule that
+ * exists to stop control characters reaching user-visible strings would be the wrong
+ * trade. A control character here is never legitimate: it is how `\n`, `\r` or a NUL
+ * are smuggled into a header or a `Location` value.
+ */
+function hasControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
+}
+
+/**
+ * The one place that decides where a freshly authenticated user goes.
+ *
+ * ## Why this is a pure function
+ *
+ * The value arrives in the URL (`/login?redirect=…`), so it is attacker-controlled:
+ * `/login?redirect=https://evil.example` is a link a user will happily click, and
+ * forwarding them there *after* a real sign-in is the classic open redirect. A pure
+ * function is the only version of this that can be exhaustively tested, which is why
+ * the whole rule lives here rather than being spread across the route, the form and
+ * the guard.
+ *
+ * ## The rule
+ *
+ * The target is honoured only when it is unambiguously one of our own paths:
+ *
+ *  - a non-empty string of at most 200 characters,
+ *  - decodes (twice, so `%252F` cannot smuggle a `//`) without error and without any
+ *    control character,
+ *  - begins with exactly one `/` — not `//` (protocol-relative) and not a scheme,
+ *  - has a path segment (before `?`/`#`) free of `\`, `@` and `:` — the three
+ *    characters that let a browser read a path as an authority or a scheme,
+ *  - and is not `/login` or `/register`, which would loop a signed-in user back out.
+ *
+ * Everything else — including `undefined`, which is the common case — falls back to
+ * `/dashboard`, the authenticated workspace home, for **every** role.
+ */
+export function getPostAuthTarget(returnToRaw: unknown): string {
+  if (typeof returnToRaw !== "string") return POST_AUTH_FALLBACK;
+  const raw = returnToRaw.trim();
+  if (raw.length === 0 || raw.length > 200) return POST_AUTH_FALLBACK;
+
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(decodeURIComponent(raw));
+  } catch {
+    return POST_AUTH_FALLBACK;
+  }
+
+  if (hasControlCharacter(decoded)) return POST_AUTH_FALLBACK;
+  if (!decoded.startsWith("/") || decoded.startsWith("//")) return POST_AUTH_FALLBACK;
+
+  const path = decoded.split(/[?#]/, 1)[0] ?? decoded;
+  if (/[\\@:]/.test(path)) return POST_AUTH_FALLBACK;
+  if (GUEST_ROUTES.has(path)) return POST_AUTH_FALLBACK;
+
+  // Returning the original (trimmed) string keeps the query string intact; only the
+  // *checks* run on the decoded form.
+  return raw;
+}
+
 /**
  * The login redirect that remembers where the visitor was trying to go.
  *

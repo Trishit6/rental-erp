@@ -15,6 +15,8 @@
  *     an upload can never be aimed at someone else's object.
  */
 
+import { randomBytes } from "node:crypto";
+
 /** Image types we accept. Anything else is refused, whatever it claims to be. */
 export const ALLOWED_IMAGE_MIME_TYPES = [
   "image/jpeg",
@@ -205,6 +207,8 @@ export function buildObjectKey(
   ownerId: number,
   contentType: AllowedImageMimeType,
 ): string {
-  const random = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-6);
+  // `randomBytes` rather than `Math.random`: a guessable key lets one seller probe
+  // another's object path, and `Math.random` is not a cryptographic source.
+  const random = randomBytes(12).toString("hex");
   return `${objectKeyPrefix(scope, ownerId)}${random}.${IMAGE_EXTENSION_BY_MIME[contentType]}`;
 }

@@ -21,7 +21,7 @@ import {
   permissions,
 } from "../schema";
 import { ok, HttpError, buildPagination, paginationQuerySchema } from "../lib/api";
-import { guarded } from "../lib/rate-limit";
+import { guarded, rateLimit } from "../lib/rate-limit";
 import { requireAdmin, requireStepUp, requireUser, restoreUser, suspendUser } from "../lib/auth";
 import {
   requireMfaEnrolment,
@@ -79,7 +79,7 @@ import {
   blockCatalogue,
 } from "../lib/cms";
 import { PRODUCT_STATUSES, PUBLIC_PRODUCT_STATUSES } from "../lib/product-status";
-import { ALL_ROLE_NAMES, BANNER_PLACEMENTS } from "../lib/enums";
+import { ALL_ROLE_NAMES, BANNER_PLACEMENTS, reportStatusSchema } from "../lib/enums";
 import { isPayoutStatus, listAllPayouts, setPayoutStatus } from "../lib/wallet";
 import {
   adminOrdersQuerySchema,
@@ -169,6 +169,7 @@ import {
   couponWriteSchema,
   createCoupon,
   deleteCoupon,
+  exportCouponsCsv,
   getCouponDetail,
   listCouponsForAdmin,
   setCouponStatus,
@@ -326,6 +327,29 @@ for (const gate of ADMIN_ROUTE_PERMISSIONS) {
 }
 
 /**
+ * One generous budget across every admin *mutation*.
+ *
+ * The high-risk surfaces (RBAC, payouts, account state) carry the tighter
+ * `admin.action` budget inline. This is the backstop beneath them, registered once
+ * here rather than on each of ~50 handlers, so a mutation route added later is
+ * bounded by construction instead of by remembering to wrap it. Reads are exempt:
+ * a moderation queue refresh is not what a compromised staff session would abuse.
+ *
+ * The bucket is per admin (`perAccount`) *and* per IP, and deliberately loose — an
+ * administrator clearing a queue may touch hundreds of resources a minute, and a
+ * single admin's burst must not lock out the rest of the staff.
+ */
+const adminMutationLimiter = rateLimit("admin.mutation");
+adminRoute.use("*", async (c, next) => {
+  const method = c.req.raw.method;
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") {
+    await next();
+    return;
+  }
+  await adminMutationLimiter(c, next);
+});
+
+/**
  * `GET /api/admin/me` — the caller's own effective access.
  *
  * The sidebar filters to the modules a staff member's permissions allow, and the
@@ -460,16 +484,19 @@ adminRoute.get("/products/facets", async (c) => {
   return c.json(ok(await listAdminProductFacets()));
 });
 
+/**
+ * The body of a moderation status change: exactly one of the known product
+ * statuses and nothing else. `.strict()` keeps a typo or a smuggled field a 400
+ * rather than a value the handler silently reads past.
+ */
+export const adminProductStatusSchema = z.object({ status: z.enum(PRODUCT_STATUSES) }).strict();
+
 adminRoute.patch("/products/:id/status", async (c) => {
   const id = Number(c.req.param("id"));
-  const body = (await c.req.json()) as { status?: string };
   // The same vocabulary the seller uses, plus nothing. (`SOLD` was accepted here
   // and nowhere else, so a product set to it became uneditable and invisible —
   // a state nothing else in the app understood.)
-  const allowed: readonly string[] = PRODUCT_STATUSES;
-  if (!body.status || !allowed.includes(body.status)) {
-    throw new HttpError(400, "BAD_REQUEST", "Invalid status.");
-  }
+  const { status } = adminProductStatusSchema.parse(await c.req.json().catch(() => ({})));
   const [row] = await db
     .select({
       id: products.id,
@@ -482,17 +509,17 @@ adminRoute.patch("/products/:id/status", async (c) => {
     .where(eq(products.id, id))
     .limit(1);
   if (!row) throw new HttpError(404, "NOT_FOUND", "Product not found.");
-  if (row.status === body.status) {
+  if (row.status === status) {
     return c.json(ok({ updated: true, unchanged: true }));
   }
-  await db.update(products).set({ status: body.status }).where(eq(products.id, id));
+  await db.update(products).set({ status }).where(eq(products.id, id));
   await recordAudit(c, {
     action: "PRODUCT_STATUS_SET",
     entityType: "product",
     entityId: id,
-    details: `Status ${row.status} → ${body.status}.`,
+    details: `Status ${row.status} → ${status}.`,
     before: { status: row.status },
-    after: { status: body.status },
+    after: { status },
   });
 
   // Only the two moderation decisions that carry news for the seller are announced.
@@ -500,7 +527,7 @@ adminRoute.patch("/products/:id/status", async (c) => {
   // concerns nobody or concerns the seller, who is the one performing it and is
   // already looking at the result. Keyed on the transition, so approving twice does
   // not send two notices — and the early return above already prevents that.
-  if (body.status === "PUBLISHED" && row.status !== "PUBLISHED") {
+  if (status === "PUBLISHED" && row.status !== "PUBLISHED") {
     await notify(db, {
       userId: row.sellerId,
       type: "LISTING_APPROVED",
@@ -509,7 +536,7 @@ adminRoute.patch("/products/:id/status", async (c) => {
       context: { productId: row.id, productSlug: row.slug },
       eventKey: notificationEventKey("LISTING_APPROVED", row.id),
     });
-  } else if (row.status === "PENDING_APPROVAL" && body.status !== "PENDING_APPROVAL") {
+  } else if (row.status === "PENDING_APPROVAL") {
     await notify(db, {
       userId: row.sellerId,
       type: "LISTING_REJECTED",
@@ -817,27 +844,30 @@ const adminOrderOverrideSchema = z.object({
  */
 adminRoute.patch(
   "/orders/:id/override",
-  withAudit({ action: "ORDER_OVERRIDE", entityType: "order", requireReason: true }, async (c, audit) => {
-    const admin = requireAdmin(c);
-    const id = Number(c.req.param("id"));
-    const input = adminOrderOverrideSchema.parse(await c.req.json().catch(() => ({})));
-    const order = await loadAdminOrder(id);
+  withAudit(
+    { action: "ORDER_OVERRIDE", entityType: "order", requireReason: true },
+    async (c, audit) => {
+      const admin = requireAdmin(c);
+      const id = Number(c.req.param("id"));
+      const input = adminOrderOverrideSchema.parse(await c.req.json().catch(() => ({})));
+      const order = await loadAdminOrder(id);
 
-    await overrideAdminOrderStatus(
-      { id: admin.id, role: "ADMIN" },
-      order,
-      input.status,
-      audit.reason ?? input.reason,
-    );
+      await overrideAdminOrderStatus(
+        { id: admin.id, role: "ADMIN" },
+        order,
+        input.status,
+        audit.reason ?? input.reason,
+      );
 
-    c.json(ok({ updated: true }));
-    return {
-      entityId: id,
-      details: `Order ${order.orderNumber ?? id} forced ${order.status} → ${input.status}.`,
-      before: { status: order.status },
-      after: { status: input.status },
-    };
-  }),
+      c.json(ok({ updated: true }));
+      return {
+        entityId: id,
+        details: `Order ${order.orderNumber ?? id} forced ${order.status} → ${input.status}.`,
+        before: { status: order.status },
+        after: { status: input.status },
+      };
+    },
+  ),
 );
 
 /** `POST /api/admin/orders/:id/notes` — an internal note on the order timeline. */
@@ -933,7 +963,6 @@ adminRoute.get("/order-health", async (c) => {
   const health = await getOrderHealth();
   return c.json(ok(health));
 });
-
 
 /* --------------------------------- rentals ---------------------------------- */
 
@@ -1066,7 +1095,11 @@ adminRoute.post(
         details: `Rental ${id} deposit settled: released ${result.released}, deducted ${result.deduction}.`,
         reason,
         before: { deposit: rental.securityDeposit },
-        after: { released: result.released, deduction: result.deduction, refundNumber: result.refundNumber },
+        after: {
+          released: result.released,
+          deduction: result.deduction,
+          refundNumber: result.refundNumber,
+        },
       };
     },
   ),
@@ -1932,27 +1965,29 @@ adminRoute.get("/reports", async (c) => {
   return c.json(ok(rows));
 });
 
+/**
+ * The body of a report triage: one of the four report statuses and nothing else.
+ * `.strict()` makes a stray field a `400` rather than a value the handler ignores.
+ */
+export const adminReportStatusSchema = z.object({ status: reportStatusSchema }).strict();
+
 adminRoute.patch("/reports/:id", async (c) => {
   const id = Number(c.req.param("id"));
-  const body = (await c.req.json()) as { status?: string };
-  const allowed = ["OPEN", "IN_REVIEW", "RESOLVED", "DISMISSED"];
-  if (!body.status || !allowed.includes(body.status)) {
-    throw new HttpError(400, "BAD_REQUEST", "Invalid status.");
-  }
+  const { status } = adminReportStatusSchema.parse(await c.req.json().catch(() => ({})));
   const [existing] = await db
     .select({ status: reports.status })
     .from(reports)
     .where(eq(reports.id, id))
     .limit(1);
   if (!existing) throw new HttpError(404, "NOT_FOUND", "Report not found.");
-  await db.update(reports).set({ status: body.status }).where(eq(reports.id, id));
+  await db.update(reports).set({ status }).where(eq(reports.id, id));
   await recordAudit(c, {
     action: "REPORT_STATUS_SET",
     entityType: "report",
     entityId: id,
-    details: `Report #${id} → ${body.status}.`,
+    details: `Report #${id} → ${status}.`,
     before: { status: existing.status },
-    after: { status: body.status },
+    after: { status },
   });
   return c.json(ok({ updated: true }));
 });
@@ -2098,6 +2133,34 @@ adminRoute.get("/coupons", async (c) => {
   return c.json(ok(rows, pagination));
 });
 
+/**
+ * `GET /api/admin/coupons/export` — the desk's CSV, filtered the same way the list is.
+ *
+ * Registered before `/coupons/:id` so the literal path is never read as an id. The
+ * existing `/coupons` gate (`coupons.view`) already covers it, and the body is sent
+ * as an attachment so a browser downloads the file instead of rendering it.
+ */
+adminRoute.get("/coupons/export", async (c) => {
+  const rawStatus = c.req.query("status");
+  const status =
+    rawStatus && (COUPON_STATUSES as readonly string[]).includes(rawStatus)
+      ? (rawStatus as CouponStatus)
+      : null;
+  const rawType = c.req.query("discountType");
+  const discountType =
+    rawType && (COUPON_DISCOUNT_TYPES as readonly string[]).includes(rawType)
+      ? (rawType as CouponDiscountType)
+      : null;
+  const csv = await exportCouponsCsv({
+    search: c.req.query("search")?.trim() ?? "",
+    status,
+    discountType,
+  });
+  c.res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  c.res.setHeader("Content-Disposition", 'attachment; filename="coupons.csv"');
+  return c.text(csv);
+});
+
 adminRoute.get("/coupons/:id", async (c) => {
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id) || id <= 0) {
@@ -2105,7 +2168,6 @@ adminRoute.get("/coupons/:id", async (c) => {
   }
   return c.json(ok(await getCouponDetail(id)));
 });
-
 adminRoute.post(
   "/coupons",
   withAudit({ action: "COUPON_CREATED", entityType: "coupon" }, async (c) => {
@@ -2147,18 +2209,15 @@ adminRoute.patch(
 
 adminRoute.delete(
   "/coupons/:id",
-  withAudit(
-    { action: "COUPON_DELETED", entityType: "coupon", requireReason: true },
-    async (c) => {
-      const id = Number(c.req.param("id"));
-      if (!Number.isInteger(id) || id <= 0) {
-        throw new HttpError(404, "NOT_FOUND", "That coupon does not exist.");
-      }
-      const result = await deleteCoupon(id);
-      c.json(ok(result));
-      return { entityId: id, details: `Deleted coupon ${result.code}.` };
-    },
-  ),
+  withAudit({ action: "COUPON_DELETED", entityType: "coupon", requireReason: true }, async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new HttpError(404, "NOT_FOUND", "That coupon does not exist.");
+    }
+    const result = await deleteCoupon(id);
+    c.json(ok(result));
+    return { entityId: id, details: `Deleted coupon ${result.code}.` };
+  }),
 );
 
 /* ----------------------------------- RBAC ----------------------------------- */
@@ -2417,7 +2476,7 @@ adminRoute.patch(
             .set({
               name: nextName,
               description:
-                input.description === undefined ? undefined : input.description ?? null,
+                input.description === undefined ? undefined : (input.description ?? null),
             })
             .where(eq(roles.id, roleId));
           if (keys !== null) {
@@ -2542,106 +2601,103 @@ adminRoute.put(
   "/users/:id{[0-9]+}/roles",
   guarded(
     "admin.action",
-    withAudit(
-      { action: "RBAC_ROLES_SET", entityType: "user", requireReason: true },
-      async (c) => {
-        const admin = await requireStepUp(c);
-        await requirePermission("rbac.manage")(c, async () => undefined);
-        const userId = Number(c.req.param("id"));
-        const input = setUserRolesSchema.parse(await c.req.json().catch(() => ({})));
+    withAudit({ action: "RBAC_ROLES_SET", entityType: "user", requireReason: true }, async (c) => {
+      const admin = await requireStepUp(c);
+      await requirePermission("rbac.manage")(c, async () => undefined);
+      const userId = Number(c.req.param("id"));
+      const input = setUserRolesSchema.parse(await c.req.json().catch(() => ({})));
 
-        if (userId === admin.id) {
-          throw new HttpError(409, "SELF_ROLE_CHANGE", "You cannot change your own roles.");
-        }
+      if (userId === admin.id) {
+        throw new HttpError(409, "SELF_ROLE_CHANGE", "You cannot change your own roles.");
+      }
 
-        const [target] = await db
-          .select({ id: users.id })
-          .from(users)
-          .where(eq(users.id, userId))
-          .limit(1);
-        if (!target) throw new HttpError(404, "NOT_FOUND", "User not found.");
+      const [target] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      if (!target) throw new HttpError(404, "NOT_FOUND", "User not found.");
 
-        const requestedNames = [...new Set(input.roles)];
-        const roleRows = await db
-          .select({ id: roles.id, name: roles.name })
-          .from(roles)
-          .where(inArray(roles.name, requestedNames));
-        if (roleRows.length !== requestedNames.length) {
-          throw new HttpError(400, "BAD_REQUEST", "One or more role names are not recognised.");
-        }
-        const requestedIds = new Map(roleRows.map((role) => [role.name, role.id] as const));
+      const requestedNames = [...new Set(input.roles)];
+      const roleRows = await db
+        .select({ id: roles.id, name: roles.name })
+        .from(roles)
+        .where(inArray(roles.name, requestedNames));
+      if (roleRows.length !== requestedNames.length) {
+        throw new HttpError(400, "BAD_REQUEST", "One or more role names are not recognised.");
+      }
+      const requestedIds = new Map(roleRows.map((role) => [role.name, role.id] as const));
 
-        const existing = await db
-          .select({ roleId: userRoles.roleId, name: roles.name })
-          .from(userRoles)
-          .innerJoin(roles, eq(userRoles.roleId, roles.id))
-          .where(eq(userRoles.userId, userId));
-        const existingByName = new Map(existing.map((row) => [row.name, row.roleId] as const));
+      const existing = await db
+        .select({ roleId: userRoles.roleId, name: roles.name })
+        .from(userRoles)
+        .innerJoin(roles, eq(userRoles.roleId, roles.id))
+        .where(eq(userRoles.userId, userId));
+      const existingByName = new Map(existing.map((row) => [row.name, row.roleId] as const));
 
-        if (
-          existingByName.has("SUPER_ADMIN") &&
-          !requestedIds.has("SUPER_ADMIN") &&
-          (await isLastActiveSuperAdmin(userId))
-        ) {
-          throw new HttpError(
-            409,
-            "LAST_SUPER_ADMIN",
-            "You cannot revoke the last super administrator.",
-          );
-        }
+      if (
+        existingByName.has("SUPER_ADMIN") &&
+        !requestedIds.has("SUPER_ADMIN") &&
+        (await isLastActiveSuperAdmin(userId))
+      ) {
+        throw new HttpError(
+          409,
+          "LAST_SUPER_ADMIN",
+          "You cannot revoke the last super administrator.",
+        );
+      }
 
-        await db.transaction(async (tx) => {
-          for (const [roleName, roleId] of requestedIds) {
-            if (!existingByName.has(roleName)) {
-              await tx.insert(userRoles).values({ userId, roleId, grantedBy: admin.id });
-            }
+      await db.transaction(async (tx) => {
+        for (const [roleName, roleId] of requestedIds) {
+          if (!existingByName.has(roleName)) {
+            await tx.insert(userRoles).values({ userId, roleId, grantedBy: admin.id });
           }
-          for (const [roleName, roleId] of existingByName) {
-            if (!requestedIds.has(roleName)) {
-              await tx
-                .delete(userRoles)
-                .where(and(eq(userRoles.userId, userId), eq(userRoles.roleId, roleId)));
-            }
+        }
+        for (const [roleName, roleId] of existingByName) {
+          if (!requestedIds.has(roleName)) {
+            await tx
+              .delete(userRoles)
+              .where(and(eq(userRoles.userId, userId), eq(userRoles.roleId, roleId)));
           }
+        }
+      });
+
+      // The next request this user makes must see the new grants.
+      invalidateAccess(userId);
+
+      const added = [...requestedIds.keys()].filter((name) => !existingByName.has(name));
+      const removed = [...existingByName.keys()].filter((name) => !requestedIds.has(name));
+      const ip = requestIp(c);
+      const userAgent = requestUserAgent(c);
+      if (added.length) {
+        await recordSecurityEvent({
+          userId,
+          type: "ROLE_GRANTED",
+          ip,
+          userAgent,
+          details: { roles: added, by: admin.id },
         });
+      }
+      if (removed.length) {
+        await recordSecurityEvent({
+          userId,
+          type: "ROLE_REVOKED",
+          ip,
+          userAgent,
+          details: { roles: removed, by: admin.id },
+        });
+      }
 
-        // The next request this user makes must see the new grants.
-        invalidateAccess(userId);
-
-        const added = [...requestedIds.keys()].filter((name) => !existingByName.has(name));
-        const removed = [...existingByName.keys()].filter((name) => !requestedIds.has(name));
-        const ip = requestIp(c);
-        const userAgent = requestUserAgent(c);
-        if (added.length) {
-          await recordSecurityEvent({
-            userId,
-            type: "ROLE_GRANTED",
-            ip,
-            userAgent,
-            details: { roles: added, by: admin.id },
-          });
-        }
-        if (removed.length) {
-          await recordSecurityEvent({
-            userId,
-            type: "ROLE_REVOKED",
-            ip,
-            userAgent,
-            details: { roles: removed, by: admin.id },
-          });
-        }
-
-        c.json(ok({ roles: requestedNames }));
-        return {
-          entityId: userId,
-          details: `Roles → ${requestedNames.join(", ") || "none"}${
-            added.length ? ` (+${added.join(",")})` : ""
-          }${removed.length ? ` (-${removed.join(",")})` : ""}.`,
-          before: { roles: [...existingByName.keys()].sort() },
-          after: { roles: requestedNames },
-        };
-      },
-    ),
+      c.json(ok({ roles: requestedNames }));
+      return {
+        entityId: userId,
+        details: `Roles → ${requestedNames.join(", ") || "none"}${
+          added.length ? ` (+${added.join(",")})` : ""
+        }${removed.length ? ` (-${removed.join(",")})` : ""}.`,
+        before: { roles: [...existingByName.keys()].sort() },
+        after: { roles: requestedNames },
+      };
+    }),
   ),
 );
 
@@ -3033,9 +3089,7 @@ adminRoute.delete(
  * shows exactly what the audit log already records — no second copy to drift.
  */
 adminRoute.get("/cms/versions/:entityType/:id{[0-9]+}", async (c) => {
-  const entityType = z
-    .enum(["cms_block", "cms_banner"])
-    .parse(c.req.param("entityType"));
+  const entityType = z.enum(["cms_block", "cms_banner"]).parse(c.req.param("entityType"));
   const id = Number(c.req.param("id"));
   const limitRaw = Number(c.req.query("limit") ?? 20);
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 50) : 20;

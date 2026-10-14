@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { Button } from "@/components/ui/button";
 import {
   useCancelPayment,
+  useCouponPreview,
   useCreatePaymentIntent,
   useIdempotencyKey,
   usePaymentProviderInfo,
@@ -22,6 +23,7 @@ import {
   type PaymentMethod,
 } from "../types";
 import { parsePaymentSearch, type PaymentStep } from "./schema";
+import { CouponField } from "./CouponField";
 import { PaymentCancelled } from "./PaymentCancelled";
 import { PaymentErrorState } from "./PaymentErrorState";
 import { PaymentFailed } from "./PaymentFailed";
@@ -55,11 +57,15 @@ export function PaymentPage() {
   const [confirmation, setConfirmation] = useState<OrderConfirmation | null>(null);
   const [failureReason, setFailureReason] = useState<string | null>(null);
   const [reviewCode, setReviewCode] = useState<string | null>(null);
+  /** The applied code (null until one is accepted) and the last reason one failed. */
+  const [couponCode, setCouponCode] = useState<string | null>(null);
+  const [couponMessage, setCouponMessage] = useState<string | null>(null);
 
   const getIdempotencyKey = useIdempotencyKey();
 
   const providerQuery = usePaymentProviderInfo();
-  const summaryQuery = usePaymentSummary({ deliveryMethod, deliveryAddressId });
+  const couponPreview = useCouponPreview();
+  const summaryQuery = usePaymentSummary({ deliveryMethod, deliveryAddressId, couponCode });
   const statusQuery = usePaymentStatus(
     step === "processing" ? (intent?.transactionId ?? null) : null,
   );
@@ -173,6 +179,9 @@ export function PaymentPage() {
         deliveryMethod,
         deliveryAddressId,
         paymentMethod: selectedMethod,
+        // Passed through so the server can re-validate and re-derive the discount.
+        // It is a code, never an amount; the server owns the arithmetic.
+        couponCode,
         // Reused across retries, so a double-submit re-opens the same attempt
         // instead of creating a second charge.
         idempotencyKey: getIdempotencyKey(),
@@ -228,7 +237,29 @@ export function PaymentPage() {
     setStep("cancelled");
   }
 
+  /** Validate a code on the server and, if it applies, hold it for the intent. */
+  async function handleApplyCoupon(code: string) {
+    try {
+      const result = await couponPreview.mutateAsync({ code, deliveryMethod, deliveryAddressId });
+      if (result.applied) {
+        setCouponMessage(null);
+        setCouponCode(result.code);
+      } else {
+        setCouponMessage(result.message ?? "That code didn't work on this cart.");
+      }
+    } catch (error) {
+      setCouponMessage(error instanceof Error ? error.message : "Could not check that code.");
+    }
+  }
+
+  function handleClearCoupon() {
+    setCouponCode(null);
+    setCouponMessage(null);
+  }
+
   const blockingIssues = summary.issues;
+  const appliedCoupon = summary.coupon;
+  const couponIssueMessage = couponMessage ?? summary.couponIssue?.message ?? null;
   const canPay = summary.isPayable && Boolean(selectedMethod) && !createIntent.isPending;
 
   return (
@@ -309,6 +340,15 @@ export function PaymentPage() {
 
         {/* --- Amount + pay --- */}
         <aside className="h-fit space-y-4 lg:sticky lg:top-24">
+          <CouponField
+            appliedCode={appliedCoupon?.code ?? null}
+            appliedDiscountPaise={appliedCoupon?.discountPaise ?? null}
+            message={couponIssueMessage}
+            isChecking={couponPreview.isPending}
+            onApply={(code) => void handleApplyCoupon(code)}
+            onClear={handleClearCoupon}
+          />
+
           <div className="raised-surface p-5">
             <PaymentSummaryView summary={summary} />
           </div>

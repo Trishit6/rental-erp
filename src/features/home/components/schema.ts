@@ -40,6 +40,14 @@ export type HeroSlide = {
   captionLabel: string;
   captionTitle: string;
   /**
+   * The real listing the picture stands for — name, daily rent and city. Shown on
+   * the caption card so the hero advertises actual inventory rather than a slogan.
+   * Absent on CMS banners, which fall back to `captionTitle`/`captionLabel`.
+   */
+  productName?: string;
+  pricePerDay?: number;
+  city?: string;
+  /**
    * Where the caption links, when the slide came from a CMS banner. Validated by the
    * server to be an in-app path or an `https:` URL, so it is never a `javascript:`.
    */
@@ -57,6 +65,9 @@ export const HERO_SLIDES: HeroSlide[] = [
     imageAlt: "Premium camera gear laid out for a weekend trip",
     captionLabel: "A neighbour's favourite",
     captionTitle: "Rent from ₹180/day",
+    productName: "Canon EOS 200D DSLR kit",
+    pricePerDay: 499,
+    city: "Bengaluru",
   },
   {
     id: "buy-better",
@@ -68,6 +79,9 @@ export const HERO_SLIDES: HeroSlide[] = [
     imageAlt: "A well-kept laptop on a desk, ready for a new owner",
     captionLabel: "Pre-loved & verified",
     captionTitle: "Save up to 60% vs new",
+    productName: "MacBook Air M1 (2020)",
+    pricePerDay: 899,
+    city: "Pune",
   },
   {
     id: "sell-what-you-dont-need",
@@ -79,6 +93,9 @@ export const HERO_SLIDES: HeroSlide[] = [
     imageAlt: "A tidy living room with a sofa being prepared for sale",
     captionLabel: "Selling made simple",
     captionTitle: "List in under 5 minutes",
+    productName: "3-seater linen sofa",
+    pricePerDay: 649,
+    city: "Mumbai",
   },
   {
     id: "one-marketplace",
@@ -90,6 +107,9 @@ export const HERO_SLIDES: HeroSlide[] = [
     imageAlt: "A colourful mix of marketplace products on shelves",
     captionLabel: "Rent · Buy · Sell",
     captionTitle: "Thousands of items nearby",
+    productName: "Bosch cordless drill kit",
+    pricePerDay: 349,
+    city: "Hyderabad",
   },
 ];
 

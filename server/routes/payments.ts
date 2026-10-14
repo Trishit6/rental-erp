@@ -23,6 +23,7 @@ import {
 import { buildUpiPayment } from "../lib/payments/upi";
 import { notificationEventKey } from "../lib/notification-events";
 import { notify } from "../lib/notifications";
+import { logger, redactError } from "../lib/logger";
 
 /**
  * Payment API.
@@ -40,17 +41,27 @@ export const paymentsRoute = new Router();
 const summaryQuerySchema = z.object({
   deliveryMethod: z.enum(["DELIVERY", "PICKUP"]).default("DELIVERY"),
   deliveryAddressId: z.coerce.number().int().positive().optional(),
+  /** A code to price against the cart for display. Validated, never trusted. */
+  couponCode: z.string().trim().max(40).optional(),
 });
 
 const createIntentSchema = z.object({
   deliveryMethod: z.enum(["DELIVERY", "PICKUP"]).default("DELIVERY"),
   deliveryAddressId: z.number().int().positive().nullish(),
   paymentMethod: z.enum(["UPI", "CARD", "NET_BANKING", "WALLET"]),
+  /** A code the customer applied. Re-validated server-side; never an amount. */
+  couponCode: z.string().trim().max(40).nullish(),
   /**
    * Client-generated, stable for one checkout attempt. Retrying with the same
    * key returns the same intent instead of opening a second one.
    */
   idempotencyKey: z.string().min(8).max(100),
+});
+
+const couponPreviewSchema = z.object({
+  code: z.string().trim().min(1).max(40),
+  deliveryMethod: z.enum(["DELIVERY", "PICKUP"]).default("DELIVERY"),
+  deliveryAddressId: z.number().int().positive().nullish(),
 });
 
 /**
@@ -133,6 +144,7 @@ paymentsRoute.get("/summary", async (c) => {
     userId: user.id,
     deliveryMethod: input.deliveryMethod,
     deliveryAddressId: input.deliveryAddressId ?? null,
+    couponCode: input.couponCode ?? null,
   });
 
   const provider = getPaymentProvider();
@@ -146,6 +158,41 @@ paymentsRoute.get("/summary", async (c) => {
   );
 });
 
+/* ------------------------------ coupon preview ------------------------------ */
+
+/**
+ * Price a coupon against the cart without opening a payment.
+ *
+ * This exists so the "Apply" button can answer immediately, and — more
+ * importantly — so guessing codes is bounded by a dedicated budget rather than
+ * being an unbudgeted side effect of loading the summary. It reserves nothing:
+ * only the payment intent does that.
+ */
+paymentsRoute.post(
+  "/coupon",
+  guarded("coupon.apply", async (c) => {
+    const user = requireUser(c);
+    const input = couponPreviewSchema.parse(await c.req.json());
+
+    const quote = await buildCheckoutQuote({
+      userId: user.id,
+      deliveryMethod: input.deliveryMethod,
+      deliveryAddressId: input.deliveryAddressId ?? null,
+      couponCode: input.code,
+    });
+
+    return c.json(
+      ok({
+        code: input.code.trim().toUpperCase(),
+        applied: quote.coupon !== null,
+        discountPaise: quote.breakdown.discount,
+        message: quote.couponIssue?.message ?? null,
+        breakdown: quote.breakdown,
+      }),
+    );
+  }),
+);
+
 /* ------------------------------ create intent ------------------------------- */
 
 /**
@@ -155,111 +202,126 @@ paymentsRoute.get("/summary", async (c) => {
  * attempt is always visible even if the provider never answers. The amount on
  * that row is the contract: order creation will refuse to charge anything else.
  */
-paymentsRoute.post("/intents", guarded(["payments.intent", "coupon.apply"], async (c) => {
-  const user = requireUser(c);
-  const input = createIntentSchema.parse(await c.req.json());
+paymentsRoute.post(
+  "/intents",
+  guarded(["payments.intent", "coupon.apply"], async (c) => {
+    const user = requireUser(c);
+    const input = createIntentSchema.parse(await c.req.json());
 
-  const quote = await buildCheckoutQuote({
-    userId: user.id,
-    deliveryMethod: input.deliveryMethod,
-    deliveryAddressId: input.deliveryAddressId ?? null,
-  });
-
-  if (!quote.isPayable) {
-    throw new HttpError(
-      409,
-      "CART_UNAVAILABLE",
-      "Your cart changed and can no longer be paid for. Please review it.",
-    );
-  }
-
-  const provider = getPaymentProvider();
-
-  // Idempotency: an existing transaction for this key is the answer. Re-creating
-  // is not an error, it is the same checkout being resumed.
-  const [existing] = await db
-    .select()
-    .from(transactions)
-    .where(
-      and(eq(transactions.userId, user.id), eq(transactions.idempotencyKey, input.idempotencyKey)),
-    )
-    .limit(1);
-
-  if (existing) {
-    return c.json(
-      ok({
-        transactionId: existing.id,
-        provider: existing.provider,
-        providerPaymentId: existing.providerTransactionId,
-        amount: existing.amount,
-        currency: existing.currency,
-        status: existing.status as PaymentStatus,
-        isProductionReady: provider.isProductionReady,
-        // The same intent resumed, so the same collect code is still valid.
-        upi: await upiForTransaction(existing, provider.isProductionReady),
-        // Only a still-open intent is resumable; a settled one must not be
-        // handed back for a second charge.
-        resumable: existing.status === "PENDING" && existing.orderId === null,
-      }),
-      200,
-    );
-  }
-
-  const intent = await provider.createIntent({
-    amount: quote.breakdown.grandTotal,
-    currency: quote.breakdown.currency,
-    idempotencyKey: input.idempotencyKey,
-    metadata: { userId: String(user.id) },
-  });
-
-  const [inserted] = await db
-    .insert(transactions)
-    .values({
+    const quote = await buildCheckoutQuote({
       userId: user.id,
-      type: "PAYMENT",
+      deliveryMethod: input.deliveryMethod,
+      deliveryAddressId: input.deliveryAddressId ?? null,
+      couponCode: input.couponCode ?? null,
+    });
+
+    if (!quote.isPayable) {
+      throw new HttpError(
+        409,
+        "CART_UNAVAILABLE",
+        "Your cart changed and can no longer be paid for. Please review it.",
+      );
+    }
+
+    // A code the customer typed but that no longer applies is a conflict, not a
+    // silent no-charge: the amount they were about to pay is not the amount the
+    // coupon promised, so they must look again.
+    if (quote.couponIssue) {
+      throw new HttpError(409, "COUPON_INVALID", quote.couponIssue.message);
+    }
+
+    const provider = getPaymentProvider();
+
+    // Idempotency: an existing transaction for this key is the answer. Re-creating
+    // is not an error, it is the same checkout being resumed.
+    const [existing] = await db
+      .select()
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.userId, user.id),
+          eq(transactions.idempotencyKey, input.idempotencyKey),
+        ),
+      )
+      .limit(1);
+
+    if (existing) {
+      return c.json(
+        ok({
+          transactionId: existing.id,
+          provider: existing.provider,
+          providerPaymentId: existing.providerTransactionId,
+          amount: existing.amount,
+          currency: existing.currency,
+          status: existing.status as PaymentStatus,
+          isProductionReady: provider.isProductionReady,
+          // The same intent resumed, so the same collect code is still valid.
+          upi: await upiForTransaction(existing, provider.isProductionReady),
+          // Only a still-open intent is resumable; a settled one must not be
+          // handed back for a second charge.
+          resumable: existing.status === "PENDING" && existing.orderId === null,
+        }),
+        200,
+      );
+    }
+
+    const intent = await provider.createIntent({
       amount: quote.breakdown.grandTotal,
       currency: quote.breakdown.currency,
-      status: "PENDING",
-      provider: provider.name,
-      providerTransactionId: intent.providerPaymentId,
-      providerIdempotencyKey: input.idempotencyKey,
       idempotencyKey: input.idempotencyKey,
-      paymentMethod: input.paymentMethod,
-      // The checkout choices, so a webhook arriving with no context can still
-      // finish the job. Never secrets — just which address and which method.
-      metadata: serializeCheckoutMetadata(
-        {
-          deliveryMethod: input.deliveryMethod,
-          deliveryAddressId: input.deliveryAddressId ?? null,
-        },
-        [ORDER_EVENTS.PAYMENT_SUCCEEDED],
-      ),
-    })
-    .$returningId();
-  return c.json(
-    ok({
-      transactionId: Number(inserted.id),
-      provider: provider.name,
-      providerPaymentId: intent.providerPaymentId,
-      amount: intent.amount,
-      currency: intent.currency,
-      status: intent.status,
-      isProductionReady: provider.isProductionReady,
-      // Built from the amount just written, never from anything the client sent.
-      upi: await upiForTransaction(
-        {
-          id: Number(inserted.id),
-          amount: intent.amount,
-          paymentMethod: input.paymentMethod,
-          status: "PENDING",
-        },
-        provider.isProductionReady,
-      ),
-      resumable: true,
-    }),
-    201,
-  );
-}));
+      metadata: { userId: String(user.id) },
+    });
+
+    const [inserted] = await db
+      .insert(transactions)
+      .values({
+        userId: user.id,
+        type: "PAYMENT",
+        amount: quote.breakdown.grandTotal,
+        currency: quote.breakdown.currency,
+        status: "PENDING",
+        provider: provider.name,
+        providerTransactionId: intent.providerPaymentId,
+        providerIdempotencyKey: input.idempotencyKey,
+        idempotencyKey: input.idempotencyKey,
+        paymentMethod: input.paymentMethod,
+        // The checkout choices, so a webhook arriving with no context can still
+        // finish the job. Never secrets — just which address and which method.
+        metadata: serializeCheckoutMetadata(
+          {
+            deliveryMethod: input.deliveryMethod,
+            deliveryAddressId: input.deliveryAddressId ?? null,
+            couponCode: input.couponCode ?? null,
+          },
+          [ORDER_EVENTS.PAYMENT_SUCCEEDED],
+        ),
+      })
+      .$returningId();
+    return c.json(
+      ok({
+        transactionId: Number(inserted.id),
+        provider: provider.name,
+        providerPaymentId: intent.providerPaymentId,
+        amount: intent.amount,
+        currency: intent.currency,
+        status: intent.status,
+        isProductionReady: provider.isProductionReady,
+        // Built from the amount just written, never from anything the client sent.
+        upi: await upiForTransaction(
+          {
+            id: Number(inserted.id),
+            amount: intent.amount,
+            paymentMethod: input.paymentMethod,
+            status: "PENDING",
+          },
+          provider.isProductionReady,
+        ),
+        resumable: true,
+      }),
+      201,
+    );
+  }),
+);
 
 /* --------------------------------- status ----------------------------------- */
 
@@ -306,127 +368,130 @@ paymentsRoute.get("/:id", async (c) => {
  * order built. A failure in the second half leaves a real, reconcilable payment
  * record — never a customer charged with no order to show.
  */
-paymentsRoute.post("/:id/verify", guarded("payments.intent", async (c) => {
-  const user = requireUser(c);
-  const id = z.coerce.number().int().positive().parse(c.req.param("id"));
-  const input = verifySchema.parse(await c.req.json().catch(() => ({})));
+paymentsRoute.post(
+  "/:id/verify",
+  guarded("payments.intent", async (c) => {
+    const user = requireUser(c);
+    const id = z.coerce.number().int().positive().parse(c.req.param("id"));
+    const input = verifySchema.parse(await c.req.json().catch(() => ({})));
 
-  const [row] = await db
-    .select()
-    .from(transactions)
-    .where(and(eq(transactions.id, id), eq(transactions.userId, user.id)))
-    .limit(1);
-  if (!row) throw new HttpError(404, "NOT_FOUND", "Payment not found.");
+    const [row] = await db
+      .select()
+      .from(transactions)
+      .where(and(eq(transactions.id, id), eq(transactions.userId, user.id)))
+      .limit(1);
+    if (!row) throw new HttpError(404, "NOT_FOUND", "Payment not found.");
 
-  // Resuming an already-settled payment returns the existing order rather than
-  // creating a second one. A double-clicked Pay button lands here.
-  if (row.orderId !== null) {
-    return c.json(ok(await resolveConfirmation(row.orderId, row.id)));
-  }
-
-  if (!row.providerTransactionId) {
-    throw new HttpError(409, "PAYMENT_NOT_FOUND", "This payment attempt is not recognised.");
-  }
-  if (row.status === "CANCELLED") {
-    throw new HttpError(409, "PAYMENT_CANCELLED", "This payment was cancelled.");
-  }
-  if (row.status === "FAILED") {
-    throw new HttpError(
-      409,
-      "PAYMENT_FAILED",
-      row.failureReason ?? "Payment could not be completed.",
-    );
-  }
-
-  const provider = getPaymentProvider();
-  // The server asks the provider what happened; it never asks the browser.
-  // A real adapter may additionally require a proof the provider's own UI
-  // returned, and this is where it would be handed over — but that is the
-  // provider's call to make, not the browser's.
-  const result = await provider.verifyPayment({
-    providerPaymentId: row.providerTransactionId,
-  });
-
-  if (!result.verified || result.status !== "SUCCEEDED") {
-    const reason = result.failureReason ?? "Payment could not be completed.";
-    // Only a provider-terminal failure (declined, expired, unrecognised)
-    // closes the attempt. A merely unproven one — a missing or mistyped
-    // signature — leaves the transaction PENDING so the customer can retry.
-    // Failing it here would make one interrupted attempt permanently
-    // unpayable and force a fresh intent.
-    if (result.isTerminal) {
-      await db
-        .update(transactions)
-        .set({
-          status: result.status === "CANCELLED" ? "CANCELLED" : "FAILED",
-          failureReason: reason.slice(0, 255),
-          updatedAt: new Date(),
-        })
-        .where(eq(transactions.id, row.id));
-
-      // A terminal decline is the one payment event the customer genuinely needs to be
-      // told about outside the tab they are already looking at — they may have walked
-      // away from the checkout page by the time it settles. Keyed on the transaction, so
-      // re-verifying the same dead attempt cannot spam them.
-      await notify(db, {
-        userId: user.id,
-        type: "PAYMENT_FAILED",
-        title: "Payment failed",
-        body: reason,
-        // There is no order yet — a failed payment is precisely the case where one was
-        // never created — so the destination is checkout rather than a derived route.
-        link: "/checkout",
-        context: { orderId: row.orderId },
-        eventKey: notificationEventKey("PAYMENT_FAILED", row.id),
-        metadata: { transactionId: row.id, amount: row.amount },
-      });
+    // Resuming an already-settled payment returns the existing order rather than
+    // creating a second one. A double-clicked Pay button lands here.
+    if (row.orderId !== null) {
+      return c.json(ok(await resolveConfirmation(row.orderId, row.id)));
     }
-    throw new HttpError(409, "PAYMENT_FAILED", reason);
-  }
 
-  // The provider's amount is authoritative on what money moved. It must match
-  // the amount we reserved, or we do not know what we are confirming.
-  assertAmountMatches(row.amount, result.amount);
+    if (!row.providerTransactionId) {
+      throw new HttpError(409, "PAYMENT_NOT_FOUND", "This payment attempt is not recognised.");
+    }
+    if (row.status === "CANCELLED") {
+      throw new HttpError(409, "PAYMENT_CANCELLED", "This payment was cancelled.");
+    }
+    if (row.status === "FAILED") {
+      throw new HttpError(
+        409,
+        "PAYMENT_FAILED",
+        row.failureReason ?? "Payment could not be completed.",
+      );
+    }
 
-  const paymentMethod = input.paymentMethod;
-  if (paymentMethod && !isPaymentMethod(paymentMethod)) {
-    throw new HttpError(400, "BAD_REQUEST", "Unsupported payment method.");
-  }
+    const provider = getPaymentProvider();
+    // The server asks the provider what happened; it never asks the browser.
+    // A real adapter may additionally require a proof the provider's own UI
+    // returned, and this is where it would be handed over — but that is the
+    // provider's call to make, not the browser's.
+    const result = await provider.verifyPayment({
+      providerPaymentId: row.providerTransactionId,
+    });
 
-  // Commit the verified payment *before* building the order.
-  await db
-    .update(transactions)
-    .set({
-      status: "PROCESSING",
-      paymentMethod: paymentMethod ?? row.paymentMethod,
-      providerTransactionId: result.providerPaymentId,
-      metadata: JSON.stringify({
-        checkout: readCheckoutContext(row.metadata),
-        providerReference: result.providerReference ?? null,
-        events: [ORDER_EVENTS.PAYMENT_SUCCEEDED],
-      }),
-      updatedAt: new Date(),
-    })
-    .where(eq(transactions.id, row.id));
+    if (!result.verified || result.status !== "SUCCEEDED") {
+      const reason = result.failureReason ?? "Payment could not be completed.";
+      // Only a provider-terminal failure (declined, expired, unrecognised)
+      // closes the attempt. A merely unproven one — a missing or mistyped
+      // signature — leaves the transaction PENDING so the customer can retry.
+      // Failing it here would make one interrupted attempt permanently
+      // unpayable and force a fresh intent.
+      if (result.isTerminal) {
+        await db
+          .update(transactions)
+          .set({
+            status: result.status === "CANCELLED" ? "CANCELLED" : "FAILED",
+            failureReason: reason.slice(0, 255),
+            updatedAt: new Date(),
+          })
+          .where(eq(transactions.id, row.id));
 
-  const context = readCheckoutContext(row.metadata);
-  if (!context) {
-    throw new HttpError(
-      409,
-      "CHECKOUT_CONTEXT_MISSING",
-      "This payment is missing its checkout details.",
-    );
-  }
+        // A terminal decline is the one payment event the customer genuinely needs to be
+        // told about outside the tab they are already looking at — they may have walked
+        // away from the checkout page by the time it settles. Keyed on the transaction, so
+        // re-verifying the same dead attempt cannot spam them.
+        await notify(db, {
+          userId: user.id,
+          type: "PAYMENT_FAILED",
+          title: "Payment failed",
+          body: reason,
+          // There is no order yet — a failed payment is precisely the case where one was
+          // never created — so the destination is checkout rather than a derived route.
+          link: "/checkout",
+          context: { orderId: row.orderId },
+          eventKey: notificationEventKey("PAYMENT_FAILED", row.id),
+          metadata: { transactionId: row.id, amount: row.amount },
+        });
+      }
+      throw new HttpError(409, "PAYMENT_FAILED", reason);
+    }
 
-  const confirmation = await createOrderFromPayment({
-    userId: user.id,
-    transactionId: row.id,
-    deliveryMethod: context.deliveryMethod,
-    deliveryAddressId: context.deliveryAddressId,
-  });
+    // The provider's amount is authoritative on what money moved. It must match
+    // the amount we reserved, or we do not know what we are confirming.
+    assertAmountMatches(row.amount, result.amount);
 
-  return c.json(ok(confirmation));
-}));
+    const paymentMethod = input.paymentMethod;
+    if (paymentMethod && !isPaymentMethod(paymentMethod)) {
+      throw new HttpError(400, "BAD_REQUEST", "Unsupported payment method.");
+    }
+
+    // Commit the verified payment *before* building the order.
+    await db
+      .update(transactions)
+      .set({
+        status: "PROCESSING",
+        paymentMethod: paymentMethod ?? row.paymentMethod,
+        providerTransactionId: result.providerPaymentId,
+        metadata: JSON.stringify({
+          checkout: readCheckoutContext(row.metadata),
+          providerReference: result.providerReference ?? null,
+          events: [ORDER_EVENTS.PAYMENT_SUCCEEDED],
+        }),
+        updatedAt: new Date(),
+      })
+      .where(eq(transactions.id, row.id));
+
+    const context = readCheckoutContext(row.metadata);
+    if (!context) {
+      throw new HttpError(
+        409,
+        "CHECKOUT_CONTEXT_MISSING",
+        "This payment is missing its checkout details.",
+      );
+    }
+
+    const confirmation = await createOrderFromPayment({
+      userId: user.id,
+      transactionId: row.id,
+      deliveryMethod: context.deliveryMethod,
+      deliveryAddressId: context.deliveryAddressId,
+    });
+
+    return c.json(ok(confirmation));
+  }),
+);
 
 /* ---------------------------------- cancel ---------------------------------- */
 
@@ -434,42 +499,49 @@ paymentsRoute.post("/:id/verify", guarded("payments.intent", async (c) => {
  * Cancel a payment. The cart is deliberately left alone — the customer is still
  * holding the items and has not gone anywhere.
  */
-paymentsRoute.post("/:id/cancel", guarded("payments.intent", async (c) => {
-  const user = requireUser(c);
-  const id = z.coerce.number().int().positive().parse(c.req.param("id"));
+paymentsRoute.post(
+  "/:id/cancel",
+  guarded("payments.intent", async (c) => {
+    const user = requireUser(c);
+    const id = z.coerce.number().int().positive().parse(c.req.param("id"));
 
-  const [row] = await db
-    .select()
-    .from(transactions)
-    .where(and(eq(transactions.id, id), eq(transactions.userId, user.id)))
-    .limit(1);
-  if (!row) throw new HttpError(404, "NOT_FOUND", "Payment not found.");
+    const [row] = await db
+      .select()
+      .from(transactions)
+      .where(and(eq(transactions.id, id), eq(transactions.userId, user.id)))
+      .limit(1);
+    if (!row) throw new HttpError(404, "NOT_FOUND", "Payment not found.");
 
-  if (row.orderId !== null || row.status === "SUCCEEDED") {
-    // Settled. Cancelling must not pretend to reverse a real payment.
-    throw new HttpError(409, "PAYMENT_ALREADY_SETTLED", "This payment has already completed.");
-  }
+    if (row.orderId !== null || row.status === "SUCCEEDED") {
+      // Settled. Cancelling must not pretend to reverse a real payment.
+      throw new HttpError(409, "PAYMENT_ALREADY_SETTLED", "This payment has already completed.");
+    }
 
-  let providerStatus: PaymentStatus = "CANCELLED";
-  if (row.providerTransactionId) {
-    const provider = getPaymentProvider();
-    const cancelled = await provider.cancelPayment({
-      providerPaymentId: row.providerTransactionId,
-    });
-    providerStatus = cancelled.status;
-  }
+    let providerStatus: PaymentStatus = "CANCELLED";
+    if (row.providerTransactionId) {
+      const provider = getPaymentProvider();
+      const cancelled = await provider.cancelPayment({
+        providerPaymentId: row.providerTransactionId,
+      });
+      providerStatus = cancelled.status;
+    }
 
-  if (providerStatus !== "CANCELLED") {
-    throw new HttpError(409, "PAYMENT_NOT_CANCELLABLE", "This payment can no longer be cancelled.");
-  }
+    if (providerStatus !== "CANCELLED") {
+      throw new HttpError(
+        409,
+        "PAYMENT_NOT_CANCELLABLE",
+        "This payment can no longer be cancelled.",
+      );
+    }
 
-  await db
-    .update(transactions)
-    .set({ status: "CANCELLED", updatedAt: new Date() })
-    .where(eq(transactions.id, row.id));
+    await db
+      .update(transactions)
+      .set({ status: "CANCELLED", updatedAt: new Date() })
+      .where(eq(transactions.id, row.id));
 
-  return c.json(ok({ transactionId: row.id, status: "CANCELLED" as PaymentStatus }));
-}));
+    return c.json(ok({ transactionId: row.id, status: "CANCELLED" as PaymentStatus }));
+  }),
+);
 
 /* --------------------------------- webhook ---------------------------------- */
 
@@ -524,7 +596,12 @@ paymentsRoute.post("/webhook", async (c) => {
   const alreadyApplied = readProcessedEventIds(row.processedEventIds);
   if (alreadyApplied.has(event.eventId)) {
     // Replay. Webhook delivery is at-least-once, so this is normal, not a bug.
-    await recordWebhookEvent({ provider: provider.name, event, payload: rawBody, status: "PROCESSED" });
+    await recordWebhookEvent({
+      provider: provider.name,
+      event,
+      payload: rawBody,
+      status: "PROCESSED",
+    });
     return c.json(ok({ received: true, handled: true, duplicate: true }));
   }
 
@@ -641,7 +718,13 @@ async function recordWebhookEvent(input: {
         },
       });
   } catch (error) {
-    console.error("[payments] failed to record webhook event", input.event.eventId, error);
+    // The provider is waiting on the transaction update, so archiving must never
+    // fail the webhook — but log the failure through the redaction path rather than
+    // the raw error, which can carry the payload shape or a credential in its text.
+    logger.error("failed to record webhook event", {
+      eventId: input.event.eventId,
+      ...redactError(error),
+    });
   }
 }
 

@@ -111,7 +111,7 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
           <Badge className="gap-2 px-4 py-2">
             <span className="size-2 rounded-full bg-primary" />
             {stats
-              ? `${stats.activeListings} neighbours sharing near you`
+              ? `${stats.activeListings.toLocaleString("en-IN")} neighbours sharing near you`
               : "Neighbours sharing near you"}
           </Badge>
         </motion.div>
@@ -231,7 +231,7 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
 
             <Badge className="absolute left-4 top-4 gap-2 bg-background/90 px-3 py-2 text-foreground">
               <span className="size-2 rounded-full bg-accent" />
-              {slide.captionTitle}
+              {slide.captionLabel}
             </Badge>
 
             {/* A scrim panel over a photo: one drop shadow, so it takes a ladder rung
@@ -240,11 +240,18 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
                 of it. When the slide is a CMS banner with a link, the panel is the
                 link target. */}
             <CaptionCard href={slide.href}>
-              <div>
-                <p className="text-xs font-medium text-muted-foreground">{slide.captionLabel}</p>
-                <p className="font-heading text-sm font-extrabold">{slide.captionTitle}</p>
+              <div className="min-w-0">
+                <p className="truncate font-heading text-sm font-extrabold">
+                  {slide.productName ?? slide.captionTitle}
+                </p>
+                <p className="truncate text-xs font-medium text-muted-foreground">
+                  {slide.pricePerDay
+                    ? `₹${slide.pricePerDay.toLocaleString("en-IN")}/day`
+                    : slide.captionLabel}
+                  {slide.city ? ` · ${slide.city}` : ""}
+                </p>
               </div>
-              <span className="flex items-center gap-1 text-xs font-bold">
+              <span className="flex shrink-0 items-center gap-1 text-xs font-bold">
                 <Star size={13} className="fill-primary text-primary" />
                 4.9
               </span>
@@ -296,7 +303,7 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
         <FloatingBadge
           icon={Repeat}
           label="Available to rent"
-          className="-left-3 top-8"
+          className="-left-3 top-20"
           delay={0.45}
         />
         <FloatingBadge

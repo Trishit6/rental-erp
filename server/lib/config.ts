@@ -9,32 +9,25 @@ export const DELIVERY_FEE_PAISE = 4900;
 export const PAYMENT_PROVIDER = process.env.PAYMENT_PROVIDER ?? "mock";
 
 /**
- * Seeded accounts for local development.
+ * The seeded admin identity for local development.
  *
- * ## Why the credentials moved out of `seed.ts`
+ * ## Where the passwords live now
  *
- * They were inline literals. That put a credential in source, and it made the admin
- * password impossible to change without editing the same file that TRUNCATEs every
- * table — so anyone who wanted a different admin password had to either accept the
- * one in the repo or hand-edit a destructive script. There is now one definition,
- * read from the environment, with the previous values as local defaults.
+ * The seeded passwords are no longer constants in source. `ADMIN_PASSWORD` (the
+ * admin account) and `DEMO_PASSWORD` (every other shared demo account) come from the
+ * environment; when neither is set, the seeders generate a random password **once**
+ * and record it in a gitignored `.seed-credentials.local` file. See
+ * `server/lib/seed-credentials.ts`. Rotating a password no longer means editing the
+ * script that TRUNCATEs every table, and no working credential is published in the
+ * repository.
  *
- * ## Why the admin gets its own variable
+ * ## Why the email stays here
  *
- * `ADMIN_PASSWORD` is separate from the shared demo password because the admin
- * account is the one a deployment is most likely to want to give its own value, and
- * because rotating it should not force the demo sellers to change theirs.
- *
- * ## Why this is safe to keep in source
- *
- * These are *development* defaults for a local database, they live server-side, and
- * nothing under `src/` imports them — no `VITE_` prefix, so Vite cannot inline them
- * into the browser bundle. The admin role itself is enforced in `lib/auth.ts`, not by
- * the existence of this password.
+ * It is the default admin identity, not a secret. Nothing under `src/` imports it,
+ * it carries no `VITE_` prefix (so Vite cannot inline it into the browser bundle),
+ * and the admin *role* is enforced in `lib/auth.ts` — not by this constant.
  */
 export const DEV_ADMIN_EMAIL = process.env.ADMIN_EMAIL?.trim() || "admin@revaro.local";
-export const DEV_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD?.trim() || "revaro-dev-2026";
-export const DEV_PASSWORD = process.env.DEMO_PASSWORD?.trim() || DEV_ADMIN_PASSWORD;
 
 /**
  * Development accounts that may use the staff area **without** a second factor.

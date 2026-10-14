@@ -2573,10 +2573,28 @@ export const coupons = mysqlTable(
     startsAt: timestamp("starts_at"),
     endsAt: timestamp("ends_at"),
     status: varchar("status", { length: 16 }).notNull().default("ACTIVE"),
-    /** `ALL | CATEGORY | PRODUCT`. */
+    /** `ALL | CATEGORY | SELLER | PRODUCT`. */
     appliesTo: varchar("applies_to", { length: 12 }).notNull().default("ALL"),
     categoryId: int("category_id").references(() => categories.id, { onDelete: "set null" }),
     sellerId: int("seller_id").references(() => users.id, { onDelete: "set null" }),
+    productId: int("product_id").references(() => products.id, { onDelete: "set null" }),
+    /**
+     * May this coupon be combined with another promotion?
+     *
+     * One code is applied per checkout, so nothing actually stacks today; the flag
+     * is the contract the checkout honours — a non-stackable coupon is refused
+     * when a second code is already on the order — and it is what the promo desk
+     * reports, so the rule is visible before an operator relies on it.
+     */
+    stackable: boolean("stackable").notNull().default(false),
+    /**
+     * May the discount be taken out of the refundable deposit?
+     *
+     * A deposit is the customer's money held against damage, not seller revenue,
+     * so by default a coupon may only discount the *charge*. Allowing a discount
+     * to eat into the deposit would hand back money that was supposed to be held.
+     */
+    allowDepositDiscount: boolean("allow_deposit_discount").notNull().default(false),
     createdBy: int("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
@@ -2587,6 +2605,7 @@ export const coupons = mysqlTable(
     index("coupons_status_starts_idx").on(table.status, table.startsAt, table.endsAt),
     index("coupons_category_idx").on(table.categoryId),
     index("coupons_seller_idx").on(table.sellerId),
+    index("coupons_product_idx").on(table.productId),
     check("coupons_value_positive", sql`${table.discountValue} > 0`),
     // The column's second meaning, enforced: a `PERCENT` coupon cannot be given a
     // value that is not basis points, and 10000bp is the ceiling — a 1000% coupon
@@ -2839,6 +2858,7 @@ export const productsRelations = relations(products, ({ one, many }) => ({
   conversations: many(conversations),
   reports: many(reports),
   reservations: many(stockReservations),
+  coupons: many(coupons),
 }));
 
 export const productImagesRelations = relations(productImages, ({ one }) => ({
@@ -3278,6 +3298,7 @@ export const sellerVerificationsRelations = relations(sellerVerifications, ({ on
 export const couponsRelations = relations(coupons, ({ one, many }) => ({
   category: one(categories, { fields: [coupons.categoryId], references: [categories.id] }),
   seller: one(users, { fields: [coupons.sellerId], references: [users.id], relationName: "couponSeller" }),
+  product: one(products, { fields: [coupons.productId], references: [products.id] }),
   createdBy: one(users, {
     fields: [coupons.createdBy],
     references: [users.id],

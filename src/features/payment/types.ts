@@ -124,6 +124,10 @@ export type PaymentSummary = {
   lines: PaymentLine[];
   breakdown: PaymentBreakdown;
   issues: PaymentIssue[];
+  /** The coupon a supplied code resolved to, or null. */
+  coupon: AppliedCoupon | null;
+  /** Why a supplied code did nothing. Null when there was no code, or it worked. */
+  couponIssue: { code: string; message: string } | null;
   isPayable: boolean;
   deliveryMethod: "DELIVERY" | "PICKUP";
   deliveryAddressId: number | null;
@@ -131,6 +135,23 @@ export type PaymentSummary = {
   currency: string;
   provider: string;
   isProductionReady: boolean;
+};
+
+/** A coupon the server accepted for this cart. The client only displays it. */
+export type AppliedCoupon = {
+  id: number;
+  code: string;
+  discountPaise: number;
+};
+
+/** The answer to "does this code work on my cart?", from `POST /payments/coupon`. */
+export type CouponPreview = {
+  code: string;
+  applied: boolean;
+  discountPaise: number;
+  /** The reason a code did not apply, or null when it did. */
+  message: string | null;
+  breakdown: PaymentBreakdown;
 };
 
 export type PaymentIntent = {
@@ -203,6 +224,8 @@ export type CreateIntentInput = {
   deliveryMethod: "DELIVERY" | "PICKUP";
   deliveryAddressId: number | null;
   paymentMethod: PaymentMethod;
+  /** The code the customer applied, if any. Re-validated server-side; never an amount. */
+  couponCode?: string | null;
   idempotencyKey: string;
 };
 

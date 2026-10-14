@@ -24,6 +24,7 @@
  */
 import "dotenv/config";
 import { hashPassword } from "./lib/password";
+import { resolveSeedCredentials } from "./lib/seed-credentials";
 import { and, count, eq, inArray, ne, sql } from "drizzle-orm";
 import { db, pool } from "./db";
 import {
@@ -55,7 +56,8 @@ import { refreshProductRatings } from "./lib/rating-aggregate";
 
 const SCALE = Number(process.env.HISTORY_SCALE ?? 1);
 const RNG_SEED = Number(process.env.HISTORY_SEED ?? 20261002);
-const PASSWORD = process.env.HISTORY_PASSWORD ?? "revaro-dev-2026";
+// Volume accounts share the demo password, so the whole seeded world has one login.
+const PASSWORD = process.env.HISTORY_PASSWORD?.trim() || resolveSeedCredentials().demoPassword;
 
 /**
  * The volume the marketplace seed targets.
@@ -1249,9 +1251,7 @@ async function main() {
   console.log(`  notifications: ${notificationRows.length}`);
 
   console.log("\nHistory seed complete.");
-  console.log(
-    `  demo login: buyer@revaro.local / ${PASSWORD} (volume accounts use the same password)`,
-  );
+  console.log("  demo login: buyer@revaro.local (password in .seed-credentials.local)");
 }
 
 main()

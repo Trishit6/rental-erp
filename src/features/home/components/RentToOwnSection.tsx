@@ -10,6 +10,17 @@ const fadeUp = {
 };
 
 /**
+ * The three concept chips.
+ *
+ * They previously used `soft-button`, whose light surface is tuned for the pale
+ * page — on the dark panel it read as three glowing light pills, and the copy on
+ * them was pale-on-pale. They now take the panel's own inset tone and foreground,
+ * so they read as restrained labels *inside* the card rather than lights on top.
+ */
+const chipClass =
+  "absolute hidden rounded-full border border-[var(--dark-panel-inset-light)] bg-[var(--dark-panel-inset)] px-4 py-1.5 text-xs font-bold text-[var(--dark-panel-fg)] lg:block";
+
+/**
  * Rent-to-own promotion — concept only, no financial logic (spec §25).
  * Dark panel keeps visual hierarchy distinct from product sections.
  */
@@ -23,21 +34,21 @@ export function RentToOwnSection() {
       <motion.span
         {...fadeUp}
         transition={{ delay: 0.1, duration: 0.3 }}
-        className="soft-button absolute right-6 top-6 hidden rounded-full px-4 py-1.5 text-xs font-bold text-foreground lg:block"
+        className={`${chipClass} right-6 top-6`}
       >
         Rent
       </motion.span>
       <motion.span
         {...fadeUp}
         transition={{ delay: 0.22, duration: 0.3 }}
-        className="soft-button absolute right-24 top-16 hidden rounded-full px-4 py-1.5 text-xs font-bold text-foreground lg:block"
+        className={`${chipClass} right-24 top-16`}
       >
         Love it
       </motion.span>
       <motion.span
         {...fadeUp}
         transition={{ delay: 0.34, duration: 0.3 }}
-        className="soft-button absolute right-10 top-28 hidden rounded-full px-4 py-1.5 text-xs font-bold text-foreground lg:block"
+        className={`${chipClass} right-10 top-28`}
       >
         Own it
       </motion.span>
@@ -59,7 +70,7 @@ export function RentToOwnSection() {
         Start with a rental. If it feels like yours, many sellers let you buy it later — with part
         of what you already paid credited toward the purchase.
       </p>
-      <Button asChild variant="secondary" className="mt-5">
+      <Button asChild variant="default" className="mt-5">
         <Link to="/browse" search={{ mode: "rent" }}>
           <KeyRound size={15} />
           Explore rent-to-own items
@@ -67,7 +78,7 @@ export function RentToOwnSection() {
         </Link>
       </Button>
       <Badge
-        className="ml-3 hidden bg-white/10 sm:inline-flex"
+        className="ml-3 hidden bg-[var(--dark-panel-inset)] sm:inline-flex"
         style={{ color: "var(--dark-panel-fg)" }}
       >
         No commitment

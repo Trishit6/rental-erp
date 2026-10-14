@@ -807,7 +807,7 @@ describe("the shared vocabulary module", () => {
     expect(CMS_STATUSES).toEqual(["DRAFT", "SCHEDULED", "ACTIVE", "PAUSED"]);
     expect(SELLER_VERIFICATION_STATUSES).toEqual(["PENDING", "VERIFIED", "REJECTED", "EXPIRED"]);
     expect(DISCOUNT_TYPES).toEqual(["PERCENT", "FLAT"]);
-    expect(COUPON_SCOPES).toEqual(["ALL", "CATEGORY", "PRODUCT"]);
+    expect(COUPON_SCOPES).toEqual(["ALL", "CATEGORY", "SELLER", "PRODUCT"]);
     expect(COMMISSION_SCOPES).toEqual(["GLOBAL", "CATEGORY", "SELLER"]);
   });
 

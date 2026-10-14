@@ -124,7 +124,7 @@ export function FavoriteProductCard({
             />
           </Link>
 
-          <Badge className="absolute left-3 top-3 bg-background/90 text-foreground shadow-sm">
+          <Badge className="absolute left-3 top-3 bg-background/90 text-foreground elev-1">
             {LISTING_MODE_LABELS[product.listingType] ?? product.listingType}
           </Badge>
 

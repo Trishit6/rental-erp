@@ -19,7 +19,7 @@ import { ActivityPage } from "@/features/activity";
  * — `?page=-3` → page 1, `?kind=nonsense` → no filter — is `parseActivityFilters` in
  * `features/activity/index.tsx`, called once, on the raw params.
  */
-export const Route = createFileRoute("/_authenticated/profile/activity")({
+export const Route = createFileRoute("/_authenticated/profile_/activity")({
   validateSearch: (search: Record<string, unknown>) => {
     const out: Record<string, string | number | undefined> = {};
     if (typeof search.kind === "string") out.kind = search.kind;

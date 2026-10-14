@@ -57,19 +57,40 @@ describe("the context a payment remembers", () => {
     expect(readCheckoutContext(metadata)).toEqual({
       deliveryMethod: "DELIVERY",
       deliveryAddressId: 4,
+      couponCode: null,
     });
   });
 
   it("round-trips pickup with no address", () => {
     const metadata = serializeCheckoutMetadata(
-      { deliveryMethod: "PICKUP", deliveryAddressId: null },
+      { deliveryMethod: "PICKUP", deliveryAddressId: null, couponCode: null },
       [],
     );
 
     expect(readCheckoutContext(metadata)).toEqual({
       deliveryMethod: "PICKUP",
       deliveryAddressId: null,
+      couponCode: null,
     });
+  });
+
+  it("round-trips the coupon code a customer applied", () => {
+    const metadata = serializeCheckoutMetadata(
+      { deliveryMethod: "DELIVERY", deliveryAddressId: 4, couponCode: "save10" },
+      [],
+    );
+
+    // Stored trimmed but not otherwise normalised; the engine upper-cases on lookup.
+    expect(readCheckoutContext(metadata)?.couponCode).toBe("save10");
+  });
+
+  it("reads a payment with no coupon field as a checkout with no coupon", () => {
+    // Older payments predate the column; they are a no-coupon checkout, not corrupt.
+    const metadata = serializeCheckoutMetadata(
+      { deliveryMethod: "DELIVERY", deliveryAddressId: null } as never,
+      [],
+    );
+    expect(readCheckoutContext(metadata)?.couponCode).toBeNull();
   });
 
   it("returns null for missing or corrupt metadata instead of throwing", () => {

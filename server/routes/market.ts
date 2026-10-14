@@ -4,6 +4,7 @@ import { and, asc, desc, eq, inArray, like, or, sql, type SQL } from "drizzle-or
 import { db } from "../db";
 import { addresses, cartItems, carts, categories, favorites, products, users } from "../schema";
 import { ok, buildPagination, HttpError } from "../lib/api";
+import { guarded } from "../lib/rate-limit";
 import { isPurchasable, PUBLIC_PRODUCT_STATUSES } from "../lib/product-status";
 import { requireUser } from "../lib/auth";
 import { assertRentalAvailability } from "../lib/rental-availability";
@@ -174,89 +175,100 @@ favoritesRoute.get("/:productId", async (c) => {
   return c.json(ok({ productId, favorited: !!existing }));
 });
 
-favoritesRoute.post("/:productId", async (c) => {
-  const user = c.get("user")!;
-  const productId = Number(c.req.param("productId"));
-  if (!Number.isInteger(productId) || productId <= 0) {
-    throw new HttpError(400, "BAD_REQUEST", "Invalid product id.");
-  }
+favoritesRoute.post(
+  "/:productId",
+  guarded("favorites.write", async (c) => {
+    const user = c.get("user")!;
+    const productId = Number(c.req.param("productId"));
+    if (!Number.isInteger(productId) || productId <= 0) {
+      throw new HttpError(400, "BAD_REQUEST", "Invalid product id.");
+    }
 
-  // Only publicly visible listings can be saved.
-  const [product] = await db
-    .select({ id: products.id })
-    .from(products)
-    .where(and(eq(products.id, productId), inArray(products.status, [...PUBLIC_PRODUCT_STATUSES])))
-    .limit(1);
-  if (!product) throw new HttpError(404, "NOT_FOUND", "Product not found.");
+    // Only publicly visible listings can be saved.
+    const [product] = await db
+      .select({ id: products.id })
+      .from(products)
+      .where(
+        and(eq(products.id, productId), inArray(products.status, [...PUBLIC_PRODUCT_STATUSES])),
+      )
+      .limit(1);
+    if (!product) throw new HttpError(404, "NOT_FOUND", "Product not found.");
 
-  const [existing] = await db
-    .select({ id: favorites.id })
-    .from(favorites)
-    .where(and(eq(favorites.userId, user.id), eq(favorites.productId, productId)))
-    .limit(1);
-  if (existing) return c.json(ok({ productId, favorited: true }));
-
-  try {
-    await db.insert(favorites).values({ userId: user.id, productId });
-    await db
-      .update(products)
-      .set({ favoriteCount: sql`${products.favoriteCount} + 1` })
-      .where(eq(products.id, productId));
-  } catch (error) {
-    // A concurrent double-tap can beat the pre-check; the unique index still wins.
-    // Treat the losing insert as success so the client stays idempotent.
-    const [raced] = await db
+    const [existing] = await db
       .select({ id: favorites.id })
       .from(favorites)
       .where(and(eq(favorites.userId, user.id), eq(favorites.productId, productId)))
       .limit(1);
-    if (!raced) throw error;
-    return c.json(ok({ productId, favorited: true }));
-  }
+    if (existing) return c.json(ok({ productId, favorited: true }));
 
-  return c.json(ok({ productId, favorited: true }), 201);
-});
+    try {
+      await db.insert(favorites).values({ userId: user.id, productId });
+      await db
+        .update(products)
+        .set({ favoriteCount: sql`${products.favoriteCount} + 1` })
+        .where(eq(products.id, productId));
+    } catch (error) {
+      // A concurrent double-tap can beat the pre-check; the unique index still wins.
+      // Treat the losing insert as success so the client stays idempotent.
+      const [raced] = await db
+        .select({ id: favorites.id })
+        .from(favorites)
+        .where(and(eq(favorites.userId, user.id), eq(favorites.productId, productId)))
+        .limit(1);
+      if (!raced) throw error;
+      return c.json(ok({ productId, favorited: true }));
+    }
+
+    return c.json(ok({ productId, favorited: true }), 201);
+  }),
+);
 
 /** Removes the relationship only — the product itself is untouched. */
-favoritesRoute.delete("/:productId", async (c) => {
-  const user = c.get("user")!;
-  const productId = Number(c.req.param("productId"));
-  if (!Number.isInteger(productId) || productId <= 0) {
-    throw new HttpError(400, "BAD_REQUEST", "Invalid product id.");
-  }
-  const result = await db
-    .delete(favorites)
-    .where(and(eq(favorites.userId, user.id), eq(favorites.productId, productId)));
-  if (result[0].affectedRows > 0) {
-    await db
-      .update(products)
-      .set({ favoriteCount: sql`GREATEST(${products.favoriteCount} - 1, 0)` })
-      .where(eq(products.id, productId));
-  }
-  return c.json(ok({ productId, favorited: false }));
-});
-
-/** Clear the viewer's whole wishlist (never another user's). */
-favoritesRoute.delete("/", async (c) => {
-  const user = c.get("user")!;
-  const rows = await db
-    .select({ productId: favorites.productId })
-    .from(favorites)
-    .where(eq(favorites.userId, user.id));
-
-  if (rows.length) {
-    const productIds = rows.map((row) => row.productId);
-    await db.transaction(async (tx) => {
-      await tx.delete(favorites).where(eq(favorites.userId, user.id));
-      await tx
+favoritesRoute.delete(
+  "/:productId",
+  guarded("favorites.write", async (c) => {
+    const user = c.get("user")!;
+    const productId = Number(c.req.param("productId"));
+    if (!Number.isInteger(productId) || productId <= 0) {
+      throw new HttpError(400, "BAD_REQUEST", "Invalid product id.");
+    }
+    const result = await db
+      .delete(favorites)
+      .where(and(eq(favorites.userId, user.id), eq(favorites.productId, productId)));
+    if (result[0].affectedRows > 0) {
+      await db
         .update(products)
         .set({ favoriteCount: sql`GREATEST(${products.favoriteCount} - 1, 0)` })
-        .where(inArray(products.id, productIds));
-    });
-  }
+        .where(eq(products.id, productId));
+    }
+    return c.json(ok({ productId, favorited: false }));
+  }),
+);
 
-  return c.json(ok({ cleared: rows.length }));
-});
+/** Clear the viewer's whole wishlist (never another user's). */
+favoritesRoute.delete(
+  "/",
+  guarded("favorites.write", async (c) => {
+    const user = c.get("user")!;
+    const rows = await db
+      .select({ productId: favorites.productId })
+      .from(favorites)
+      .where(eq(favorites.userId, user.id));
+
+    if (rows.length) {
+      const productIds = rows.map((row) => row.productId);
+      await db.transaction(async (tx) => {
+        await tx.delete(favorites).where(eq(favorites.userId, user.id));
+        await tx
+          .update(products)
+          .set({ favoriteCount: sql`GREATEST(${products.favoriteCount} - 1, 0)` })
+          .where(inArray(products.id, productIds));
+      });
+    }
+
+    return c.json(ok({ cleared: rows.length }));
+  }),
+);
 
 /* ----------------------------------- cart ---------------------------------- */
 
@@ -418,59 +430,62 @@ const addCartItemSchema = z.object({
   savedForLater: z.boolean().default(false),
 });
 
-cartRoute.post("/items", async (c) => {
-  const user = c.get("user")!;
-  const input = addCartItemSchema.parse(await c.req.json());
+cartRoute.post(
+  "/items",
+  guarded("cart.write", async (c) => {
+    const user = c.get("user")!;
+    const input = addCartItemSchema.parse(await c.req.json());
 
-  const [product] = await db
-    .select()
-    .from(products)
-    .where(eq(products.id, input.productId))
-    .limit(1);
-  // Adding to the cart is a purchase intent, so `OUT_OF_STOCK` is refused here
-  // even though the listing itself is still publicly visible.
-  if (!product || !isPurchasable(product.status)) {
-    throw new HttpError(404, "NOT_FOUND", "Product not available.");
-  }
-  if (input.mode === "BUY" && !product.purchasePrice) {
-    throw new HttpError(400, "BAD_REQUEST", "This item is not for sale.");
-  }
-  if (input.mode === "RENT" && !product.rentalPricePerDay) {
-    throw new HttpError(400, "BAD_REQUEST", "This item is not for rent.");
-  }
-  if (input.quantity > product.availableQuantity) {
-    throw new HttpError(409, "INSUFFICIENT_QUANTITY", "Not enough units available.");
-  }
-
-  const startDate = input.startDate ? new Date(input.startDate) : null;
-  const endDate = input.endDate ? new Date(input.endDate) : null;
-
-  if (input.mode === "RENT") {
-    // The same engine order creation uses, so the cart can never hold a rental
-    // the checkout would reject.
-    if (!startDate || !endDate) {
-      throw new HttpError(400, "BAD_REQUEST", "Rental dates are required.");
+    const [product] = await db
+      .select()
+      .from(products)
+      .where(eq(products.id, input.productId))
+      .limit(1);
+    // Adding to the cart is a purchase intent, so `OUT_OF_STOCK` is refused here
+    // even though the listing itself is still publicly visible.
+    if (!product || !isPurchasable(product.status)) {
+      throw new HttpError(404, "NOT_FOUND", "Product not available.");
     }
-    await assertRentalAvailability(product.id, input.quantity, startDate, endDate);
-  }
+    if (input.mode === "BUY" && !product.purchasePrice) {
+      throw new HttpError(400, "BAD_REQUEST", "This item is not for sale.");
+    }
+    if (input.mode === "RENT" && !product.rentalPricePerDay) {
+      throw new HttpError(400, "BAD_REQUEST", "This item is not for rent.");
+    }
+    if (input.quantity > product.availableQuantity) {
+      throw new HttpError(409, "INSUFFICIENT_QUANTITY", "Not enough units available.");
+    }
 
-  const cartId = await getOrCreateCart(user.id);
-  // Snapshot the price the user is agreeing to, so a later change is *shown*
-  // rather than silently charged.
-  const result = await mergeCartItem({
-    cartId,
-    productId: product.id,
-    mode: input.mode,
-    quantity: input.quantity,
-    startDate: input.mode === "RENT" ? startDate : null,
-    endDate: input.mode === "RENT" ? endDate : null,
-    savedForLater: input.savedForLater,
-    unitPriceSnapshot:
-      input.mode === "RENT" ? product.rentalPricePerDay : (product.purchasePrice ?? null),
-  });
+    const startDate = input.startDate ? new Date(input.startDate) : null;
+    const endDate = input.endDate ? new Date(input.endDate) : null;
 
-  return c.json(ok({ ...result, added: true }), result.merged ? 200 : 201);
-});
+    if (input.mode === "RENT") {
+      // The same engine order creation uses, so the cart can never hold a rental
+      // the checkout would reject.
+      if (!startDate || !endDate) {
+        throw new HttpError(400, "BAD_REQUEST", "Rental dates are required.");
+      }
+      await assertRentalAvailability(product.id, input.quantity, startDate, endDate);
+    }
+
+    const cartId = await getOrCreateCart(user.id);
+    // Snapshot the price the user is agreeing to, so a later change is *shown*
+    // rather than silently charged.
+    const result = await mergeCartItem({
+      cartId,
+      productId: product.id,
+      mode: input.mode,
+      quantity: input.quantity,
+      startDate: input.mode === "RENT" ? startDate : null,
+      endDate: input.mode === "RENT" ? endDate : null,
+      savedForLater: input.savedForLater,
+      unitPriceSnapshot:
+        input.mode === "RENT" ? product.rentalPricePerDay : (product.purchasePrice ?? null),
+    });
+
+    return c.json(ok({ ...result, added: true }), result.merged ? 200 : 201);
+  }),
+);
 
 const patchCartItemSchema = z
   .object({
@@ -482,121 +497,134 @@ const patchCartItemSchema = z
   })
   .refine((patch) => Object.keys(patch).length > 0, { message: "Nothing to update." });
 
-cartRoute.patch("/items/:id", async (c) => {
-  const user = c.get("user")!;
-  const itemId = Number(c.req.param("id"));
-  const input = patchCartItemSchema.parse(await c.req.json());
+cartRoute.patch(
+  "/items/:id",
+  guarded("cart.write", async (c) => {
+    const user = c.get("user")!;
+    const itemId = Number(c.req.param("id"));
+    const input = patchCartItemSchema.parse(await c.req.json());
 
-  // Load the line together with its product so the *effective* configuration can
-  // be re-checked. A quantity change is as capable of becoming invalid as a mode
-  // change, so every patch goes through the same rules an add does — there is no
-  // "it was valid when it was added" exemption.
-  const [row] = await db
-    .select({
-      line: cartItems,
-      product: {
-        id: products.id,
-        status: products.status,
-        availableQuantity: products.availableQuantity,
-        purchasePrice: products.purchasePrice,
-        rentalPricePerDay: products.rentalPricePerDay,
-      },
-    })
-    .from(cartItems)
-    .innerJoin(carts, eq(cartItems.cartId, carts.id))
-    .leftJoin(products, eq(cartItems.productId, products.id))
-    .where(and(eq(cartItems.id, itemId), eq(carts.userId, user.id)))
-    .limit(1);
+    // Load the line together with its product so the *effective* configuration can
+    // be re-checked. A quantity change is as capable of becoming invalid as a mode
+    // change, so every patch goes through the same rules an add does — there is no
+    // "it was valid when it was added" exemption.
+    const [row] = await db
+      .select({
+        line: cartItems,
+        product: {
+          id: products.id,
+          status: products.status,
+          availableQuantity: products.availableQuantity,
+          purchasePrice: products.purchasePrice,
+          rentalPricePerDay: products.rentalPricePerDay,
+        },
+      })
+      .from(cartItems)
+      .innerJoin(carts, eq(cartItems.cartId, carts.id))
+      .leftJoin(products, eq(cartItems.productId, products.id))
+      .where(and(eq(cartItems.id, itemId), eq(carts.userId, user.id)))
+      .limit(1);
 
-  if (!row) throw new HttpError(404, "NOT_FOUND", "That item is not in your cart.");
+    if (!row) throw new HttpError(404, "NOT_FOUND", "That item is not in your cart.");
 
-  const line = row.line;
-  const product = row.product;
-  if (!product || !isPurchasable(product.status)) {
-    throw new HttpError(409, "UNAVAILABLE", "This item is no longer available.");
-  }
+    const line = row.line;
+    const product = row.product;
+    if (!product || !isPurchasable(product.status)) {
+      throw new HttpError(409, "UNAVAILABLE", "This item is no longer available.");
+    }
 
-  const mode = (input.mode ?? (line.mode as "BUY" | "RENT")) as "BUY" | "RENT";
-  const quantity = input.quantity ?? line.quantity;
+    const mode = (input.mode ?? (line.mode as "BUY" | "RENT")) as "BUY" | "RENT";
+    const quantity = input.quantity ?? line.quantity;
 
-  if (mode === "BUY" && !product.purchasePrice) {
-    throw new HttpError(400, "BAD_REQUEST", "This item is not for sale.");
-  }
-  if (mode === "RENT" && !product.rentalPricePerDay) {
-    throw new HttpError(400, "BAD_REQUEST", "This item is not for rent.");
-  }
+    if (mode === "BUY" && !product.purchasePrice) {
+      throw new HttpError(400, "BAD_REQUEST", "This item is not for sale.");
+    }
+    if (mode === "RENT" && !product.rentalPricePerDay) {
+      throw new HttpError(400, "BAD_REQUEST", "This item is not for rent.");
+    }
 
-  if (mode === "RENT") {
-    const start =
-      input.startDate === undefined
-        ? line.startDate
-        : input.startDate
-          ? new Date(input.startDate)
-          : null;
-    const end =
-      input.endDate === undefined ? line.endDate : input.endDate ? new Date(input.endDate) : null;
+    if (mode === "RENT") {
+      const start =
+        input.startDate === undefined
+          ? line.startDate
+          : input.startDate
+            ? new Date(input.startDate)
+            : null;
+      const end =
+        input.endDate === undefined ? line.endDate : input.endDate ? new Date(input.endDate) : null;
 
-    if (start && end) {
-      // The authoritative check: min/max duration, past dates and whether the
-      // window is free — the same engine order creation uses.
-      await assertRentalAvailability(line.productId, quantity, start, end);
+      if (start && end) {
+        // The authoritative check: min/max duration, past dates and whether the
+        // window is free — the same engine order creation uses.
+        await assertRentalAvailability(line.productId, quantity, start, end);
+      } else if (quantity > product.availableQuantity) {
+        throw new HttpError(409, "INSUFFICIENT_QUANTITY", "Not enough units available.");
+      }
     } else if (quantity > product.availableQuantity) {
       throw new HttpError(409, "INSUFFICIENT_QUANTITY", "Not enough units available.");
     }
-  } else if (quantity > product.availableQuantity) {
-    throw new HttpError(409, "INSUFFICIENT_QUANTITY", "Not enough units available.");
-  }
 
-  // A mode switch makes this a different configuration, so re-snapshot the price
-  // the user is now agreeing to; otherwise an old snapshot would look like a
-  // price change the moment the mode changed.
-  if (input.mode !== undefined && input.mode !== line.mode) {
-    await db
-      .update(cartItems)
-      .set({
-        unitPriceSnapshot:
-          mode === "RENT" ? product.rentalPricePerDay : (product.purchasePrice ?? null),
-      })
-      .where(eq(cartItems.id, itemId));
-  }
+    // A mode switch makes this a different configuration, so re-snapshot the price
+    // the user is now agreeing to; otherwise an old snapshot would look like a
+    // price change the moment the mode changed.
+    if (input.mode !== undefined && input.mode !== line.mode) {
+      await db
+        .update(cartItems)
+        .set({
+          unitPriceSnapshot:
+            mode === "RENT" ? product.rentalPricePerDay : (product.purchasePrice ?? null),
+        })
+        .where(eq(cartItems.id, itemId));
+    }
 
-  const result = await updateCartItem(user.id, itemId, {
-    quantity: input.quantity,
-    mode: input.mode,
-    startDate:
-      input.startDate === undefined
-        ? undefined
-        : input.startDate
-          ? new Date(input.startDate)
-          : undefined,
-    endDate:
-      input.endDate === undefined ? undefined : input.endDate ? new Date(input.endDate) : undefined,
-  });
+    const result = await updateCartItem(user.id, itemId, {
+      quantity: input.quantity,
+      mode: input.mode,
+      startDate:
+        input.startDate === undefined
+          ? undefined
+          : input.startDate
+            ? new Date(input.startDate)
+            : undefined,
+      endDate:
+        input.endDate === undefined
+          ? undefined
+          : input.endDate
+            ? new Date(input.endDate)
+            : undefined,
+    });
 
-  if (input.savedForLater !== undefined) {
-    const cartId = await getOrCreateCart(user.id);
-    await db
-      .update(cartItems)
-      .set({ savedForLater: input.savedForLater, updatedAt: new Date() })
-      .where(and(eq(cartItems.id, itemId), eq(cartItems.cartId, cartId)));
-  }
+    if (input.savedForLater !== undefined) {
+      const cartId = await getOrCreateCart(user.id);
+      await db
+        .update(cartItems)
+        .set({ savedForLater: input.savedForLater, updatedAt: new Date() })
+        .where(and(eq(cartItems.id, itemId), eq(cartItems.cartId, cartId)));
+    }
 
-  return c.json(ok({ ...result, updated: true }));
-});
+    return c.json(ok({ ...result, updated: true }));
+  }),
+);
 
-cartRoute.delete("/items/:id", async (c) => {
-  const user = c.get("user")!;
-  const itemId = Number(c.req.param("id"));
-  await removeCartItem(user.id, itemId);
-  return c.json(ok({ removed: true }));
-});
+cartRoute.delete(
+  "/items/:id",
+  guarded("cart.write", async (c) => {
+    const user = c.get("user")!;
+    const itemId = Number(c.req.param("id"));
+    await removeCartItem(user.id, itemId);
+    return c.json(ok({ removed: true }));
+  }),
+);
 
 /** Empty the whole cart. */
-cartRoute.delete("/", async (c) => {
-  const user = c.get("user")!;
-  const cleared = await clearCart(user.id);
-  return c.json(ok({ cleared }));
-});
+cartRoute.delete(
+  "/",
+  guarded("cart.write", async (c) => {
+    const user = c.get("user")!;
+    const cleared = await clearCart(user.id);
+    return c.json(ok({ cleared }));
+  }),
+);
 
 /* -------------------------------- addresses -------------------------------- */
 
@@ -625,34 +653,43 @@ addressesRoute.get("/", async (c) => {
   return c.json(ok(rows));
 });
 
-addressesRoute.post("/", async (c) => {
-  const user = c.get("user")!;
-  const input = addressSchema.parse(await c.req.json());
-  if (input.isDefault) {
-    await db.update(addresses).set({ isDefault: false }).where(eq(addresses.userId, user.id));
-  }
-  const [created] = await db.insert(addresses).values({ ...input, userId: user.id });
-  return c.json(ok(created), 201);
-});
+addressesRoute.post(
+  "/",
+  guarded("addresses.write", async (c) => {
+    const user = c.get("user")!;
+    const input = addressSchema.parse(await c.req.json());
+    if (input.isDefault) {
+      await db.update(addresses).set({ isDefault: false }).where(eq(addresses.userId, user.id));
+    }
+    const [created] = await db.insert(addresses).values({ ...input, userId: user.id });
+    return c.json(ok(created), 201);
+  }),
+);
 
-addressesRoute.patch("/:id", async (c) => {
-  const user = c.get("user")!;
-  const id = Number(c.req.param("id"));
-  const input = addressSchema.partial().parse(await c.req.json());
-  if (input.isDefault) {
-    await db.update(addresses).set({ isDefault: false }).where(eq(addresses.userId, user.id));
-  }
-  const [updated] = await db
-    .update(addresses)
-    .set(input)
-    .where(and(eq(addresses.id, id), eq(addresses.userId, user.id)));
-  if (!updated) throw new HttpError(404, "NOT_FOUND", "Address not found.");
-  return c.json(ok(updated));
-});
+addressesRoute.patch(
+  "/:id",
+  guarded("addresses.write", async (c) => {
+    const user = c.get("user")!;
+    const id = Number(c.req.param("id"));
+    const input = addressSchema.partial().parse(await c.req.json());
+    if (input.isDefault) {
+      await db.update(addresses).set({ isDefault: false }).where(eq(addresses.userId, user.id));
+    }
+    const [updated] = await db
+      .update(addresses)
+      .set(input)
+      .where(and(eq(addresses.id, id), eq(addresses.userId, user.id)));
+    if (!updated) throw new HttpError(404, "NOT_FOUND", "Address not found.");
+    return c.json(ok(updated));
+  }),
+);
 
-addressesRoute.delete("/:id", async (c) => {
-  const user = c.get("user")!;
-  const id = Number(c.req.param("id"));
-  await db.delete(addresses).where(and(eq(addresses.id, id), eq(addresses.userId, user.id)));
-  return c.json(ok({ deleted: true }));
-});
+addressesRoute.delete(
+  "/:id",
+  guarded("addresses.write", async (c) => {
+    const user = c.get("user")!;
+    const id = Number(c.req.param("id"));
+    await db.delete(addresses).where(and(eq(addresses.id, id), eq(addresses.userId, user.id)));
+    return c.json(ok({ deleted: true }));
+  }),
+);

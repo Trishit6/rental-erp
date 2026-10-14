@@ -24,6 +24,8 @@
 
 import "dotenv/config";
 
+import { databaseCredentials } from "./db-credentials";
+
 /** Minimum length accepted for a JWT secret, in characters. */
 const MIN_SECRET_LENGTH = 32;
 
@@ -116,7 +118,7 @@ export function mfaEncryptionKey(): Buffer {
   if (!value) {
     throw new Error(
       "Missing required environment variable MFA_ENCRYPTION_KEY. Generate 32 random bytes, " +
-        'e.g. `node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'base64\'))"`.',
+        "e.g. `node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\"`.",
     );
   }
   const key = /^[0-9a-f]{64}$/i.test(value)
@@ -145,16 +147,22 @@ export const MFA_TICKET_TTL_SECONDS = readSeconds("AUTH_MFA_TICKET_TTL_SECONDS",
  * and use it, short enough that a stale mail in a shared mailbox is not a standing
  * reset credential.
  */
-export const PASSWORD_RESET_TTL_SECONDS = readSeconds("AUTH_PASSWORD_RESET_TTL_SECONDS", 60 * 60, 300);
+export const PASSWORD_RESET_TTL_SECONDS = readSeconds(
+  "AUTH_PASSWORD_RESET_TTL_SECONDS",
+  60 * 60,
+  300,
+);
 
 /**
  * Login throttling, backed by `login_attempts`.
  *
  * `LOGIN_WINDOW_SECONDS` is the look-back window; `LOGIN_MAX_FAILURES` is how many
  * failures inside it move an identifier (or an IP) into lockout, and
- * `LOGIN_LOCKOUT_SECONDS` is how long that lasts. The in-memory per-IP limiter in
- * `lib/api.ts` is a coarse brake in front of this; this is the durable one that
- * survives a restart and follows the *account*, not the socket.
+ * `LOGIN_LOCKOUT_SECONDS` is how long that lasts. The named `auth.login` budget in
+ * `lib/rate-limit.ts` is the coarse, per-IP-and-per-account brake in front of this;
+ * this is the durable one that survives a restart and follows the *account*, not the
+ * socket. (There is no longer a global in-memory limiter on every route — limits are
+ * opt-in per route via the `RATE_LIMITS` registry.)
  */
 export const LOGIN_WINDOW_SECONDS = readSeconds("AUTH_LOGIN_WINDOW_SECONDS", 15 * 60, 60);
 export const LOGIN_LOCKOUT_SECONDS = readSeconds("AUTH_LOGIN_LOCKOUT_SECONDS", 15 * 60, 0);
@@ -201,6 +209,28 @@ export function hasDatabaseConfig(): boolean {
 }
 
 /**
+ * The application's own base URL.
+ *
+ * `APP_URL` is the canonical name. `APP_BASE_URL` is the older spelling still read
+ * by a handful of files; it is honoured as a fallback but warns once per process, so
+ * a leftover legacy value shows up in the logs instead of silently doing nothing.
+ */
+let warnedLegacyAppBaseUrl = false;
+export function appBaseUrl(): string {
+  const primary = process.env.APP_URL?.trim();
+  if (primary) return primary;
+  const legacy = process.env.APP_BASE_URL?.trim();
+  if (legacy) {
+    if (!warnedLegacyAppBaseUrl) {
+      warnedLegacyAppBaseUrl = true;
+      console.warn("[config] APP_BASE_URL is deprecated — use APP_URL instead.");
+    }
+    return legacy;
+  }
+  return "";
+}
+
+/**
  * Validate everything the API cannot start without. Throws a single error naming
  * every problem, so one restart fixes one deployment instead of five.
  *
@@ -237,6 +267,28 @@ export function assertServerEnv(): void {
       "No database configured: set DATABASE_URL (or DB_HOST / DB_NAME). " +
         "The built-in development defaults are not a deployment configuration.",
     );
+  }
+
+  // Least privilege. In production, connecting as `root` — or with no password at
+  // all — is not a configuration, it is the absence of one: any credential that
+  // reaches this process then also has the run of the database. Fail at startup so
+  // the operator fixes the *deployment* rather than discovering the exposure later.
+  // No credential value is ever placed in the message; only the variable name.
+  if (isProduction()) {
+    const credentials = databaseCredentials();
+    if (credentials.user.trim().toLowerCase() === "root") {
+      problems.push(
+        'The database user resolves to "root". In production the API must connect as a ' +
+          "least-privilege account: set DB_USER (or the user in DATABASE_URL) to the runtime " +
+          "account created by docs/deploy/db-least-privilege.sql.",
+      );
+    }
+    if (credentials.password.length === 0) {
+      problems.push(
+        "The database password is empty. Set DB_PASSWORD (or a password in DATABASE_URL) so " +
+          "the API is not connecting unauthenticated.",
+      );
+    }
   }
 
   if (problems.length > 0) {

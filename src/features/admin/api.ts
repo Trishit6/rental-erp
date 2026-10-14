@@ -1902,16 +1902,16 @@ export async function updateAdminSupportTicket(
 
 /**
  * The coupon desk's vocabularies. Mirrors `COUPON_STATUSES` / `COUPON_DISCOUNT_TYPES`
- * and the two writable scopes in `server/lib/coupon-admin.ts`.
+ * and the writable scopes in `server/lib/coupon-admin.ts`.
  */
-export const COUPON_STATUSES = ["ACTIVE", "PAUSED", "SCHEDULED", "EXPIRED"] as const;
+export const COUPON_STATUSES = ["ACTIVE", "PAUSED", "SCHEDULED", "EXPIRED", "RETIRED"] as const;
 export type AdminCouponStatus = (typeof COUPON_STATUSES)[number];
 
 export const COUPON_DISCOUNT_TYPES = ["PERCENT", "FLAT"] as const;
 export type AdminCouponDiscountType = (typeof COUPON_DISCOUNT_TYPES)[number];
 
-/** `ALL` or `CATEGORY`: the table has no product column, so those are the real scopes. */
-export const COUPON_SCOPES = ["ALL", "CATEGORY"] as const;
+/** Every scope has a column to name its target. */
+export const COUPON_SCOPES = ["ALL", "CATEGORY", "SELLER", "PRODUCT"] as const;
 export type AdminCouponScope = (typeof COUPON_SCOPES)[number];
 
 export const COUPON_STATUS_LABELS: Record<AdminCouponStatus, string> = {
@@ -1919,6 +1919,7 @@ export const COUPON_STATUS_LABELS: Record<AdminCouponStatus, string> = {
   PAUSED: "Paused",
   SCHEDULED: "Scheduled",
   EXPIRED: "Expired",
+  RETIRED: "Retired",
 };
 
 export const COUPON_DISCOUNT_TYPE_LABELS: Record<AdminCouponDiscountType, string> = {
@@ -1929,6 +1930,8 @@ export const COUPON_DISCOUNT_TYPE_LABELS: Record<AdminCouponDiscountType, string
 export const COUPON_SCOPE_LABELS: Record<AdminCouponScope, string> = {
   ALL: "Whole catalogue",
   CATEGORY: "One category",
+  SELLER: "One seller",
+  PRODUCT: "One product",
 };
 
 export type AdminCouponFilters = {
@@ -1976,6 +1979,14 @@ export type AdminCouponRow = {
   appliesTo: string;
   categoryId: number | null;
   categoryName: string | null;
+  sellerId: number | null;
+  sellerName: string | null;
+  productId: number | null;
+  productTitle: string | null;
+  /** May this coupon be combined with another promotion. */
+  stackable: boolean;
+  /** May the discount be taken out of the refundable deposit. */
+  allowDepositDiscount: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -2019,7 +2030,27 @@ export type AdminCouponWriteInput = {
   status: AdminCouponStatus;
   appliesTo: AdminCouponScope;
   categoryId?: number | null;
+  sellerId?: number | null;
+  productId?: number | null;
+  stackable?: boolean;
+  allowDepositDiscount?: boolean;
 };
+
+/**
+ * The desk's CSV export, as a same-origin URL.
+ *
+ * A plain link rather than a fetch: the browser sends the session cookie to the
+ * same origin, and letting it handle the download means the file never has to sit
+ * in client memory as a string.
+ */
+export function adminCouponsExportUrl(filters: AdminCouponFilters): string {
+  const query = adminQueryString({
+    search: filters.search,
+    status: filters.status,
+    discountType: filters.discountType,
+  });
+  return `/api/admin/coupons/export${query}`;
+}
 
 export async function createAdminCoupon(
   input: AdminCouponWriteInput,

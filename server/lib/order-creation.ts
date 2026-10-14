@@ -11,6 +11,7 @@ import {
 } from "../schema";
 import { HttpError } from "./api";
 import { buildCheckoutQuote, type DeliveryMethod } from "./checkout";
+import { redeemCoupon } from "./coupon";
 import { createOrderNumber } from "./payments/order-number";
 import { readCheckoutContext } from "./payments/checkout-context";
 import { recordRentalEvent } from "./rental-lifecycle";
@@ -149,10 +150,16 @@ export async function createOrderFromPayment(input: CreateOrderInput): Promise<O
       .for("update");
 
     /* --- 4. Recompute the amount and re-validate, inside the transaction --- */
+    // The coupon the customer applied is re-read from the payment's own metadata
+    // (never from the request) and re-resolved against the locked cart. An expired
+    // or exhausted code makes the recomputed total differ from the reserved
+    // amount, which fails the match below and sends the customer back to review.
+    const couponCode = readCheckoutContext(transaction.metadata)?.couponCode ?? null;
     const quote = await buildCheckoutQuote({
       userId: input.userId,
       deliveryMethod: input.deliveryMethod,
       deliveryAddressId: input.deliveryAddressId,
+      couponCode,
       executor: tx,
     });
 
@@ -225,6 +232,19 @@ export async function createOrderFromPayment(input: CreateOrderInput): Promise<O
     }
     if (orderId === 0) {
       throw new HttpError(500, "INTERNAL_ERROR", "Could not allocate an order number.");
+    }
+
+    /* --- 5b. Redeem the coupon, in the order's own transaction ------------ */
+    // The redemption row and the denormalised counter move with the order: a
+    // rollback here un-redeems the code, and the unique `(coupon_id, order_id)`
+    // index means a retried checkout redeems the code exactly once.
+    if (quote.coupon) {
+      await redeemCoupon(tx, {
+        couponId: quote.coupon.id,
+        userId: input.userId,
+        orderId,
+        discountPaise: quote.coupon.discountPaise,
+      });
     }
 
     /* --- 6. Order items, each a snapshot of the product as bought --------- */

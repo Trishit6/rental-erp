@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
  *
  * ## What this is protecting
  *
- * The login page used to render `Password: revaro-dev-2026` under the form. That is
+ * The login page used to render the seeded password under the form. That is
  * a credential in the browser bundle — visible in View Source, in `dist/assets/*.js`,
  * and to anyone who opens DevTools. It is also *wrong* in any deployment that sets
  * `ADMIN_PASSWORD`, because the hint would keep advertising the repository's value
@@ -49,7 +49,7 @@ const FILES = sourceFiles(SRC).map((file) => ({
 /**
  * Strings that would be a real credential if they shipped.
  *
- * `revaro-dev-2026` is the value the seed used to default to. Matching it exactly
+ * The seeded password default used to be a fixed literal. Matching its exact shape
  * avoids false positives on words like "password", while still catching the case that
  * actually happened: someone pasting the seeded password into the UI.
  */

@@ -204,6 +204,13 @@
       "when": 1791816229874,
       "tag": "0028_chief_micromacro",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "5",
+      "when": 1791902067803,
+      "tag": "0029_true_squirrel_girl",
+      "breakpoints": true
     }
   ]
 }

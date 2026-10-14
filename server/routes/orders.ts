@@ -375,180 +375,189 @@ const cancelOrderSchema = z
  * As elsewhere, the REFUND transaction records that the *settlement* is owed —
  * actually moving money stays with the payment architecture.
  */
-ordersRoute.post("/:id/cancel", guarded("checkout.order", async (c) => {
-  const user = c.get("user")!;
-  const raw = c.req.param("id");
-  const input = cancelOrderSchema.parse(await c.req.json().catch(() => ({})));
+ordersRoute.post(
+  "/:id/cancel",
+  guarded("orders.action", async (c) => {
+    const user = c.get("user")!;
+    const raw = c.req.param("id");
+    const input = cancelOrderSchema.parse(await c.req.json().catch(() => ({})));
 
-  const isOrderNumber = /^RV-\d{4}-[A-Z0-9]{6}$/i.test(raw);
-  const numericId = Number(raw);
-  if (!isOrderNumber && (!Number.isInteger(numericId) || numericId <= 0)) {
-    throw new HttpError(404, "NOT_FOUND", "Order not found.");
-  }
-  const identifier = isOrderNumber
-    ? eq(orders.orderNumber, raw.toUpperCase())
-    : eq(orders.id, numericId);
-
-  const [order] = await db
-    .select()
-    .from(orders)
-    .where(and(identifier, eq(orders.userId, user.id)))
-    .limit(1);
-  if (!order) throw new HttpError(404, "NOT_FOUND", "Order not found.");
-
-  // Any rental that has gone active means the item is physically out — too late.
-  const [{ activeRentals }] = await db
-    .select({ activeRentals: sql<number>`COUNT(*)` })
-    .from(rentals)
-    .where(
-      and(
-        eq(rentals.orderId, order.id),
-        inArray(rentals.status, ["ACTIVE", "RETURN_PENDING", "OVERDUE", "RETURNED"]),
-      ),
-    );
-
-  const check = checkCustomerCancellation({
-    status: order.status,
-    paymentStatus: order.paymentStatus,
-    hasActiveRental: Number(activeRentals) > 0,
-  });
-  if (!check.allowed) throw cancellationRefusalError(check);
-
-  // A free-text reason is optional; a structured one is validated against the
-  // known vocabulary and stored in a readable form either way.
-  const reasonText = input.reason?.trim()
-    ? input.reason.trim().slice(0, 300)
-    : input.reasonCode && isCancellationReason(input.reasonCode)
-      ? input.reasonCode.replace(/_/g, " ").toLowerCase()
-      : "Cancelled by customer";
-
-  const now = new Date();
-  await db.transaction(async (tx) => {
-    await tx
-      .update(orders)
-      .set({ status: "CANCELLED", updatedAt: now })
-      .where(eq(orders.id, order.id));
-
-    // Every untouched line records why it stopped; lines a seller already
-    // cancelled keep their own reason. The ids of those already-cancelled lines
-    // are collected first, because their stock was returned when *they* were
-    // cancelled and must not be returned a second time here.
-    const alreadyCancelled = await tx
-      .select({ id: orderItems.id })
-      .from(orderItems)
-      .where(and(eq(orderItems.orderId, order.id), eq(orderItems.fulfillmentStatus, "CANCELLED")));
-
-    await tx
-      .update(orderItems)
-      .set({ fulfillmentStatus: "CANCELLED", cancellationReason: reasonText })
-      .where(and(eq(orderItems.orderId, order.id), isNull(orderItems.fulfillmentStatus)));
-
-    // Purchased units go back on the shelf. A rental holds its unit for a date
-    // window rather than removing it from stock, so it has nothing to give back.
-    await restoreCancelledOrderStock(
-      tx,
-      order.id,
-      alreadyCancelled.map((row) => row.id),
-    );
-
-    // Ledger row for the refund owed. No gateway call happens here — the
-    // payment architecture owns settlement — but the money story is on record.
-    if (order.paymentStatus === "PAID") {
-      await tx.insert(transactions).values({
-        userId: user.id,
-        orderId: order.id,
-        type: "REFUND",
-        amount: order.total,
-        status: "PENDING",
-        provider: order.paymentProvider,
-        providerTransactionId: `cancel_${order.orderNumber ?? order.id}`,
-      });
+    const isOrderNumber = /^RV-\d{4}-[A-Z0-9]{6}$/i.test(raw);
+    const numericId = Number(raw);
+    if (!isOrderNumber && (!Number.isInteger(numericId) || numericId <= 0)) {
+      throw new HttpError(404, "NOT_FOUND", "Order not found.");
     }
+    const identifier = isOrderNumber
+      ? eq(orders.orderNumber, raw.toUpperCase())
+      : eq(orders.id, numericId);
 
-    // The seller's ledger is unwound too. Cancellation is only allowed before the goods
-    // leave, so a *sale* earning — recorded at delivery — normally does not exist yet
-    // and this is a no-op; a *rental* earning, recorded only at return, would exist
-    // for a booking already returned, and that one must not survive the order being
-    // cancelled. Both calls find nothing when there is nothing to unwind, which is
-    // what makes it safe to run them for every affected line rather than trying to
-    // work out up front which lines have money behind them.
-    const affectedLines = await tx
-      .select({ id: orderItems.id })
-      .from(orderItems)
-      .where(eq(orderItems.orderId, order.id));
-    for (const line of affectedLines) {
-      await recordEarningReversal(tx, { orderItemId: line.id }, "Order cancelled by the customer");
-    }
+    const [order] = await db
+      .select()
+      .from(orders)
+      .where(and(identifier, eq(orders.userId, user.id)))
+      .limit(1);
+    if (!order) throw new HttpError(404, "NOT_FOUND", "Order not found.");
 
-    const affectedRentals = await tx
-      .select({ id: rentals.id })
+    // Any rental that has gone active means the item is physically out — too late.
+    const [{ activeRentals }] = await db
+      .select({ activeRentals: sql<number>`COUNT(*)` })
       .from(rentals)
-      .where(eq(rentals.orderId, order.id));
-    for (const rental of affectedRentals) {
-      await recordEarningReversal(tx, { rentalId: rental.id }, "Order cancelled by the customer");
-    }
+      .where(
+        and(
+          eq(rentals.orderId, order.id),
+          inArray(rentals.status, ["ACTIVE", "RETURN_PENDING", "OVERDUE", "RETURNED"]),
+        ),
+      );
 
-    const sellerRows = await tx
-      .selectDistinct({ sellerId: orderItems.sellerId })
-      .from(orderItems)
-      .where(eq(orderItems.orderId, order.id));
-    const sellerIds = sellerRows.map((row) => row.sellerId).filter((id) => id !== order.userId);
+    const check = checkCustomerCancellation({
+      status: order.status,
+      paymentStatus: order.paymentStatus,
+      hasActiveRental: Number(activeRentals) > 0,
+    });
+    if (!check.allowed) throw cancellationRefusalError(check);
 
-    // Everyone the cancellation touches hears about it, each with their own copy of the
-    // facts: the customer wants confirmation (and, if they paid, the refund's status),
-    // and each seller needs to know stock and earnings were walked back. One
-    // `notifyMany` so the recipients' preferences are resolved once for the batch.
-    const context = { orderId: order.id, orderNumber: order.orderNumber ?? null };
-    const orderLabel = order.orderNumber ?? `#${order.id}`;
-    await notifyMany(tx, [
-      {
-        userId: order.userId,
-        type: "ORDER_CANCELLED",
-        title: "Order cancelled",
-        body: `Order ${orderLabel} was cancelled.`,
-        context,
-        eventKey: notificationEventKey("ORDER_CANCELLED", order.id, order.userId),
-      },
-      ...sellerIds.map((sellerId) => ({
-        userId: sellerId,
-        type: "ORDER_CANCELLED" as const,
-        title: "Order cancelled",
-        body: `Order ${orderLabel} was cancelled by the customer.`,
-        context,
-        eventKey: notificationEventKey("ORDER_CANCELLED", order.id, sellerId),
-        link: "/dashboard/orders",
-      })),
-    ]);
+    // A free-text reason is optional; a structured one is validated against the
+    // known vocabulary and stored in a readable form either way.
+    const reasonText = input.reason?.trim()
+      ? input.reason.trim().slice(0, 300)
+      : input.reasonCode && isCancellationReason(input.reasonCode)
+        ? input.reasonCode.replace(/_/g, " ").toLowerCase()
+        : "Cancelled by customer";
 
-    // A paid order that is cancelled leaves money in flight. The refund row was just
-    // written as PENDING (or the customer is told to expect one), so the customer is
-    // told what happens next and an administrator owns the follow-up. Keyed on the
-    // cancellation, not on the order, so a second cancellation attempt cannot produce
-    // a second refund request — though the status guard above means it should not
-    // reach here at all.
-    if (order.paymentStatus === "PAID") {
-      await notify(tx, {
-        userId: order.userId,
-        type: "REFUND_REQUESTED",
-        title: "Refund started",
-        body: `A refund for order ${orderLabel} has been started and will return to your original payment method.`,
-        context,
-        eventKey: notificationEventKey("REFUND_REQUESTED", order.id, order.userId),
-      });
-      await notifyAdmins(tx, {
-        type: "ADMIN_REFUND_REQUEST",
-        title: "Refund needs review",
-        body: `Order ${orderLabel} was cancelled after payment and needs a refund review.`,
-        context,
-        relatedEntityType: "ORDER",
-        relatedEntityId: order.id,
-        eventKey: notificationEventKey("ADMIN_REFUND_REQUEST", order.id),
-      });
-    }
-  });
+    const now = new Date();
+    await db.transaction(async (tx) => {
+      await tx
+        .update(orders)
+        .set({ status: "CANCELLED", updatedAt: now })
+        .where(eq(orders.id, order.id));
 
-  return c.json(ok({ cancelled: true, orderId: order.id, status: "CANCELLED" as const }));
-}));
+      // Every untouched line records why it stopped; lines a seller already
+      // cancelled keep their own reason. The ids of those already-cancelled lines
+      // are collected first, because their stock was returned when *they* were
+      // cancelled and must not be returned a second time here.
+      const alreadyCancelled = await tx
+        .select({ id: orderItems.id })
+        .from(orderItems)
+        .where(
+          and(eq(orderItems.orderId, order.id), eq(orderItems.fulfillmentStatus, "CANCELLED")),
+        );
+
+      await tx
+        .update(orderItems)
+        .set({ fulfillmentStatus: "CANCELLED", cancellationReason: reasonText })
+        .where(and(eq(orderItems.orderId, order.id), isNull(orderItems.fulfillmentStatus)));
+
+      // Purchased units go back on the shelf. A rental holds its unit for a date
+      // window rather than removing it from stock, so it has nothing to give back.
+      await restoreCancelledOrderStock(
+        tx,
+        order.id,
+        alreadyCancelled.map((row) => row.id),
+      );
+
+      // Ledger row for the refund owed. No gateway call happens here — the
+      // payment architecture owns settlement — but the money story is on record.
+      if (order.paymentStatus === "PAID") {
+        await tx.insert(transactions).values({
+          userId: user.id,
+          orderId: order.id,
+          type: "REFUND",
+          amount: order.total,
+          status: "PENDING",
+          provider: order.paymentProvider,
+          providerTransactionId: `cancel_${order.orderNumber ?? order.id}`,
+        });
+      }
+
+      // The seller's ledger is unwound too. Cancellation is only allowed before the goods
+      // leave, so a *sale* earning — recorded at delivery — normally does not exist yet
+      // and this is a no-op; a *rental* earning, recorded only at return, would exist
+      // for a booking already returned, and that one must not survive the order being
+      // cancelled. Both calls find nothing when there is nothing to unwind, which is
+      // what makes it safe to run them for every affected line rather than trying to
+      // work out up front which lines have money behind them.
+      const affectedLines = await tx
+        .select({ id: orderItems.id })
+        .from(orderItems)
+        .where(eq(orderItems.orderId, order.id));
+      for (const line of affectedLines) {
+        await recordEarningReversal(
+          tx,
+          { orderItemId: line.id },
+          "Order cancelled by the customer",
+        );
+      }
+
+      const affectedRentals = await tx
+        .select({ id: rentals.id })
+        .from(rentals)
+        .where(eq(rentals.orderId, order.id));
+      for (const rental of affectedRentals) {
+        await recordEarningReversal(tx, { rentalId: rental.id }, "Order cancelled by the customer");
+      }
+
+      const sellerRows = await tx
+        .selectDistinct({ sellerId: orderItems.sellerId })
+        .from(orderItems)
+        .where(eq(orderItems.orderId, order.id));
+      const sellerIds = sellerRows.map((row) => row.sellerId).filter((id) => id !== order.userId);
+
+      // Everyone the cancellation touches hears about it, each with their own copy of the
+      // facts: the customer wants confirmation (and, if they paid, the refund's status),
+      // and each seller needs to know stock and earnings were walked back. One
+      // `notifyMany` so the recipients' preferences are resolved once for the batch.
+      const context = { orderId: order.id, orderNumber: order.orderNumber ?? null };
+      const orderLabel = order.orderNumber ?? `#${order.id}`;
+      await notifyMany(tx, [
+        {
+          userId: order.userId,
+          type: "ORDER_CANCELLED",
+          title: "Order cancelled",
+          body: `Order ${orderLabel} was cancelled.`,
+          context,
+          eventKey: notificationEventKey("ORDER_CANCELLED", order.id, order.userId),
+        },
+        ...sellerIds.map((sellerId) => ({
+          userId: sellerId,
+          type: "ORDER_CANCELLED" as const,
+          title: "Order cancelled",
+          body: `Order ${orderLabel} was cancelled by the customer.`,
+          context,
+          eventKey: notificationEventKey("ORDER_CANCELLED", order.id, sellerId),
+          link: "/dashboard/orders",
+        })),
+      ]);
+
+      // A paid order that is cancelled leaves money in flight. The refund row was just
+      // written as PENDING (or the customer is told to expect one), so the customer is
+      // told what happens next and an administrator owns the follow-up. Keyed on the
+      // cancellation, not on the order, so a second cancellation attempt cannot produce
+      // a second refund request — though the status guard above means it should not
+      // reach here at all.
+      if (order.paymentStatus === "PAID") {
+        await notify(tx, {
+          userId: order.userId,
+          type: "REFUND_REQUESTED",
+          title: "Refund started",
+          body: `A refund for order ${orderLabel} has been started and will return to your original payment method.`,
+          context,
+          eventKey: notificationEventKey("REFUND_REQUESTED", order.id, order.userId),
+        });
+        await notifyAdmins(tx, {
+          type: "ADMIN_REFUND_REQUEST",
+          title: "Refund needs review",
+          body: `Order ${orderLabel} was cancelled after payment and needs a refund review.`,
+          context,
+          relatedEntityType: "ORDER",
+          relatedEntityId: order.id,
+          eventKey: notificationEventKey("ADMIN_REFUND_REQUEST", order.id),
+        });
+      }
+    });
+
+    return c.json(ok({ cancelled: true, orderId: order.id, status: "CANCELLED" as const }));
+  }),
+);
 
 /* --------------------------- buy again / rent again ------------------------ */
 
@@ -677,97 +686,100 @@ async function buildRepeatInput(
  * The cart merge (`mergeCartItem`) runs in its own locked transaction, so a
  * double-click adds one line, not two.
  */
-ordersRoute.post("/:id/again", async (c) => {
-  const user = c.get("user")!;
-  const raw = c.req.param("id");
-  const input = orderAgainSchema.parse(await c.req.json().catch(() => ({})));
+ordersRoute.post(
+  "/:id/again",
+  guarded("orders.action", async (c) => {
+    const user = c.get("user")!;
+    const raw = c.req.param("id");
+    const input = orderAgainSchema.parse(await c.req.json().catch(() => ({})));
 
-  const isOrderNumber = /^RV-\d{4}-[A-Z0-9]{6}$/i.test(raw);
-  const numericId = Number(raw);
-  if (!isOrderNumber && (!Number.isInteger(numericId) || numericId <= 0)) {
-    throw new HttpError(404, "NOT_FOUND", "Order not found.");
-  }
-  const identifier = isOrderNumber
-    ? eq(orders.orderNumber, raw.toUpperCase())
-    : eq(orders.id, numericId);
+    const isOrderNumber = /^RV-\d{4}-[A-Z0-9]{6}$/i.test(raw);
+    const numericId = Number(raw);
+    if (!isOrderNumber && (!Number.isInteger(numericId) || numericId <= 0)) {
+      throw new HttpError(404, "NOT_FOUND", "Order not found.");
+    }
+    const identifier = isOrderNumber
+      ? eq(orders.orderNumber, raw.toUpperCase())
+      : eq(orders.id, numericId);
 
-  // The order must belong to the caller; the *line* must belong to that order.
-  // Both predicates in the same WHERE keeps the endpoint from being probed.
-  const [order] = await db
-    .select({ id: orders.id })
-    .from(orders)
-    .where(and(identifier, eq(orders.userId, user.id)))
-    .limit(1);
-  if (!order) throw new HttpError(404, "NOT_FOUND", "Order not found.");
+    // The order must belong to the caller; the *line* must belong to that order.
+    // Both predicates in the same WHERE keeps the endpoint from being probed.
+    const [order] = await db
+      .select({ id: orders.id })
+      .from(orders)
+      .where(and(identifier, eq(orders.userId, user.id)))
+      .limit(1);
+    if (!order) throw new HttpError(404, "NOT_FOUND", "Order not found.");
 
-  const lines = await db
-    .select({
-      id: orderItems.id,
-      mode: orderItems.mode,
-      quantity: orderItems.quantity,
-      startDate: orderItems.startDate,
-      endDate: orderItems.endDate,
-      product: {
-        id: products.id,
-        slug: products.slug,
-        title: products.title,
-        status: products.status,
-        sellerId: products.sellerId,
-        purchasePrice: products.purchasePrice,
-        rentalPricePerDay: products.rentalPricePerDay,
-        rentalPricePerWeek: products.rentalPricePerWeek,
-        rentalPricePerMonth: products.rentalPricePerMonth,
-        securityDeposit: products.securityDeposit,
-        minimumRentalDays: products.minimumRentalDays,
-        maximumRentalDays: products.maximumRentalDays,
-        availableQuantity: products.availableQuantity,
-      },
-    })
-    .from(orderItems)
-    .innerJoin(products, eq(orderItems.productId, products.id))
-    .where(eq(orderItems.orderId, order.id))
-    .orderBy(asc(orderItems.id));
+    const lines = await db
+      .select({
+        id: orderItems.id,
+        mode: orderItems.mode,
+        quantity: orderItems.quantity,
+        startDate: orderItems.startDate,
+        endDate: orderItems.endDate,
+        product: {
+          id: products.id,
+          slug: products.slug,
+          title: products.title,
+          status: products.status,
+          sellerId: products.sellerId,
+          purchasePrice: products.purchasePrice,
+          rentalPricePerDay: products.rentalPricePerDay,
+          rentalPricePerWeek: products.rentalPricePerWeek,
+          rentalPricePerMonth: products.rentalPricePerMonth,
+          securityDeposit: products.securityDeposit,
+          minimumRentalDays: products.minimumRentalDays,
+          maximumRentalDays: products.maximumRentalDays,
+          availableQuantity: products.availableQuantity,
+        },
+      })
+      .from(orderItems)
+      .innerJoin(products, eq(orderItems.productId, products.id))
+      .where(eq(orderItems.orderId, order.id))
+      .orderBy(asc(orderItems.id));
 
-  const line = input.orderItemId
-    ? lines.find((candidate) => candidate.id === input.orderItemId)
-    : lines[0];
-  if (!line) throw new HttpError(404, "NOT_FOUND", "That item is not part of this order.");
+    const line = input.orderItemId
+      ? lines.find((candidate) => candidate.id === input.orderItemId)
+      : lines[0];
+    if (!line) throw new HttpError(404, "NOT_FOUND", "That item is not part of this order.");
 
-  const repeat = await buildRepeatInput(line, line.product, user.id);
-  if (!repeat.ok) {
-    throw new HttpError(409, repeat.code, repeat.message);
-  }
+    const repeat = await buildRepeatInput(line, line.product, user.id);
+    if (!repeat.ok) {
+      throw new HttpError(409, repeat.code, repeat.message);
+    }
 
-  // The cart write owns its transaction and its merge rule.
-  const cartId = await getOrCreateCart(user.id);
-  const result = await mergeCartItem({
-    cartId,
-    productId: repeat.input.productId,
-    mode: repeat.input.mode,
-    quantity: repeat.input.quantity,
-    startDate: repeat.input.startDate ? new Date(repeat.input.startDate) : null,
-    endDate: repeat.input.endDate ? new Date(repeat.input.endDate) : null,
-    // A repeated line is an active cart line — never a saved-for-later one.
-    savedForLater: false,
-    // Snapshot the *current* price, never the historical line price (see
-    // `buildRepeatInput`). The snapshot only exists so a later price change is
-    // *shown* in the cart rather than silently charged at checkout.
-    unitPriceSnapshot:
-      repeat.input.mode === "RENT"
-        ? line.product.rentalPricePerDay
-        : (line.product.purchasePrice ?? null),
-  });
-
-  return c.json(
-    ok({
-      added: true,
-      merged: result.merged,
-      itemId: result.itemId,
+    // The cart write owns its transaction and its merge rule.
+    const cartId = await getOrCreateCart(user.id);
+    const result = await mergeCartItem({
+      cartId,
       productId: repeat.input.productId,
       mode: repeat.input.mode,
-    }),
-  );
-});
+      quantity: repeat.input.quantity,
+      startDate: repeat.input.startDate ? new Date(repeat.input.startDate) : null,
+      endDate: repeat.input.endDate ? new Date(repeat.input.endDate) : null,
+      // A repeated line is an active cart line — never a saved-for-later one.
+      savedForLater: false,
+      // Snapshot the *current* price, never the historical line price (see
+      // `buildRepeatInput`). The snapshot only exists so a later price change is
+      // *shown* in the cart rather than silently charged at checkout.
+      unitPriceSnapshot:
+        repeat.input.mode === "RENT"
+          ? line.product.rentalPricePerDay
+          : (line.product.purchasePrice ?? null),
+    });
+
+    return c.json(
+      ok({
+        added: true,
+        merged: result.merged,
+        itemId: result.itemId,
+        productId: repeat.input.productId,
+        mode: repeat.input.mode,
+      }),
+    );
+  }),
+);
 
 /* --------------------------- response helpers ------------------------------ */
 
@@ -1115,60 +1127,63 @@ rentalsRoute.get("/:id", async (c) => {
  * the existing `POST /:id/return` close the rental out. No refund is issued or
  * implied here.
  */
-rentalsRoute.post("/:id/return-request", async (c) => {
-  const user = c.get("user")!;
-  const id = Number(c.req.param("id"));
-  // Ownership is part of the lookup, not a check afterwards. Loading by id
-  // alone and answering 403 would confirm the rental exists to someone probing
-  // ids — the same 404 a non-existent rental gets.
-  const [rental] = await db
-    .select()
-    .from(rentals)
-    .where(and(eq(rentals.id, id), eq(rentals.renterId, user.id)))
-    .limit(1);
-  if (!rental) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
-  // Only the renter initiates a return; the owner confirms it via `/:id/return`.
-  if (rental.status === "RETURN_PENDING") {
-    // Idempotent: asking twice is not an error, it is the same request.
-    return c.json(ok({ status: rental.status, requestedAt: rental.returnRequestedAt }));
-  }
-  if (rental.status !== "ACTIVE" && rental.status !== "CONFIRMED") {
-    throw new HttpError(
-      409,
-      "RETURN_NOT_ALLOWED",
-      "This rental is not currently out, so there is nothing to return.",
-    );
-  }
-
-  const now = new Date();
-  await db.transaction(async (tx) => {
-    await tx
-      .update(rentals)
-      .set({ status: "RETURN_PENDING", returnRequestedAt: now, updatedAt: now })
-      .where(eq(rentals.id, id));
-    // The step is recorded in the same transaction as the status change, so the
-    // history can never claim a return was requested when the status says
-    // otherwise.
-    await recordRentalEvent(tx, id, "RETURN_REQUESTED", { requestedAt: now.toISOString() });
-
-    // The owner is the one who has to act on this — they confirm the return via
-    // `POST /rentals/:id/return`, and the deposit release depends on them doing it.
-    // The renter already knows they asked (they just did), so they are not told.
-    if (rental.ownerId !== rental.renterId) {
-      await notify(tx, {
-        userId: rental.ownerId,
-        type: "RENTAL_RETURN_REQUESTED",
-        title: "Return requested",
-        body: "The renter has asked to return an item. Confirm the return to release their deposit.",
-        context: { rentalId: id, orderId: rental.orderId, orderNumber: null },
-        eventKey: notificationEventKey("RENTAL_RETURN_REQUESTED", id, rental.ownerId),
-        link: "/dashboard/rentals",
-      });
+rentalsRoute.post(
+  "/:id/return-request",
+  guarded("rentals.action", async (c) => {
+    const user = c.get("user")!;
+    const id = Number(c.req.param("id"));
+    // Ownership is part of the lookup, not a check afterwards. Loading by id
+    // alone and answering 403 would confirm the rental exists to someone probing
+    // ids — the same 404 a non-existent rental gets.
+    const [rental] = await db
+      .select()
+      .from(rentals)
+      .where(and(eq(rentals.id, id), eq(rentals.renterId, user.id)))
+      .limit(1);
+    if (!rental) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
+    // Only the renter initiates a return; the owner confirms it via `/:id/return`.
+    if (rental.status === "RETURN_PENDING") {
+      // Idempotent: asking twice is not an error, it is the same request.
+      return c.json(ok({ status: rental.status, requestedAt: rental.returnRequestedAt }));
     }
-  });
+    if (rental.status !== "ACTIVE" && rental.status !== "CONFIRMED") {
+      throw new HttpError(
+        409,
+        "RETURN_NOT_ALLOWED",
+        "This rental is not currently out, so there is nothing to return.",
+      );
+    }
 
-  return c.json(ok({ status: "RETURN_PENDING" as const, requestedAt: now }));
-});
+    const now = new Date();
+    await db.transaction(async (tx) => {
+      await tx
+        .update(rentals)
+        .set({ status: "RETURN_PENDING", returnRequestedAt: now, updatedAt: now })
+        .where(eq(rentals.id, id));
+      // The step is recorded in the same transaction as the status change, so the
+      // history can never claim a return was requested when the status says
+      // otherwise.
+      await recordRentalEvent(tx, id, "RETURN_REQUESTED", { requestedAt: now.toISOString() });
+
+      // The owner is the one who has to act on this — they confirm the return via
+      // `POST /rentals/:id/return`, and the deposit release depends on them doing it.
+      // The renter already knows they asked (they just did), so they are not told.
+      if (rental.ownerId !== rental.renterId) {
+        await notify(tx, {
+          userId: rental.ownerId,
+          type: "RENTAL_RETURN_REQUESTED",
+          title: "Return requested",
+          body: "The renter has asked to return an item. Confirm the return to release their deposit.",
+          context: { rentalId: id, orderId: rental.orderId, orderNumber: null },
+          eventKey: notificationEventKey("RENTAL_RETURN_REQUESTED", id, rental.ownerId),
+          link: "/dashboard/rentals",
+        });
+      }
+    });
+
+    return c.json(ok({ status: "RETURN_PENDING" as const, requestedAt: now }));
+  }),
+);
 
 /* --------------------------- extension request ----------------------------- */
 
@@ -1202,313 +1217,334 @@ const extensionRequestSchema = z
  * server-computed quote for the future approval step to honour. Claiming the
  * rental had been extended would be handing out free rental time.
  */
-rentalsRoute.post("/:id/extension-request", async (c) => {
-  const user = c.get("user")!;
-  const id = Number(c.req.param("id"));
-  const input = extensionRequestSchema.parse(await c.req.json());
+rentalsRoute.post(
+  "/:id/extension-request",
+  guarded("rentals.action", async (c) => {
+    const user = c.get("user")!;
+    const id = Number(c.req.param("id"));
+    const input = extensionRequestSchema.parse(await c.req.json());
 
-  // Ownership in the lookup, not as a check afterwards: a 403 would confirm the
-  // rental exists to someone probing ids.
-  const [rental] = await db
-    .select()
-    .from(rentals)
-    .where(and(eq(rentals.id, id), eq(rentals.renterId, user.id)))
-    .limit(1);
-  if (!rental) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
-  if (rental.status !== "ACTIVE" && rental.status !== "CONFIRMED") {
-    throw new HttpError(409, "EXTENSION_NOT_ALLOWED", "This rental can no longer be extended.");
-  }
+    // Ownership in the lookup, not as a check afterwards: a 403 would confirm the
+    // rental exists to someone probing ids.
+    const [rental] = await db
+      .select()
+      .from(rentals)
+      .where(and(eq(rentals.id, id), eq(rentals.renterId, user.id)))
+      .limit(1);
+    if (!rental) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
+    if (rental.status !== "ACTIVE" && rental.status !== "CONFIRMED") {
+      throw new HttpError(409, "EXTENSION_NOT_ALLOWED", "This rental can no longer be extended.");
+    }
 
-  const [product] = await db
-    .select()
-    .from(products)
-    .where(eq(products.id, rental.productId))
-    .limit(1);
-  if (!product) throw new HttpError(404, "NOT_FOUND", "Product not found.");
+    const [product] = await db
+      .select()
+      .from(products)
+      .where(eq(products.id, rental.productId))
+      .limit(1);
+    if (!product) throw new HttpError(404, "NOT_FOUND", "Product not found.");
 
-  const currentDays = rentalDays({ startDate: rental.startDate, endDate: rental.endDate });
-  const newDays = currentDays + input.additionalDays;
+    const currentDays = rentalDays({ startDate: rental.startDate, endDate: rental.endDate });
+    const newDays = currentDays + input.additionalDays;
 
-  // Maximum duration is a property of the listing, and the same rule the cart
-  // and order creation enforce.
-  if (product.maximumRentalDays && newDays > product.maximumRentalDays) {
-    throw new HttpError(
-      409,
-      "EXTENSION_TOO_LONG",
-      `This item can be rented for at most ${product.maximumRentalDays} days in total.`,
-    );
-  }
-
-  const newEndDate = addRentalDays(rental.endDate, input.additionalDays);
-
-  // The window being claimed must be free. `excludeRentalId` keeps the rental
-  // being extended from blocking itself.
-  try {
-    await assertRentalAvailability(rental.productId, 1, rental.startDate, newEndDate, rental.id);
-  } catch (error) {
-    if (error instanceof HttpError) {
+    // Maximum duration is a property of the listing, and the same rule the cart
+    // and order creation enforce.
+    if (product.maximumRentalDays && newDays > product.maximumRentalDays) {
       throw new HttpError(
         409,
-        "EXTENSION_UNAVAILABLE",
-        "This rental can no longer be extended because another booking begins after your current rental period.",
+        "EXTENSION_TOO_LONG",
+        `This item can be rented for at most ${product.maximumRentalDays} days in total.`,
       );
     }
-    throw error;
-  }
 
-  // The extra days are priced at the effective rate for the *new* total length,
-  // so a longer rental gets the week/month tier it now qualifies for — the same
-  // rule the cart uses, and always cheaper for the customer, never dearer.
-  const oldRate = effectiveDailyRate(product, currentDays);
-  const newRate = effectiveDailyRate(product, newDays);
-  const additionalCost = Math.max(0, newRate * newDays - oldRate * currentDays);
+    const newEndDate = addRentalDays(rental.endDate, input.additionalDays);
 
-  const now = new Date();
-  await db.transaction(async (tx) => {
-    await tx
-      .update(rentals)
-      .set({
-        extensionRequestedAt: now,
-        extensionRequestedDays: input.additionalDays,
-        updatedAt: now,
-      })
-      .where(eq(rentals.id, id));
-  });
-
-  return c.json(
-    ok({
-      requested: true,
-      additionalDays: input.additionalDays,
-      // Everything below is the server's arithmetic, returned for the approval
-      // step to use. None of it was taken from the request.
-      currentEndDate: rental.endDate,
-      proposedEndDate: newEndDate,
-      additionalCost,
-      currency: "INR",
-      status: rental.status,
-      requestedAt: now,
-    }),
-  );
-});
-
-rentalsRoute.post("/:id/return", async (c) => {
-  const user = c.get("user")!;
-  const id = Number(c.req.param("id"));
-  // Both parties to a rental may confirm a return, and both are in the
-  // predicate — so a rental belonging to neither is a 404, not a 403 that would
-  // confirm the id is real.
-  const [rental] = await db
-    .select()
-    .from(rentals)
-    .where(and(eq(rentals.id, id), or(eq(rentals.renterId, user.id), eq(rentals.ownerId, user.id))))
-    .limit(1);
-  if (!rental) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
-  // `RETURN_PENDING` is allowed so the lifecycle the customer starts in this
-  // feature (a return request) can be completed here. Additive only — no
-  // previously valid status was removed.
-  if (!["ACTIVE", "CONFIRMED", "RETURN_PENDING"].includes(rental.status)) {
-    throw new HttpError(400, "BAD_REQUEST", "This rental cannot be returned right now.");
-  }
-
-  const now = new Date();
-  await db.transaction(async (tx) => {
-    await tx
-      .update(rentals)
-      .set({ status: "RETURNED", actualReturnDate: now, updatedAt: now })
-      .where(eq(rentals.id, id));
-    await recordRentalEvent(tx, id, "RETURNED", { returnedAt: now.toISOString() });
-
-    // The item is back, so the rental has been earned. This is the *only* point at
-    // which a rental earning is recorded — never at booking, because a booking is a
-    // promise and crediting it means paying a seller for an item that never left the
-    // shelf. Recorded `PENDING`: the deposit release and the settlement delay both
-    // stand between this and the money being withdrawable.
-    await recordRentalEarning(tx, id);
-
-    // Both parties, because both have a reason to want to know: the renter is owed a
-    // deposit release and the owner has their item back. Keyed on the rental, so a
-    // double-submitted return confirms once.
-    const context = { rentalId: id };
-    await notify(tx, {
-      userId: rental.renterId,
-      type: "RENTAL_RETURNED",
-      title: "Return confirmed",
-      body: "Your rental has been returned. Your deposit release follows shortly.",
-      context,
-      eventKey: notificationEventKey("RENTAL_RETURNED", id, rental.renterId),
-    });
-    if (rental.ownerId !== rental.renterId) {
-      await notify(tx, {
-        userId: rental.ownerId,
-        type: "RENTAL_RETURNED",
-        title: "Your item has been returned",
-        body: "A rental of your item has been returned.",
-        context,
-        eventKey: notificationEventKey("RENTAL_RETURNED", id, rental.ownerId),
-        // Owner-side, so it opens the seller's rentals workspace.
-        link: "/dashboard/rentals",
-      });
+    // The window being claimed must be free. `excludeRentalId` keeps the rental
+    // being extended from blocking itself.
+    try {
+      await assertRentalAvailability(rental.productId, 1, rental.startDate, newEndDate, rental.id);
+    } catch (error) {
+      if (error instanceof HttpError) {
+        throw new HttpError(
+          409,
+          "EXTENSION_UNAVAILABLE",
+          "This rental can no longer be extended because another booking begins after your current rental period.",
+        );
+      }
+      throw error;
     }
-  });
-  return c.json(ok({ returned: true }));
-});
 
-rentalsRoute.post("/:id/cancel", async (c) => {
-  const user = c.get("user")!;
-  const id = Number(c.req.param("id"));
-  // Ownership in the predicate: a 403 would confirm the rental id is real.
-  const [rental] = await db
-    .select()
-    .from(rentals)
-    .where(and(eq(rentals.id, id), eq(rentals.renterId, user.id)))
-    .limit(1);
-  if (!rental) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
-  if (rental.status !== "CONFIRMED") {
-    throw new HttpError(400, "BAD_REQUEST", "Only upcoming rentals can be cancelled.");
-  }
+    // The extra days are priced at the effective rate for the *new* total length,
+    // so a longer rental gets the week/month tier it now qualifies for — the same
+    // rule the cart uses, and always cheaper for the customer, never dearer.
+    const oldRate = effectiveDailyRate(product, currentDays);
+    const newRate = effectiveDailyRate(product, newDays);
+    const additionalCost = Math.max(0, newRate * newDays - oldRate * currentDays);
 
-  const now = new Date();
-  await db.transaction(async (tx) => {
-    await tx.update(rentals).set({ status: "CANCELLED", updatedAt: now }).where(eq(rentals.id, id));
-    await recordRentalEvent(tx, id, "CANCELLED", { cancelledAt: now.toISOString() });
-
-    // Unwind the owner's earning for this booking. Only a `CONFIRMED` rental can be
-    // cancelled, and a rental is only ever earned at return, so there is normally
-    // nothing to unwind — the call finds nothing and returns. It is made anyway so
-    // that the invariant "a cancelled rental leaves no credit behind" holds without
-    // depending on the current cancellation rules continuing to be as strict.
-    await recordEarningReversal(tx, { rentalId: id }, "Rental cancelled by the renter");
-
-    await tx.insert(transactions).values({
-      userId: rental.renterId,
-      orderId: rental.orderId,
-      type: "REFUND",
-      amount: rental.total,
-      status: "SUCCEEDED",
-      provider: "mock",
-      providerTransactionId: `refund_${Date.now()}`,
+    const now = new Date();
+    await db.transaction(async (tx) => {
+      await tx
+        .update(rentals)
+        .set({
+          extensionRequestedAt: now,
+          extensionRequestedDays: input.additionalDays,
+          updatedAt: now,
+        })
+        .where(eq(rentals.id, id));
     });
-    // Both parties: the renter paid and needs the refund confirmed, the owner needs to
-    // know the booking is gone and the item is free again. Keyed on the rental so a
-    // double-submitted cancellation speaks once.
-    const context = { rentalId: id, orderId: rental.orderId, orderNumber: null };
-    await notify(tx, {
-      userId: rental.renterId,
-      type: "RENTAL_CANCELLED",
-      title: "Rental cancelled",
-      body: "Your rental was cancelled and your refund has been issued.",
-      context,
-      eventKey: notificationEventKey("RENTAL_CANCELLED", id, rental.renterId),
-    });
-    await notify(tx, {
-      userId: rental.renterId,
-      type: "REFUND_PROCESSED",
-      title: "Refund processed",
-      body: "The refund for your cancelled rental is on its way to your original payment method.",
-      context,
-      // The refund transaction is written unconditionally above, so this must not
-      // collapse into the RENTAL_CANCELLED key — the discriminator keeps them distinct.
-      eventKey: notificationEventKey("RENTAL_CANCELLED", id, `refund:${rental.renterId}`),
-    });
-    if (rental.ownerId !== rental.renterId) {
+
+    return c.json(
+      ok({
+        requested: true,
+        additionalDays: input.additionalDays,
+        // Everything below is the server's arithmetic, returned for the approval
+        // step to use. None of it was taken from the request.
+        currentEndDate: rental.endDate,
+        proposedEndDate: newEndDate,
+        additionalCost,
+        currency: "INR",
+        status: rental.status,
+        requestedAt: now,
+      }),
+    );
+  }),
+);
+
+rentalsRoute.post(
+  "/:id/return",
+  guarded("rentals.action", async (c) => {
+    const user = c.get("user")!;
+    const id = Number(c.req.param("id"));
+    // Both parties to a rental may confirm a return, and both are in the
+    // predicate — so a rental belonging to neither is a 404, not a 403 that would
+    // confirm the id is real.
+    const [rental] = await db
+      .select()
+      .from(rentals)
+      .where(
+        and(eq(rentals.id, id), or(eq(rentals.renterId, user.id), eq(rentals.ownerId, user.id))),
+      )
+      .limit(1);
+    if (!rental) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
+    // `RETURN_PENDING` is allowed so the lifecycle the customer starts in this
+    // feature (a return request) can be completed here. Additive only — no
+    // previously valid status was removed.
+    if (!["ACTIVE", "CONFIRMED", "RETURN_PENDING"].includes(rental.status)) {
+      throw new HttpError(400, "BAD_REQUEST", "This rental cannot be returned right now.");
+    }
+
+    const now = new Date();
+    await db.transaction(async (tx) => {
+      await tx
+        .update(rentals)
+        .set({ status: "RETURNED", actualReturnDate: now, updatedAt: now })
+        .where(eq(rentals.id, id));
+      await recordRentalEvent(tx, id, "RETURNED", { returnedAt: now.toISOString() });
+
+      // The item is back, so the rental has been earned. This is the *only* point at
+      // which a rental earning is recorded — never at booking, because a booking is a
+      // promise and crediting it means paying a seller for an item that never left the
+      // shelf. Recorded `PENDING`: the deposit release and the settlement delay both
+      // stand between this and the money being withdrawable.
+      await recordRentalEarning(tx, id);
+
+      // Both parties, because both have a reason to want to know: the renter is owed a
+      // deposit release and the owner has their item back. Keyed on the rental, so a
+      // double-submitted return confirms once.
+      const context = { rentalId: id };
       await notify(tx, {
-        userId: rental.ownerId,
+        userId: rental.renterId,
+        type: "RENTAL_RETURNED",
+        title: "Return confirmed",
+        body: "Your rental has been returned. Your deposit release follows shortly.",
+        context,
+        eventKey: notificationEventKey("RENTAL_RETURNED", id, rental.renterId),
+      });
+      if (rental.ownerId !== rental.renterId) {
+        await notify(tx, {
+          userId: rental.ownerId,
+          type: "RENTAL_RETURNED",
+          title: "Your item has been returned",
+          body: "A rental of your item has been returned.",
+          context,
+          eventKey: notificationEventKey("RENTAL_RETURNED", id, rental.ownerId),
+          // Owner-side, so it opens the seller's rentals workspace.
+          link: "/dashboard/rentals",
+        });
+      }
+    });
+    return c.json(ok({ returned: true }));
+  }),
+);
+
+rentalsRoute.post(
+  "/:id/cancel",
+  guarded("rentals.action", async (c) => {
+    const user = c.get("user")!;
+    const id = Number(c.req.param("id"));
+    // Ownership in the predicate: a 403 would confirm the rental id is real.
+    const [rental] = await db
+      .select()
+      .from(rentals)
+      .where(and(eq(rentals.id, id), eq(rentals.renterId, user.id)))
+      .limit(1);
+    if (!rental) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
+    if (rental.status !== "CONFIRMED") {
+      throw new HttpError(400, "BAD_REQUEST", "Only upcoming rentals can be cancelled.");
+    }
+
+    const now = new Date();
+    await db.transaction(async (tx) => {
+      await tx
+        .update(rentals)
+        .set({ status: "CANCELLED", updatedAt: now })
+        .where(eq(rentals.id, id));
+      await recordRentalEvent(tx, id, "CANCELLED", { cancelledAt: now.toISOString() });
+
+      // Unwind the owner's earning for this booking. Only a `CONFIRMED` rental can be
+      // cancelled, and a rental is only ever earned at return, so there is normally
+      // nothing to unwind — the call finds nothing and returns. It is made anyway so
+      // that the invariant "a cancelled rental leaves no credit behind" holds without
+      // depending on the current cancellation rules continuing to be as strict.
+      await recordEarningReversal(tx, { rentalId: id }, "Rental cancelled by the renter");
+
+      await tx.insert(transactions).values({
+        userId: rental.renterId,
+        orderId: rental.orderId,
+        type: "REFUND",
+        amount: rental.total,
+        status: "SUCCEEDED",
+        provider: "mock",
+        providerTransactionId: `refund_${Date.now()}`,
+      });
+      // Both parties: the renter paid and needs the refund confirmed, the owner needs to
+      // know the booking is gone and the item is free again. Keyed on the rental so a
+      // double-submitted cancellation speaks once.
+      const context = { rentalId: id, orderId: rental.orderId, orderNumber: null };
+      await notify(tx, {
+        userId: rental.renterId,
         type: "RENTAL_CANCELLED",
         title: "Rental cancelled",
-        body: "A rental of your item was cancelled.",
+        body: "Your rental was cancelled and your refund has been issued.",
         context,
-        eventKey: notificationEventKey("RENTAL_CANCELLED", id, rental.ownerId),
-        link: "/dashboard/rentals",
+        eventKey: notificationEventKey("RENTAL_CANCELLED", id, rental.renterId),
       });
-    }
-  });
-  return c.json(ok({ cancelled: true }));
-});
+      await notify(tx, {
+        userId: rental.renterId,
+        type: "REFUND_PROCESSED",
+        title: "Refund processed",
+        body: "The refund for your cancelled rental is on its way to your original payment method.",
+        context,
+        // The refund transaction is written unconditionally above, so this must not
+        // collapse into the RENTAL_CANCELLED key — the discriminator keeps them distinct.
+        eventKey: notificationEventKey("RENTAL_CANCELLED", id, `refund:${rental.renterId}`),
+      });
+      if (rental.ownerId !== rental.renterId) {
+        await notify(tx, {
+          userId: rental.ownerId,
+          type: "RENTAL_CANCELLED",
+          title: "Rental cancelled",
+          body: "A rental of your item was cancelled.",
+          context,
+          eventKey: notificationEventKey("RENTAL_CANCELLED", id, rental.ownerId),
+          link: "/dashboard/rentals",
+        });
+      }
+    });
+    return c.json(ok({ cancelled: true }));
+  }),
+);
 
 /* ------------------------------ buy-after-rent ----------------------------- */
 
-rentalsRoute.post("/:id/buy", async (c) => {
-  const user = c.get("user")!;
-  const id = Number(c.req.param("id"));
-  const [rental] = await db.select().from(rentals).where(eq(rentals.id, id)).limit(1);
-  if (!rental) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
-  if (rental.renterId !== user.id) {
-    throw new HttpError(403, "FORBIDDEN", "Only the renter can use rent-to-own.");
-  }
+rentalsRoute.post(
+  "/:id/buy",
+  guarded("rentals.action", async (c) => {
+    const user = c.get("user")!;
+    const id = Number(c.req.param("id"));
+    // Ownership is in the predicate, like every other rental action: another user's
+    // rental is the same 404 as one that does not exist. A 403 here confirmed the id
+    // was real, which is what an IDOR probe is looking for.
+    const [rental] = await db
+      .select()
+      .from(rentals)
+      .where(and(eq(rentals.id, id), eq(rentals.renterId, user.id)))
+      .limit(1);
+    if (!rental) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
 
-  const [product] = await db
-    .select()
-    .from(products)
-    .where(eq(products.id, rental.productId))
-    .limit(1);
-  if (!product || !product.rentToOwnEnabled || !product.purchasePrice) {
-    throw new HttpError(400, "RENT_TO_OWN_UNAVAILABLE", "This item doesn't support rent-to-own.");
-  }
-  if (product.availableQuantity < 1) {
-    throw new HttpError(409, "UNAVAILABLE", "This item is no longer available to buy.");
-  }
+    const [product] = await db
+      .select()
+      .from(products)
+      .where(eq(products.id, rental.productId))
+      .limit(1);
+    if (!product || !product.rentToOwnEnabled || !product.purchasePrice) {
+      throw new HttpError(400, "RENT_TO_OWN_UNAVAILABLE", "This item doesn't support rent-to-own.");
+    }
+    if (product.availableQuantity < 1) {
+      throw new HttpError(409, "UNAVAILABLE", "This item is no longer available to buy.");
+    }
 
-  // Credit = eligible rental payments × configured % capped at configured cap
-  const creditPercentage = product.rentCreditPercentage ?? 0;
-  const creditCap = product.rentCreditCap ?? product.purchasePrice;
-  const eligiblePayments = rental.rentalSubtotal;
-  const credit = Math.min(
-    Math.round((eligiblePayments * creditPercentage) / 100),
-    creditCap,
-    product.purchasePrice,
-  );
+    // Credit = eligible rental payments × configured % capped at configured cap
+    const creditPercentage = product.rentCreditPercentage ?? 0;
+    const creditCap = product.rentCreditCap ?? product.purchasePrice;
+    const eligiblePayments = rental.rentalSubtotal;
+    const credit = Math.min(
+      Math.round((eligiblePayments * creditPercentage) / 100),
+      creditCap,
+      product.purchasePrice,
+    );
 
-  const result = await db.transaction(async (tx) => {
-    const [order] = await tx
-      .insert(orders)
-      .values({
+    const result = await db.transaction(async (tx) => {
+      const [order] = await tx
+        .insert(orders)
+        .values({
+          userId: user.id,
+          orderType: "PURCHASE",
+          status: "PAID",
+          subtotal: product.purchasePrice!,
+          deliveryFee: 0,
+          depositTotal: 0,
+          total: product.purchasePrice! - credit,
+          deliveryMethod: "PICKUP",
+          paymentProvider: "mock",
+          paymentReference: `rto_${Date.now()}`,
+        })
+        .$returningId();
+      const orderId = Number(order.id);
+
+      await tx.insert(orderItems).values({
+        orderId: orderId,
+        productId: product.id,
+        sellerId: product.sellerId,
+        mode: "BUY",
+        quantity: 1,
+        unitPrice: product.purchasePrice!,
+        lineTotal: product.purchasePrice!,
+        titleSnapshot: product.title,
+        rentCreditApplied: credit,
+      });
+
+      await tx.update(rentals).set({ rentCreditApplied: credit }).where(eq(rentals.id, id));
+
+      // Goes through the shared stock helper rather than an inline decrement: this
+      // path used to write `'SOLD'`, which is not a member of `PRODUCT_STATUSES`.
+      // Since every public query opts rows *in* via `PUBLIC_PRODUCT_STATUSES`, a
+      // listing bought down to its last unit silently vanished from Browse, from
+      // the category pages and from search.
+      await adjustProductInventory(tx, product.id, -1);
+
+      await tx.insert(transactions).values({
         userId: user.id,
-        orderType: "PURCHASE",
-        status: "PAID",
-        subtotal: product.purchasePrice!,
-        deliveryFee: 0,
-        depositTotal: 0,
-        total: product.purchasePrice! - credit,
-        deliveryMethod: "PICKUP",
-        paymentProvider: "mock",
-        paymentReference: `rto_${Date.now()}`,
-      })
-      .$returningId();
-    const orderId = Number(order.id);
+        orderId: orderId,
+        type: "PAYMENT",
+        amount: product.purchasePrice! - credit,
+        status: "SUCCEEDED",
+        provider: "mock",
+        providerTransactionId: `rto_${Date.now()}`,
+      });
 
-    await tx.insert(orderItems).values({
-      orderId: orderId,
-      productId: product.id,
-      sellerId: product.sellerId,
-      mode: "BUY",
-      quantity: 1,
-      unitPrice: product.purchasePrice!,
-      lineTotal: product.purchasePrice!,
-      titleSnapshot: product.title,
-      rentCreditApplied: credit,
+      return { orderId, credit };
     });
 
-    await tx.update(rentals).set({ rentCreditApplied: credit }).where(eq(rentals.id, id));
-
-    // Goes through the shared stock helper rather than an inline decrement: this
-    // path used to write `'SOLD'`, which is not a member of `PRODUCT_STATUSES`.
-    // Since every public query opts rows *in* via `PUBLIC_PRODUCT_STATUSES`, a
-    // listing bought down to its last unit silently vanished from Browse, from
-    // the category pages and from search.
-    await adjustProductInventory(tx, product.id, -1);
-
-    await tx.insert(transactions).values({
-      userId: user.id,
-      orderId: orderId,
-      type: "PAYMENT",
-      amount: product.purchasePrice! - credit,
-      status: "SUCCEEDED",
-      provider: "mock",
-      providerTransactionId: `rto_${Date.now()}`,
-    });
-
-    return { orderId, credit };
-  });
-
-  return c.json(ok({ orderId: result.orderId, credit: result.credit }), 201);
-});
+    return c.json(ok({ orderId: result.orderId, credit: result.credit }), 201);
+  }),
+);

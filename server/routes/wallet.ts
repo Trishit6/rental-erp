@@ -1,6 +1,7 @@
 import { Router } from "../lib/http";
 import { z } from "zod";
 import { buildPagination, ok } from "../lib/api";
+import { guarded } from "../lib/rate-limit";
 import { requireSeller } from "../lib/seller-access";
 import {
   deletePayoutMethod,
@@ -191,23 +192,26 @@ const payoutRequestSchema = z
   })
   .strict();
 
-walletRoute.post("/payouts", async (c) => {
-  const user = requireSeller(c);
-  const input = payoutRequestSchema.parse(await c.req.json().catch(() => ({})));
+walletRoute.post(
+  "/payouts",
+  guarded("wallet.payout", async (c) => {
+    const user = requireSeller(c);
+    const input = payoutRequestSchema.parse(await c.req.json().catch(() => ({})));
 
-  const result = await requestPayout({
-    sellerId: user.id,
-    amountPaise: input.amount,
-    methodId: input.methodId,
-    note: input.note ?? null,
-    idempotencyKey: input.idempotencyKey ?? null,
-  });
+    const result = await requestPayout({
+      sellerId: user.id,
+      amountPaise: input.amount,
+      methodId: input.methodId,
+      note: input.note ?? null,
+      idempotencyKey: input.idempotencyKey ?? null,
+    });
 
-  // A repeat request is a `200` carrying the existing payout, not a second `201`:
-  // the client can tell the two apart on `created` and should not re-run its
-  // confirmation.
-  return c.json(ok(result), result.created ? 201 : 200);
-});
+    // A repeat request is a `200` carrying the existing payout, not a second `201`:
+    // the client can tell the two apart on `created` and should not re-run its
+    // confirmation.
+    return c.json(ok(result), result.created ? 201 : 200);
+  }),
+);
 
 /* ------------------------------ payout methods ----------------------------- */
 
@@ -234,15 +238,21 @@ walletRoute.get("/methods", async (c) => {
   return c.json(ok(await listPayoutMethods(user.id)));
 });
 
-walletRoute.post("/methods", async (c) => {
-  const user = requireSeller(c);
-  const input = payoutMethodSchema.parse(await c.req.json().catch(() => ({})));
-  const created = await savePayoutMethod(user.id, input);
-  return c.json(ok(created), 201);
-});
+walletRoute.post(
+  "/methods",
+  guarded("wallet.methods", async (c) => {
+    const user = requireSeller(c);
+    const input = payoutMethodSchema.parse(await c.req.json().catch(() => ({})));
+    const created = await savePayoutMethod(user.id, input);
+    return c.json(ok(created), 201);
+  }),
+);
 
-walletRoute.delete("/methods/:id{[0-9]+}", async (c) => {
-  const user = requireSeller(c);
-  await deletePayoutMethod(user.id, Number(c.req.param("id")));
-  return c.json(ok({ deleted: true }));
-});
+walletRoute.delete(
+  "/methods/:id{[0-9]+}",
+  guarded("wallet.methods", async (c) => {
+    const user = requireSeller(c);
+    await deletePayoutMethod(user.id, Number(c.req.param("id")));
+    return c.json(ok({ deleted: true }));
+  }),
+);

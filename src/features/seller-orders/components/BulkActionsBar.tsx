@@ -38,7 +38,7 @@ export function BulkActionsBar({
     return (
       <div
         role="status"
-        className="fixed inset-x-0 bottom-4 z-40 mx-auto flex w-[min(92vw,40rem)] flex-wrap items-center justify-between gap-3 rounded-2xl bg-[var(--color-foreground)] px-5 py-3 text-primary-foreground shadow-xl"
+        className="fixed inset-x-0 bottom-4 z-40 mx-auto flex w-[min(92vw,40rem)] flex-wrap items-center justify-between gap-3 rounded-2xl bg-[var(--color-foreground)] px-5 py-3 text-primary-foreground elev-floating"
       >
         <p className="text-sm font-semibold">
           Marking {pending.references.length} {pending.references.length === 1 ? "order" : "orders"}{" "}
@@ -58,7 +58,7 @@ export function BulkActionsBar({
   return (
     <div
       role="status"
-      className="fixed inset-x-0 bottom-4 z-40 mx-auto flex w-[min(92vw,40rem)] flex-wrap items-center justify-between gap-3 rounded-2xl bg-[var(--color-foreground)] px-5 py-3 text-primary-foreground shadow-xl"
+      className="fixed inset-x-0 bottom-4 z-40 mx-auto flex w-[min(92vw,40rem)] flex-wrap items-center justify-between gap-3 rounded-2xl bg-[var(--color-foreground)] px-5 py-3 text-primary-foreground elev-floating"
     >
       <p className="text-sm font-semibold">
         {selectedCount} {selectedCount === 1 ? "order" : "orders"} selected

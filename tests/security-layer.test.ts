@@ -17,6 +17,7 @@ import {
   logger,
   mayLogBody,
   redact,
+  redactError,
   redactHeaders,
   redactString,
   redactUrl,
@@ -495,5 +496,46 @@ describe("the logger never writes a secret", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+
+  it("redacts the credential in a connection string but keeps the account and host", () => {
+    // A `DATABASE_URL` is the one string that is *both* a secret and a value a
+    // driver quotes back in its own error text. The password goes; the account and
+    // host stay, because "revaro_app failed against db.internal" is the diagnostic.
+    const line = redactString("connect failed: mysql://revaro_app:sup3r-secret@db.internal/reloop");
+    expect(line).toContain("mysql://revaro_app:[redacted]@db.internal/reloop");
+    expect(line).not.toContain("sup3r-secret");
+    // A URL with no userinfo is not touched.
+    expect(redactString("https://cdn.example.com/img.png")).toBe("https://cdn.example.com/img.png");
+  });
+
+  it("reduces a thrown error to a redacted name, message and enum code", () => {
+    // The whole reason `redactError` exists rather than `logger.error(msg, error)`:
+    // the message can quote a connection string or a reset token, and the stack can
+    // name a file and a line nobody outside the process should read.
+    const error = new Error(
+      "connect failed for mysql://revaro_app:sup3r-secret@db.internal:3306/reloop — " +
+        "token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc123",
+    );
+    (error as Error & { code?: string }).code = "ER_ACCESS_DENIED_ERROR";
+
+    const redacted = redactError(error);
+
+    expect(redacted.name).toBe("Error");
+    expect(redacted.code).toBe("ER_ACCESS_DENIED_ERROR");
+    expect(redacted.message).toContain("mysql://revaro_app:[redacted]@db.internal");
+    expect(redacted.message).toContain("[redacted-jwt]");
+    expect(JSON.stringify(redacted)).not.toMatch(/sup3r-secret|eyJhbGci/);
+  });
+
+  it("drops the stack and stringifies a non-error, still redacting it", () => {
+    expect(redactError({ stack: "at secret.ts:1" })).toEqual({
+      name: "Error",
+      message: "[object Object]",
+    });
+    expect(redactError("boom Bearer abc.def.ghi")).toEqual({
+      name: "Error",
+      message: "boom Bearer [redacted]",
+    });
   });
 });

@@ -36,6 +36,7 @@ import { allowedImageHosts } from "../lib/storage";
 import { requireAdmin, requireUser } from "../lib/auth";
 import { notificationEventKey } from "../lib/notification-events";
 import { notify } from "../lib/notifications";
+import { guarded } from "../lib/rate-limit";
 
 /**
  * Product reviews and ratings.
@@ -362,110 +363,113 @@ async function loadViewerEligibility(viewerId: number, productId: number) {
  * tabs submitting the same line at once race the pre-check, and the loser gets a
  * `409` translated into the same "already reviewed" message.
  */
-reviewsRoute.post("/", async (c) => {
-  const user = requireUser(c);
-  const input = reviewCreateSchema.parse(await c.req.json().catch(() => ({})));
-  assertReviewImages(input.images);
+reviewsRoute.post(
+  "/",
+  guarded("reviews.write", async (c) => {
+    const user = requireUser(c);
+    const input = reviewCreateSchema.parse(await c.req.json().catch(() => ({})));
+    assertReviewImages(input.images);
 
-  // Ownership in the lookup predicate — see the module comment on 404 vs 403.
-  const [line] = await db
-    .select({
-      orderItemId: orderItems.id,
-      orderId: orderItems.orderId,
-      productId: orderItems.productId,
-      sellerId: orderItems.sellerId,
-      mode: orderItems.mode,
-      titleSnapshot: orderItems.titleSnapshot,
-      orderStatus: orders.status,
-      rentalId: rentals.id,
-      rentalStatus: rentals.status,
-      productSlug: products.slug,
-      productTitle: products.title,
-    })
-    .from(orderItems)
-    .innerJoin(orders, eq(orderItems.orderId, orders.id))
-    .innerJoin(products, eq(orderItems.productId, products.id))
-    .leftJoin(rentals, eq(rentals.orderItemId, orderItems.id))
-    .where(and(eq(orderItems.id, input.orderItemId), eq(orders.userId, user.id)))
-    .limit(1);
-
-  if (!line) throw new HttpError(404, "NOT_FOUND", "That order line was not found.");
-
-  const purchaseType = purchaseTypeForLine({ mode: line.mode, rentalId: line.rentalId });
-  const [existing] = await db
-    .select({ id: reviews.id })
-    .from(reviews)
-    .where(eq(reviews.orderItemId, line.orderItemId))
-    .limit(1);
-  if (existing) {
-    throw new HttpError(409, "ALREADY_REVIEWED", "You've already reviewed this item.");
-  }
-
-  const check = checkReviewEligibility({
-    purchaseType,
-    orderStatus: line.orderStatus,
-    rentalStatus: line.rentalStatus,
-    alreadyReviewed: false,
-  });
-  if (!check.eligible) throw new HttpError(409, check.code, check.message);
-
-  try {
-    // `$returningId()` because a MariaDB insert returns no rows, so the id has to
-    // come back explicitly before the re-select below.
-    const [inserted] = await db
-      .insert(reviews)
-      .values({
-        userId: user.id,
-        productId: line.productId,
-        sellerId: line.sellerId,
-        orderId: line.orderId,
-        orderItemId: line.orderItemId,
-        rentalId: line.rentalId,
-        purchaseType,
-        rating: input.rating,
-        title: input.title ?? null,
-        comment: input.comment,
-        // Verified *because* the order above resolved to this user — the flag is
-        // the server's conclusion, not a parameter.
-        isVerifiedPurchase: true,
-        images: input.images.length ? JSON.stringify(input.images) : null,
+    // Ownership in the lookup predicate — see the module comment on 404 vs 403.
+    const [line] = await db
+      .select({
+        orderItemId: orderItems.id,
+        orderId: orderItems.orderId,
+        productId: orderItems.productId,
+        sellerId: orderItems.sellerId,
+        mode: orderItems.mode,
+        titleSnapshot: orderItems.titleSnapshot,
+        orderStatus: orders.status,
+        rentalId: rentals.id,
+        rentalStatus: rentals.status,
+        productSlug: products.slug,
+        productTitle: products.title,
       })
-      .$returningId();
+      .from(orderItems)
+      .innerJoin(orders, eq(orderItems.orderId, orders.id))
+      .innerJoin(products, eq(orderItems.productId, products.id))
+      .leftJoin(rentals, eq(rentals.orderItemId, orderItems.id))
+      .where(and(eq(orderItems.id, input.orderItemId), eq(orders.userId, user.id)))
+      .limit(1);
 
-    const reviewId = Number(inserted.id);
-    await refreshProductRating(line.productId);
-    // Keyed on the review, which the unique index on `order_items`-scoped reviews
-    // guarantees is one-per-purchase — so a retried submission cannot tell the seller
-    // twice about the same words.
-    await notify(db, {
-      userId: line.sellerId,
-      type: "REVIEW_RECEIVED",
-      title: "New review received",
-      body: `${user.name} left a ${input.rating}-star ${purchaseType === "RENTAL" ? "rental" : "purchase"} review of ${line.productTitle}.`,
-      context: {
-        productId: line.productId,
-        productSlug: line.productSlug,
-        orderId: line.orderId,
-        rentalId: line.rentalId,
-        orderNumber: null,
-      },
-      eventKey: notificationEventKey("REVIEW_RECEIVED", reviewId),
-      // Seller-side destination: the seller's own reviews workspace, not the public
-      // product page the customer's review renders on.
-      link: "/dashboard/reviews",
-    });
+    if (!line) throw new HttpError(404, "NOT_FOUND", "That order line was not found.");
 
-    const created = await loadReviewRow(reviewId, user.id);
-    return c.json(ok(created ? toReviewPayload(created) : null), 201);
-  } catch (error) {
-    // The unique index won the race between two tabs. Report the same thing the
-    // pre-check would have, so the client has one message to handle.
-    if (error instanceof Error && error.message.includes("Duplicate entry")) {
+    const purchaseType = purchaseTypeForLine({ mode: line.mode, rentalId: line.rentalId });
+    const [existing] = await db
+      .select({ id: reviews.id })
+      .from(reviews)
+      .where(eq(reviews.orderItemId, line.orderItemId))
+      .limit(1);
+    if (existing) {
       throw new HttpError(409, "ALREADY_REVIEWED", "You've already reviewed this item.");
     }
-    throw error;
-  }
-});
+
+    const check = checkReviewEligibility({
+      purchaseType,
+      orderStatus: line.orderStatus,
+      rentalStatus: line.rentalStatus,
+      alreadyReviewed: false,
+    });
+    if (!check.eligible) throw new HttpError(409, check.code, check.message);
+
+    try {
+      // `$returningId()` because a MariaDB insert returns no rows, so the id has to
+      // come back explicitly before the re-select below.
+      const [inserted] = await db
+        .insert(reviews)
+        .values({
+          userId: user.id,
+          productId: line.productId,
+          sellerId: line.sellerId,
+          orderId: line.orderId,
+          orderItemId: line.orderItemId,
+          rentalId: line.rentalId,
+          purchaseType,
+          rating: input.rating,
+          title: input.title ?? null,
+          comment: input.comment,
+          // Verified *because* the order above resolved to this user — the flag is
+          // the server's conclusion, not a parameter.
+          isVerifiedPurchase: true,
+          images: input.images.length ? JSON.stringify(input.images) : null,
+        })
+        .$returningId();
+
+      const reviewId = Number(inserted.id);
+      await refreshProductRating(line.productId);
+      // Keyed on the review, which the unique index on `order_items`-scoped reviews
+      // guarantees is one-per-purchase — so a retried submission cannot tell the seller
+      // twice about the same words.
+      await notify(db, {
+        userId: line.sellerId,
+        type: "REVIEW_RECEIVED",
+        title: "New review received",
+        body: `${user.name} left a ${input.rating}-star ${purchaseType === "RENTAL" ? "rental" : "purchase"} review of ${line.productTitle}.`,
+        context: {
+          productId: line.productId,
+          productSlug: line.productSlug,
+          orderId: line.orderId,
+          rentalId: line.rentalId,
+          orderNumber: null,
+        },
+        eventKey: notificationEventKey("REVIEW_RECEIVED", reviewId),
+        // Seller-side destination: the seller's own reviews workspace, not the public
+        // product page the customer's review renders on.
+        link: "/dashboard/reviews",
+      });
+
+      const created = await loadReviewRow(reviewId, user.id);
+      return c.json(ok(created ? toReviewPayload(created) : null), 201);
+    } catch (error) {
+      // The unique index won the race between two tabs. Report the same thing the
+      // pre-check would have, so the client has one message to handle.
+      if (error instanceof Error && error.message.includes("Duplicate entry")) {
+        throw new HttpError(409, "ALREADY_REVIEWED", "You've already reviewed this item.");
+      }
+      throw error;
+    }
+  }),
+);
 
 /* ---------------------------------- read ----------------------------------- */
 
@@ -507,44 +511,47 @@ reviewsRoute.get("/:id{[0-9]+}", async (c) => {
  * server. Editing never re-verifies: the order that proved the review is still
  * the same one, so `isVerifiedPurchase` is deliberately left alone.
  */
-reviewsRoute.patch("/:id{[0-9]+}", async (c) => {
-  const user = requireUser(c);
-  const reviewId = parseReviewId(c.req.param("id"));
-  const input = reviewUpdateSchema.parse(await c.req.json().catch(() => ({})));
-  assertReviewImages(input.images);
+reviewsRoute.patch(
+  "/:id{[0-9]+}",
+  guarded("reviews.write", async (c) => {
+    const user = requireUser(c);
+    const reviewId = parseReviewId(c.req.param("id"));
+    const input = reviewUpdateSchema.parse(await c.req.json().catch(() => ({})));
+    assertReviewImages(input.images);
 
-  const [existing] = await db
-    .select({
-      id: reviews.id,
-      userId: reviews.userId,
-      productId: reviews.productId,
-      images: reviews.images,
-    })
-    .from(reviews)
-    .where(and(eq(reviews.id, reviewId), eq(reviews.userId, user.id)))
-    .limit(1);
+    const [existing] = await db
+      .select({
+        id: reviews.id,
+        userId: reviews.userId,
+        productId: reviews.productId,
+        images: reviews.images,
+      })
+      .from(reviews)
+      .where(and(eq(reviews.id, reviewId), eq(reviews.userId, user.id)))
+      .limit(1);
 
-  // Another user's review is a 404: confirming it exists would leak its id space.
-  if (!existing) throw new HttpError(404, "NOT_FOUND", "Review not found.");
+    // Another user's review is a 404: confirming it exists would leak its id space.
+    if (!existing) throw new HttpError(404, "NOT_FOUND", "Review not found.");
 
-  await db
-    .update(reviews)
-    .set({
-      rating: input.rating,
-      title: input.title ?? null,
-      comment: input.comment,
-      images: input.images.length ? JSON.stringify(input.images) : null,
-      isEdited: true,
-      updatedAt: new Date(),
-    })
-    .where(eq(reviews.id, reviewId));
+    await db
+      .update(reviews)
+      .set({
+        rating: input.rating,
+        title: input.title ?? null,
+        comment: input.comment,
+        images: input.images.length ? JSON.stringify(input.images) : null,
+        isEdited: true,
+        updatedAt: new Date(),
+      })
+      .where(eq(reviews.id, reviewId));
 
-  // Only the rating affects the aggregate, but recomputing is exact and cheap.
-  await refreshProductRating(existing.productId);
+    // Only the rating affects the aggregate, but recomputing is exact and cheap.
+    await refreshProductRating(existing.productId);
 
-  const row = await loadReviewRow(reviewId, user.id);
-  return c.json(ok(row ? toReviewPayload(row) : null));
-});
+    const row = await loadReviewRow(reviewId, user.id);
+    return c.json(ok(row ? toReviewPayload(row) : null));
+  }),
+);
 
 /* --------------------------------- delete ---------------------------------- */
 
@@ -555,22 +562,25 @@ reviewsRoute.patch("/:id{[0-9]+}", async (c) => {
  * deleting the review frees the line, so "delete" is a genuine reversal rather
  * than a permanently spent opportunity.
  */
-reviewsRoute.delete("/:id{[0-9]+}", async (c) => {
-  const user = requireUser(c);
-  const reviewId = parseReviewId(c.req.param("id"));
+reviewsRoute.delete(
+  "/:id{[0-9]+}",
+  guarded("reviews.write", async (c) => {
+    const user = requireUser(c);
+    const reviewId = parseReviewId(c.req.param("id"));
 
-  const [existing] = await db
-    .select({ id: reviews.id, productId: reviews.productId })
-    .from(reviews)
-    .where(and(eq(reviews.id, reviewId), eq(reviews.userId, user.id)))
-    .limit(1);
-  if (!existing) throw new HttpError(404, "NOT_FOUND", "Review not found.");
+    const [existing] = await db
+      .select({ id: reviews.id, productId: reviews.productId })
+      .from(reviews)
+      .where(and(eq(reviews.id, reviewId), eq(reviews.userId, user.id)))
+      .limit(1);
+    if (!existing) throw new HttpError(404, "NOT_FOUND", "Review not found.");
 
-  await db.delete(reviews).where(eq(reviews.id, reviewId));
-  await refreshProductRating(existing.productId);
+    await db.delete(reviews).where(eq(reviews.id, reviewId));
+    await refreshProductRating(existing.productId);
 
-  return c.json(ok({ deleted: true, reviewId }));
-});
+    return c.json(ok({ deleted: true, reviewId }));
+  }),
+);
 
 /* -------------------------------- helpful ---------------------------------- */
 
@@ -585,74 +595,79 @@ reviewsRoute.delete("/:id{[0-9]+}", async (c) => {
  * Voting on your own review is refused — not because it is exploitable (the
  * unique key already stops repeats) but because a self-vote is not information.
  */
-reviewsRoute.post("/:id{[0-9]+}/helpful", async (c) => {
-  const user = requireUser(c);
-  const reviewId = parseReviewId(c.req.param("id"));
+reviewsRoute.post(
+  "/:id{[0-9]+}/helpful",
+  guarded("reviews.helpful", async (c) => {
+    const user = requireUser(c);
+    const reviewId = parseReviewId(c.req.param("id"));
 
-  const [row] = await db
-    .select({
-      id: reviews.id,
-      userId: reviews.userId,
-      productId: reviews.productId,
-      status: reviews.status,
-    })
-    .from(reviews)
-    .where(eq(reviews.id, reviewId))
-    .limit(1);
-  if (!row || row.status !== "PUBLISHED")
-    throw new HttpError(404, "NOT_FOUND", "Review not found.");
-  if (row.userId === user.id) {
-    throw new HttpError(409, "SELF_REVIEW_VOTE", "You can't mark your own review as helpful.");
-  }
-
-  const result = await db.transaction(async (tx) => {
-    const [existing] = await tx
-      .select({ reviewId: reviewHelpfulVotes.reviewId })
-      .from(reviewHelpfulVotes)
-      .where(and(eq(reviewHelpfulVotes.reviewId, reviewId), eq(reviewHelpfulVotes.userId, user.id)))
+    const [row] = await db
+      .select({
+        id: reviews.id,
+        userId: reviews.userId,
+        productId: reviews.productId,
+        status: reviews.status,
+      })
+      .from(reviews)
+      .where(eq(reviews.id, reviewId))
       .limit(1);
+    if (!row || row.status !== "PUBLISHED")
+      throw new HttpError(404, "NOT_FOUND", "Review not found.");
+    if (row.userId === user.id) {
+      throw new HttpError(409, "SELF_REVIEW_VOTE", "You can't mark your own review as helpful.");
+    }
 
-    if (existing) {
-      await tx
-        .delete(reviewHelpfulVotes)
+    const result = await db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select({ reviewId: reviewHelpfulVotes.reviewId })
+        .from(reviewHelpfulVotes)
         .where(
           and(eq(reviewHelpfulVotes.reviewId, reviewId), eq(reviewHelpfulVotes.userId, user.id)),
-        );
+        )
+        .limit(1);
+
+      if (existing) {
+        await tx
+          .delete(reviewHelpfulVotes)
+          .where(
+            and(eq(reviewHelpfulVotes.reviewId, reviewId), eq(reviewHelpfulVotes.userId, user.id)),
+          );
+        await tx
+          .update(reviews)
+          .set({ helpfulCount: sql`GREATEST(${reviews.helpfulCount} - 1, 0)` })
+          .where(eq(reviews.id, reviewId));
+        return { markedHelpful: false };
+      }
+
+      try {
+        await tx.insert(reviewHelpfulVotes).values({ reviewId, userId: user.id });
+      } catch (error) {
+        // Two taps in the same millisecond: the unique key caught it.
+        if (error instanceof Error && error.message.includes("Duplicate entry")) {
+          throw new HttpError(
+            409,
+            "ALREADY_MARKED_HELPFUL",
+            "You've already marked this as helpful.",
+          );
+        }
+        throw error;
+      }
       await tx
         .update(reviews)
-        .set({ helpfulCount: sql`GREATEST(${reviews.helpfulCount} - 1, 0)` })
+        .set({ helpfulCount: sql`${reviews.helpfulCount} + 1` })
         .where(eq(reviews.id, reviewId));
-      return { markedHelpful: false };
-    }
+      return { markedHelpful: true };
+    });
 
-    try {
-      await tx.insert(reviewHelpfulVotes).values({ reviewId, userId: user.id });
-    } catch (error) {
-      // Two taps in the same millisecond: the unique key caught it.
-      if (error instanceof Error && error.message.includes("Duplicate entry")) {
-        throw new HttpError(
-          409,
-          "ALREADY_MARKED_HELPFUL",
-          "You've already marked this as helpful.",
-        );
-      }
-      throw error;
-    }
-    await tx
-      .update(reviews)
-      .set({ helpfulCount: sql`${reviews.helpfulCount} + 1` })
-      .where(eq(reviews.id, reviewId));
-    return { markedHelpful: true };
-  });
+    const [updated] = await db
+      .select({ helpfulCount: reviews.helpfulCount })
+      .from(reviews)
+      .where(eq(reviews.id, reviewId))
+      .limit(1);
 
-  const [updated] = await db
-    .select({ helpfulCount: reviews.helpfulCount })
-    .from(reviews)
-    .where(eq(reviews.id, reviewId))
-    .limit(1);
-
-  return c.json(ok({ reviewId, helpfulCount: updated?.helpfulCount ?? 0, ...result }));
-});
+    return c.json(ok({ reviewId, helpfulCount: updated?.helpfulCount ?? 0, ...result }));
+  }),
+);
 
 /* ------------------------------ seller reply ------------------------------- */
 
@@ -664,40 +679,43 @@ reviewsRoute.post("/:id{[0-9]+}/helpful", async (c) => {
  * must not be a way to edit the customer's words. The original review is never
  * touched by this endpoint.
  */
-reviewsRoute.post("/:id{[0-9]+}/reply", async (c) => {
-  const user = requireUser(c);
-  const reviewId = parseReviewId(c.req.param("id"));
-  const input = reviewReplySchema.parse(await c.req.json().catch(() => ({})));
+reviewsRoute.post(
+  "/:id{[0-9]+}/reply",
+  guarded("reviews.reply", async (c) => {
+    const user = requireUser(c);
+    const reviewId = parseReviewId(c.req.param("id"));
+    const input = reviewReplySchema.parse(await c.req.json().catch(() => ({})));
 
-  const [row] = await db
-    .select({
-      id: reviews.id,
-      sellerId: reviews.sellerId,
-      userId: reviews.userId,
-      productId: reviews.productId,
-      productTitle: products.title,
-    })
-    .from(reviews)
-    .innerJoin(products, eq(reviews.productId, products.id))
-    .where(eq(reviews.id, reviewId))
-    .limit(1);
-  if (!row) throw new HttpError(404, "NOT_FOUND", "Review not found.");
+    const [row] = await db
+      .select({
+        id: reviews.id,
+        sellerId: reviews.sellerId,
+        userId: reviews.userId,
+        productId: reviews.productId,
+        productTitle: products.title,
+      })
+      .from(reviews)
+      .innerJoin(products, eq(reviews.productId, products.id))
+      .where(eq(reviews.id, reviewId))
+      .limit(1);
+    if (!row) throw new HttpError(404, "NOT_FOUND", "Review not found.");
 
-  if (row.sellerId !== user.id) {
-    throw new HttpError(403, "FORBIDDEN", "You can only reply to reviews of your own listings.");
-  }
-  if (row.userId === user.id) {
-    throw new HttpError(409, "SELF_REVIEW_REPLY", "You cannot reply to your own review.");
-  }
+    if (row.sellerId !== user.id) {
+      throw new HttpError(403, "FORBIDDEN", "You can only reply to reviews of your own listings.");
+    }
+    if (row.userId === user.id) {
+      throw new HttpError(409, "SELF_REVIEW_REPLY", "You cannot reply to your own review.");
+    }
 
-  await db
-    .update(reviews)
-    .set({ sellerReply: input.body, sellerRepliedAt: new Date() })
-    .where(eq(reviews.id, reviewId));
+    await db
+      .update(reviews)
+      .set({ sellerReply: input.body, sellerRepliedAt: new Date() })
+      .where(eq(reviews.id, reviewId));
 
-  const updated = await loadReviewRow(reviewId, user.id);
-  return c.json(ok(updated ? toReviewPayload(updated) : null));
-});
+    const updated = await loadReviewRow(reviewId, user.id);
+    return c.json(ok(updated ? toReviewPayload(updated) : null));
+  }),
+);
 
 /* -------------------------------- my reviews ------------------------------- */
 

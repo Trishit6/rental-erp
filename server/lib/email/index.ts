@@ -1,6 +1,7 @@
 import type { EmailMessage, EmailProvider, EmailTemplate } from "./types";
 import { createConsoleEmailProvider } from "./console";
 import { createNoopEmailProvider } from "./noop";
+import { appBaseUrl } from "../env";
 
 /**
  * Email provider configuration.
@@ -111,7 +112,7 @@ export async function sendEmail(message: EmailMessage): Promise<boolean> {
 
 /* --------------------------------- rendering -------------------------------- */
 
-const BASE_URL = (process.env.APP_BASE_URL ?? "").trim().replace(/\/+$/, "");
+const BASE_URL = appBaseUrl().replace(/\/+$/, "");
 
 /** Only ever append an absolute internal path to a configured origin. */
 function absolute(path: string): string {

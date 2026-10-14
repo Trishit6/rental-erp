@@ -1,16 +1,58 @@
-name: Rental_erp ci cd
+# Revaro — continuous integration and deployment.
+#
+# Two jobs, deliberately:
+#
+#   verify  — pushes to `main` and *every* pull request: install, typecheck,
+#             lint, test, build, audit. This is the gate.
+#   deploy  — only a push to `main`, only after `verify` passed, and only with
+#             the `production` environment's approvers/reviewers attached.
+#
+# The deploy is release-based and reversible:
+#
+#   $SSH_PATH/releases/<sha>/   immutable release folders
+#   $SSH_PATH/shared/           .env + uploads, symlinked into every release
+#   $SSH_PATH/current           atomically-swapped symlink to the live release
+#   $SSH_PATH/backups/          mysqldump output, 10 most recent kept
+#
+# Migrations run *before* the symlink moves, so a bad migration aborts the
+# deploy with the previous release still serving. A failed health check after
+# the switch moves the symlink back. Neither step ever touches the live folder
+# in place — nothing is rsynced onto `current`.
+#
+# Secrets: only GitHub Secrets and the server-side `$SSH_PATH/shared/.env`.
+# No value is ever echoed here — reference secret names only. The required
+# names, the first-time setup and the manual rollback all live in
+# docs/deploy/VPS.md.
+name: Rental_erp CI/CD
 
 on:
   push:
     branches:
       - main
+  pull_request:
+
+# The pipeline reads the repository and nothing else. Deploy authenticates over
+# SSH with its own key, so no token write scope is needed anywhere.
+permissions:
+  contents: read
+
+# One group per ref. A pull request may cancel its own earlier run (a newer push
+# makes the old one irrelevant); a `main` run may not, because it is also the
+# deploy path. The `deploy` job overrides this with its own serialised group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  Rental-erp-deploy:
+  verify:
+    name: Verify
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v5
 
       - name: Set up pnpm
@@ -19,30 +61,285 @@ jobs:
           version: 10
           run_install: false
 
-      - name: install node_modules
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: install npm dependencies
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: build project
-        run: npm run build
+      - name: Typecheck (client + server)
+        run: pnpm typecheck
 
-      - name: Set up SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+      - name: Lint
+        run: pnpm lint
 
-      - name: copy project files to server
-        run: |
-          rsync -avz --delete --exclude 'node_modules' --exclude '.git' ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.SSH_PATH }}
+      - name: Test
+        run: pnpm test
 
-      - name: Deploy
+      # Typechecking already ran, but `pnpm build` is also what produces
+      # `dist/` — and it re-checks both tsconfigs on the way through.
+      - name: Build
+        run: pnpm build
+
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level=high
+
+  deploy:
+    name: Deploy to production
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+
+    # Serialised, never cancelled: half a release is worse than a queued one.
+    # Deliberately *not* per-ref, so two `main` pushes cannot deploy at once.
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+
+    permissions:
+      contents: read
+
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PATH: ${{ secrets.SSH_PATH }}
+      SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `dist/` is gitignored (see .gitignore), so the deploy job rebuilds it
+      # here rather than receiving an artifact — which keeps this workflow to
+      # checkout / setup-node / pnpm only.
+      - name: Build production bundle
+        run: pnpm build
+
+      # The deploy key and the pinned host key both arrive as secrets. With
+      # `StrictHostKeyChecking yes` every later ssh/rsync fails closed if the
+      # server's key ever changes, which is the point.
+      - name: Configure SSH (deploy key + pinned known_hosts)
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ secrets.SSH_PATH }}"
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/revaro_deploy"
+          chmod 600 "$HOME/.ssh/revaro_deploy"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          cat > "$HOME/.ssh/config" <<EOF
+          Host revaro-deploy
+            HostName $SSH_HOST
+            User $SSH_USER
+            Port $SSH_PORT
+            IdentityFile $HOME/.ssh/revaro_deploy
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile $HOME/.ssh/known_hosts
+          EOF
+          chmod 600 "$HOME/.ssh/config"
+
+      - name: Create release directory
+        run: |
+          set -euo pipefail
+          ssh revaro-deploy "mkdir -p '$SSH_PATH/releases/$GITHUB_SHA/dist'"
+
+      # Copy into a *new* release folder. Never `rsync --delete` over the live
+      # directory: the running release must not change until the switch below.
+      - name: Upload release files
+        run: |
+          set -euo pipefail
+          RELEASE="$SSH_PATH/releases/$GITHUB_SHA"
+
+          # dist/      the built SPA (served by the reverse proxy / static host)
+          # server/    the API entry point and its routes
+          # src/lib/   the server imports src/lib/pricing at runtime
+          # drizzle/   generated migrations + the journal drizzle-kit reads
+          # root files the release needs to install and run
+          rsync -az --no-owner --no-group -e ssh dist/ "revaro-deploy:$RELEASE/dist/"
+          rsync -az --no-owner --no-group -e ssh --exclude 'uploads/' server/ "revaro-deploy:$RELEASE/server/"
+          rsync -az --no-owner --no-group -e ssh src/lib/ "revaro-deploy:$RELEASE/src/lib/"
+          rsync -az --no-owner --no-group -e ssh drizzle/ "revaro-deploy:$RELEASE/drizzle/"
+          rsync -az --no-owner --no-group -e ssh \
+            package.json \
+            pnpm-lock.yaml \
+            drizzle.config.ts \
+            tsconfig.server.json \
+            "revaro-deploy:$RELEASE/"
+
+      # Install inside the release, then point the two pieces of state that must
+      # outlive a release at `shared/`: the environment file and the seller
+      # uploads directory. Both are symlinks, never copies.
+      - name: Install release dependencies and link shared state
+        run: |
+          set -euo pipefail
+          ssh revaro-deploy "RELEASE='$SSH_PATH/releases/$GITHUB_SHA' BASE='$SSH_PATH' bash -s" <<'REMOTE'
+          set -euo pipefail
+          SHARED="$BASE/shared"
+          mkdir -p "$SHARED/uploads" "$BASE/backups"
+
+          cd "$RELEASE"
+          pnpm install --frozen-lockfile --prod
+
+          ln -sfn "$SHARED/.env" "$RELEASE/.env"
+
+          # `server/lib/storage/dev.ts` resolves uploads relative to the working
+          # directory, so this symlink is what keeps uploaded images across
+          # releases (and what makes them survive the rollback below).
+          rm -rf "$RELEASE/server/uploads"
+          ln -sfn "$SHARED/uploads" "$RELEASE/server/uploads"
+          REMOTE
+
+      # Backup first: the dump is taken before anything touches the schema, so a
+      # bad migration always has a restore point that matches the running code.
+      - name: Back up database
+        run: |
+          set -euo pipefail
+          ssh revaro-deploy "RELEASE='$SSH_PATH/releases/$GITHUB_SHA' BASE='$SSH_PATH' SHA='$GITHUB_SHA' bash -s" <<'REMOTE'
+          set -euo pipefail
+          SHARED="$BASE/shared"
+          # `set +u` only around the source: a .env that references a
+          # not-yet-defined variable must not abort the backup.
+          set +u
+          set -a
+          . "$SHARED/.env"
+          set +a
+          set -u
+
+          mkdir -p "$BASE/backups"
+          STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+          DUMP="$BASE/backups/$STAMP-${SHA:0:12}.sql.gz"
+
+          # MYSQL_PWD keeps the password out of argv (never echoed). The dump is
+          # compressed on the fly and `pipefail` means a failed mysqldump aborts
+          # the deploy instead of leaving an empty file behind.
+          MYSQL_PWD="${DB_PASSWORD:-}" mysqldump \
+            --single-transaction \
+            --quick \
+            --default-character-set=utf8mb4 \
+            -h "${DB_HOST:-127.0.0.1}" \
+            -P "${DB_PORT:-3306}" \
+            -u "${DB_USER:-revaro}" \
+            "${DB_NAME:?DB_NAME must be set in shared/.env}" \
+            | gzip -9 > "$DUMP"
+          test -s "$DUMP"
+
+          # Keep the 10 most recent dumps. `-printf '%T@ %p'` + `cut -f2-` keeps
+          # paths with spaces intact; sorted newest first.
+          find "$BASE/backups" -maxdepth 1 -type f -name '*.sql.gz' -printf '%T@ %p\n' \
+            | sort -rn | tail -n +11 | cut -d' ' -f2- | xargs -r rm -f
+
+          echo "backup written: $DUMP"
+          REMOTE
+
+      # Migrations run from the new release, before the symlink moves. If this
+      # fails the current release keeps running — a deploy that stops here is a
+      # no-op for users.
+      - name: Run migrations from the new release
+        run: |
+          set -euo pipefail
+          ssh revaro-deploy "RELEASE='$SSH_PATH/releases/$GITHUB_SHA' BASE='$SSH_PATH' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$RELEASE"
+          pnpm db:migrate
+          REMOTE
+
+      # Phase 1 — atomic switch + restart (the previous release is remembered
+      # first, because after the swap it is no longer discoverable).
+      # Phase 2 — health check, and roll the symlink back if it fails.
+      # `/api/health` is authoritative: it runs `SELECT 1` against MariaDB and
+      # answers 503 when the database is unreachable, so `curl -f` is enough.
+      - name: Switch release, restart service and health check
+        run: |
+          set -euo pipefail
+          ssh revaro-deploy "RELEASE='$SSH_PATH/releases/$GITHUB_SHA' BASE='$SSH_PATH' bash -s" <<'REMOTE'
+          set -euo pipefail
+          SHARED="$BASE/shared"
+          set +u
+          set -a
+          . "$SHARED/.env"
+          set +a
+          set -u
+
+          PORT="${API_PORT:-3001}"
+          HEALTH="http://127.0.0.1:$PORT/api/health"
+          PREVIOUS="$(readlink -f "$BASE/current" 2>/dev/null || true)"
+
+          # Build the link under a temporary name and rename it over `current`:
+          # a rename is atomic, so readers never see a half-written symlink.
+          ln -sfn "$RELEASE" "$BASE/current.next"
+          mv -Tf "$BASE/current.next" "$BASE/current"
+          sudo -n systemctl restart revaro-api
+
+          healthy=false
+          for attempt in $(seq 1 12); do
+            if curl -fsS --max-time 5 "$HEALTH" > /dev/null; then
+              healthy=true
+              echo "health check passed on attempt $attempt"
+              break
+            fi
+            echo "health check attempt $attempt/12 failed; retrying in 5s"
+            sleep 5
+          done
+
+          if [ "$healthy" != "true" ]; then
+            echo "::error::health check failed after 12 attempts; rolling back"
+            if [ -n "$PREVIOUS" ] && [ -d "$PREVIOUS" ]; then
+              ln -sfn "$PREVIOUS" "$BASE/current.next"
+              mv -Tf "$BASE/current.next" "$BASE/current"
+              sudo -n systemctl restart revaro-api
+              echo "rolled back to $PREVIOUS"
+            else
+              echo "::error::no previous release found; manual intervention required"
+            fi
+            exit 1
+          fi
+          REMOTE
+
+      # Keep the 5 most recent releases. The live release is skipped explicitly
+      # so a stale mtime can never delete what `current` points at.
+      - name: Prune old releases
+        run: |
+          set -euo pipefail
+          ssh revaro-deploy "BASE='$SSH_PATH' bash -s" <<'REMOTE'
+          set -euo pipefail
+          CURRENT="$(readlink -f "$BASE/current" 2>/dev/null || true)"
+
+          while read -r dir; do
+            [ -n "$dir" ] || continue
+            if [ "$(readlink -f "$dir")" = "$CURRENT" ]; then
+              continue
+            fi
+            rm -rf "$dir"
+            echo "pruned $dir"
+          done < <(
+            find "$BASE/releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' \
+              | sort -rn | tail -n +6 | cut -d' ' -f2-
+          )
+
+          rm -f "$BASE/current.next"
+          REMOTE

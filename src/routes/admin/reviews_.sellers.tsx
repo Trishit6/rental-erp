@@ -12,6 +12,6 @@ import { AdminReviewsPage } from "@/features/admin";
  *
  * Guarded by the parent layout's `requireAdmin`.
  */
-export const Route = createFileRoute("/admin/reviews/sellers")({
+export const Route = createFileRoute("/admin/reviews_/sellers")({
   component: () => <AdminReviewsPage mode="seller" />,
 });

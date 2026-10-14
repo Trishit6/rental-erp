@@ -163,7 +163,7 @@ export function ProductGallery({ images, title }: { images: ProductImage[]; titl
                 onClick={() => {
                   if (draggedRef.current < 8) setLightboxOpen(true);
                 }}
-                className="absolute right-3 top-3 flex size-9 items-center justify-center rounded-full bg-background/90 text-foreground opacity-0 shadow-sm transition hover:text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary group-hover:opacity-100 max-lg:opacity-100"
+                className="absolute right-3 top-3 flex size-9 items-center justify-center rounded-full bg-background/90 text-foreground opacity-0 elev-1 transition hover:text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary group-hover:opacity-100 max-lg:opacity-100"
               >
                 <Maximize2 size={15} aria-hidden />
               </button>
@@ -175,7 +175,7 @@ export function ProductGallery({ images, title }: { images: ProductImage[]; titl
                   type="button"
                   aria-label="Previous image"
                   onClick={prev}
-                  className="absolute left-2.5 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  className="absolute left-2.5 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 text-foreground elev-1 transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   <ChevronLeft size={17} aria-hidden />
                 </button>
@@ -183,11 +183,11 @@ export function ProductGallery({ images, title }: { images: ProductImage[]; titl
                   type="button"
                   aria-label="Next image"
                   onClick={next}
-                  className="absolute right-2.5 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  className="absolute right-2.5 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 text-foreground elev-1 transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   <ChevronRight size={17} aria-hidden />
                 </button>
-                <span className="absolute bottom-3 right-3 rounded-full bg-background/90 px-2.5 py-1 text-[11px] font-bold tabular-nums shadow-sm">
+                <span className="absolute bottom-3 right-3 rounded-full bg-background/90 px-2.5 py-1 text-[11px] font-bold tabular-nums elev-1">
                   {active + 1} / {list.length}
                 </span>
               </>

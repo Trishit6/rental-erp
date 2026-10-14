@@ -25,7 +25,10 @@ describe("the bulk endpoint is atomic and seller-scoped", () => {
   const code = stripComments(source);
 
   it("reads the file it means to be checking", () => {
-    expect(code).toContain('sellerOrdersRoute.patch("/bulk-fulfillment"');
+    // Anchored on the path, not on `sellerOrdersRoute.patch(` — the registration may be
+    // wrapped by the rate-limit `guarded(...)` helper, which changes the call shape but
+    // not which endpoint this is.
+    expect(code).toContain('"/bulk-fulfillment"');
   });
 
   it("derives the seller from the session", () => {
@@ -35,7 +38,7 @@ describe("the bulk endpoint is atomic and seller-scoped", () => {
   it("validates every line before it writes any of them", () => {
     // Scope to the bulk handler: the single-line endpoint above it has its own
     // validation and transaction, and matching those would prove nothing.
-    const bulk = code.slice(code.indexOf('sellerOrdersRoute.patch("/bulk-fulfillment"'));
+    const bulk = code.slice(code.indexOf('"/bulk-fulfillment"'));
     const validateAt = bulk.indexOf("assertFulfillmentTransition(detail.order.status");
     const writeAt = bulk.indexOf("await db.transaction");
     expect(validateAt).toBeGreaterThan(-1);

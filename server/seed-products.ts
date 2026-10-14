@@ -459,16 +459,32 @@ async function main() {
       const noun = pick(rnd, meta.nouns);
       const brand = rnd() < 0.8 ? pick(rnd, meta.brands) : null;
       const descriptor = pick(rnd, meta.descriptors);
-      const title = `${descriptor} ${noun}`.replace(/\s+/g, " ").slice(0, 120);
+      // Sentence case, not the raw lowercase concatenation: the card clamps the
+      // title to two lines, and a lowercased heading reads as placeholder text
+      // next to the sentence-cased headings everywhere else in the app.
+      const rawTitle = `${descriptor} ${noun}`.replace(/\s+/g, " ").trim();
+      const title =
+        `${rawTitle.charAt(0).toUpperCase()}${rawTitle.slice(1)}`.slice(0, 120);
       const condition = pick(rnd, CONDITIONS) as Condition;
       const listingType = pick(rnd, LISTING_TYPES) as ListingType;
       const location = pick(rnd, LOCATIONS);
 
-      const buyPrice = randInt(rnd, meta.buy[0], meta.buy[1]);
       const dayPrice = randInt(rnd, meta.day[0], meta.day[1]);
+      // The purchase price is derived from the daily rate, not drawn from an
+      // independent range. Two independent draws are how a ₹1,013/day tripod was
+      // listed at "buy for ₹1,21,901" — roughly 120 days of rent, a ratio no
+      // shopper believes and which makes the rent-versus-buy story look broken. A
+      // purchase is now 8–30 days of rent: a range that still spans "consumable"
+      // (party gear, tools) to "capital good" (cameras, furniture) while staying
+      // inside a ratio the rent-versus-buy band can defend. Seeded from `rnd`, so
+      // a fresh seed reproduces the exact same catalogue.
+      const buyMultiple = 8 + rnd() * 22; // [8, 30)
+      const buyPrice = Math.max(1, Math.round(dayPrice * buyMultiple));
       const weekPrice = Math.round(dayPrice * 5.5);
       const monthPrice = Math.round(dayPrice * 18);
-      const deposit = Math.round(dayPrice * randInt(rnd, 3, 10));
+      // The deposit is a fraction of the *purchase* value (10–25%), so it scales
+      // with replacement cost rather than with the daily rate.
+      const deposit = Math.round(buyPrice * (0.1 + rnd() * 0.15));
       const wantsRent = listingType !== "SALE";
       const wantsBuy = listingType !== "RENT";
       const rentToOwn = wantsRent && rnd() < 0.25;

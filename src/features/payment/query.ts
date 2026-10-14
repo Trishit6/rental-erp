@@ -6,6 +6,7 @@ import {
   getPaymentProviderInfo,
   getPaymentStatus,
   getPaymentSummary,
+  previewCoupon,
   verifyPayment as verifyPaymentRequest,
   cancelPayment as cancelPaymentRequest,
 } from "./api";
@@ -53,10 +54,14 @@ export function usePaymentProviderInfo() {
 export function usePaymentSummary(params: {
   deliveryMethod: "DELIVERY" | "PICKUP";
   deliveryAddressId: number | null;
+  couponCode?: string | null;
 }) {
   const context = {
     deliveryMethod: params.deliveryMethod,
     deliveryAddressId: params.deliveryAddressId,
+    // Part of the key: the same cart is worth a different amount with a coupon,
+    // and the two figures must never share one cache entry.
+    couponCode: params.couponCode ?? null,
   };
   return useQuery({
     queryKey: queryKeys.paymentSummary(context),
@@ -65,6 +70,22 @@ export function usePaymentSummary(params: {
     // Short: the whole point of re-fetching is to notice a price change the
     // customer has not agreed to yet.
     staleTime: 30 * 1000,
+  });
+}
+
+/**
+ * Validate a code against the cart.
+ *
+ * A mutation rather than a query: it is an explicit action the customer takes,
+ * and the POST is what the `coupon.apply` rate-limit budget counts.
+ */
+export function useCouponPreview() {
+  return useMutation({
+    mutationFn: (input: {
+      code: string;
+      deliveryMethod: "DELIVERY" | "PICKUP";
+      deliveryAddressId?: number | null;
+    }) => previewCoupon(input),
   });
 }
 

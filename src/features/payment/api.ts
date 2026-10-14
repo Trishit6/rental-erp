@@ -1,5 +1,6 @@
 import { api } from "@/lib/api/client";
 import type {
+  CouponPreview,
   CreateIntentInput,
   OrderConfirmation,
   PaymentIntent,
@@ -33,12 +34,31 @@ export async function getPaymentProviderInfo(): Promise<PaymentProviderInfo> {
 export async function getPaymentSummary(params: {
   deliveryMethod: "DELIVERY" | "PICKUP";
   deliveryAddressId?: number | null;
+  /** A code to price against the cart. Validated server-side; never trusted. */
+  couponCode?: string | null;
 }): Promise<PaymentSummary> {
   const query = new URLSearchParams({ deliveryMethod: params.deliveryMethod });
   if (params.deliveryAddressId) {
     query.set("deliveryAddressId", String(params.deliveryAddressId));
   }
+  if (params.couponCode) {
+    query.set("couponCode", params.couponCode);
+  }
   return (await api.get<PaymentSummary>(`/payments/summary?${query.toString()}`)).data;
+}
+
+/**
+ * Ask whether a code applies to the cart, without opening a payment.
+ *
+ * A dedicated call because code attempts are rate-limited: guessing a code is a
+ * POST against a named budget, not a side effect of loading the summary.
+ */
+export async function previewCoupon(input: {
+  code: string;
+  deliveryMethod: "DELIVERY" | "PICKUP";
+  deliveryAddressId?: number | null;
+}): Promise<CouponPreview> {
+  return (await api.post<CouponPreview>("/payments/coupon", input)).data;
 }
 
 export async function createPaymentIntent(input: CreateIntentInput): Promise<PaymentIntent> {

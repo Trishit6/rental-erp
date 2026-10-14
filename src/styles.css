@@ -47,15 +47,19 @@
   --color-ring: var(--color-primary);
 
   /* Neumorphic shadows (light).
-     `--shadow-color-light` is the light half of every neumorphic pair. It used to
-     be near-white (#fffef8), which at a 24px blur radius read as a glow halo
-     around every card and button rather than as a lit edge — the single biggest
-     source of the "overexposed" look. It is now a warm off-white that still
-     models the light source but stops blooming. */
+     `--shadow-color-light` is the light half of every neumorphic pair. It is kept
+     only a hair lighter than the page (#eceae2) so a raised edge still catches
+     the light source without the near-white bloom (#fffef8 → #faf7ef → here) that
+     made every card and button read as a glow.
+
+     The two border tokens are the other half of the same fix. They were literal
+     white (`rgb(255 255 255 / 55%)` and `/ 40%`), which drew a bright rim around
+     every surface — a halo in disguise. They are now mixed from `--color-border`
+     toward the page, so an edge is a *tone* step, not a light source. */
   --shadow-color-dark: #c4bba7;
-  --shadow-color-light: #faf7ef;
-  --raised-border: rgb(255 255 255 / 55%);
-  --inset-border: rgb(255 255 255 / 40%);
+  --shadow-color-light: #f4f1ea;
+  --raised-border: color-mix(in srgb, var(--color-border) 62%, var(--color-background));
+  --inset-border: color-mix(in srgb, var(--color-border) 38%, var(--color-background));
   --inset-bg: #e3dfd5;
   --divider: #c8c0ae;
   --skeleton: #ddd6c6;
@@ -97,15 +101,20 @@
    where it reads as depth (inset/card), never as a bloom. */
 :root {
   --elev-inset-shadow:
-    inset 2px 2px 6px var(--shadow-color-dark), inset -2px -2px 4px var(--shadow-color-light);
+    inset 2px 2px 6px var(--shadow-color-dark),
+    inset -2px -2px 4px color-mix(in srgb, var(--shadow-color-light) 35%, transparent);
   --elev-card-shadow:
-    2px 2px 8px var(--shadow-color-dark), -2px -2px 4px var(--shadow-color-light);
+    2px 2px 8px var(--shadow-color-dark),
+    -2px -2px 4px color-mix(in srgb, var(--shadow-color-light) 35%, transparent);
   --elev-card-hover-shadow:
-    4px 4px 14px var(--shadow-color-dark), -3px -3px 8px var(--shadow-color-light);
+    4px 4px 14px var(--shadow-color-dark),
+    -3px -3px 8px color-mix(in srgb, var(--shadow-color-light) 35%, transparent);
   --elev-raised-shadow:
-    4px 4px 16px var(--shadow-color-dark), -3px -3px 8px var(--shadow-color-light);
+    4px 4px 16px var(--shadow-color-dark),
+    -3px -3px 8px color-mix(in srgb, var(--shadow-color-light) 35%, transparent);
   --elev-floating-shadow:
-    3px 3px 12px var(--shadow-color-dark), -2px -2px 6px var(--shadow-color-light);
+    3px 3px 12px var(--shadow-color-dark),
+    -2px -2px 6px color-mix(in srgb, var(--shadow-color-light) 35%, transparent);
   --elev-modal-shadow:
     0 12px 32px var(--shadow-color-dark), 0 2px 8px var(--shadow-color-dark);
   --elev-sheet-shadow:
@@ -113,6 +122,35 @@
   --elev-drawer-shadow:
     -10px 0 32px var(--shadow-color-dark), -2px 0 6px var(--shadow-color-dark);
   --elev-header-shadow: 0 4px 20px var(--shadow-color-dark);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Control elevation scale — flat / raised / pressed                  */
+/* ------------------------------------------------------------------ */
+/*
+  The ladder the *controls* use: buttons, chips, icon buttons and the floating
+  actions. It is deliberately smaller and darker than the card rungs above.
+
+   - `--elev-0` is flat — a chip or ghost control that needs no lift.
+   - `--elev-1` is the small-control rung: a single dark-side shadow at ≤10%
+     opacity, blur ≤8px and y-offset ≤2px, and **no light highlight**. The
+     negative-offset white highlight the neumorphic pair adds is exactly what made
+     every small control read as lit from within.
+   - `--elev-2` is the card/panel rung. The neumorphic pair is allowed, but the
+     light half is capped at 35% (see `color-mix` above) so it models an edge
+     rather than a glow.
+   - `--elev-pressed` is the pressed rung: an inset dark-side shadow, no rim.
+
+  `.dark` overrides all four to dark-only — no light rim at all; surfaces get
+  their definition from the existing `--color-border` token instead.
+*/
+:root {
+  --elev-0: none;
+  --elev-1: 0 1px 3px rgb(28 24 20 / 10%);
+  --elev-2:
+    2px 2px 8px var(--shadow-color-dark),
+    -2px -2px 4px color-mix(in srgb, var(--shadow-color-light) 35%, transparent);
+  --elev-pressed: inset 2px 2px 6px var(--shadow-color-dark);
 }
 
 /* ------------------------------------------------------------------ */
@@ -155,6 +193,20 @@
   --inset-bg: #1d1b17;
   --divider: #3a352e;
   --skeleton: #2b2822;
+
+  /* Control elevation (dark): dark-only, no light rim at all. The 1px border
+     tokens above carry the edge instead. */
+  --elev-1: 0 1px 3px rgb(0 0 0 / 50%);
+  --elev-2: 0 2px 10px rgb(0 0 0 / 55%);
+  --elev-pressed: inset 2px 2px 6px rgb(0 0 0 / 60%);
+
+  /* The card rungs lose their light half entirely in dark mode, so a card or a
+     sticky bar is defined by its drop shadow and its border, never a rim. */
+  --elev-inset-shadow: inset 2px 2px 6px var(--shadow-color-dark);
+  --elev-card-shadow: 2px 2px 8px var(--shadow-color-dark);
+  --elev-card-hover-shadow: 4px 4px 14px var(--shadow-color-dark);
+  --elev-raised-shadow: 4px 4px 16px var(--shadow-color-dark);
+  --elev-floating-shadow: 3px 3px 12px var(--shadow-color-dark);
 
   --dark-panel-bg: #211f1b;
   --dark-panel-inset: #292620;
@@ -209,6 +261,24 @@
 
 @utility elev-floating {
   box-shadow: var(--elev-floating-shadow);
+}
+
+/* Control rungs. Used by buttons, chips and the floating actions so a control
+   never hand-writes a shadow. */
+@utility elev-0 {
+  box-shadow: var(--elev-0);
+}
+
+@utility elev-1 {
+  box-shadow: var(--elev-1);
+}
+
+@utility elev-2 {
+  box-shadow: var(--elev-2);
+}
+
+@utility elev-pressed {
+  box-shadow: var(--elev-pressed);
 }
 
 /* ------------------------------------------------------------------ */
@@ -349,6 +419,27 @@ select {
   background: rgb(168 97 50 / 25%);
 }
 
+/*
+  Browser autofill paints a pale blue/yellow field that belongs to no theme — the
+  most visible "this is a web page, not the app" seam on the login and register
+  forms. Chrome ignores a plain `background-color`, so the field is covered with a
+  full-spread inset shadow in the app's own input tone, and the text colour is
+  forced back to the foreground token (autofill otherwise overrides it with a dark
+  colour that disappears on the dark theme). The long transition suppresses the
+  engine's own fade-in of the yellow.
+*/
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-text-fill-color: var(--color-foreground);
+  box-shadow:
+    0 0 0 1000px var(--inset-bg) inset,
+    var(--elev-pressed);
+  transition: background-color 9999s ease-out 0s;
+}
+
 .page-wrap {
   width: min(100% - 2rem, 1360px);
   margin-inline: auto;
@@ -422,11 +513,23 @@ select {
   box-shadow: var(--elev-header-shadow);
 }
 
-.soft-surface,
+.soft-surface {
+  background: var(--color-background);
+  border: 1px solid var(--raised-border);
+  box-shadow: var(--elev-2);
+  transition:
+    background-color 250ms ease,
+    box-shadow 250ms ease,
+    border-color 250ms ease;
+}
+
+/* Small controls — buttons, chips, icon buttons — take the control rung, NOT the
+   card rung. The card rung's negative-offset light highlight is what made a
+   size-10 icon button read as lit. */
 .soft-button {
   background: var(--color-background);
   border: 1px solid var(--raised-border);
-  box-shadow: var(--elev-card-shadow);
+  box-shadow: var(--elev-1);
   transition:
     background-color 200ms ease,
     box-shadow 200ms ease,
@@ -435,19 +538,103 @@ select {
 }
 
 .soft-button:hover {
-  background: color-mix(in srgb, var(--color-background) 92%, var(--color-foreground));
-  box-shadow: var(--elev-card-hover-shadow);
+  /* A 6% mix toward black: a tone shift that is *never brighter* in either
+     theme, unlike mixing toward the foreground, which darkens on the light theme
+     and lightens on the dark one. */
+  background: color-mix(in srgb, var(--color-background) 94%, black);
+  box-shadow: var(--elev-1);
 }
 
 .soft-button:active {
-  transform: translateY(0);
-  box-shadow: var(--elev-inset-shadow);
+  transform: translateY(1px);
+  box-shadow: var(--elev-pressed);
+}
+
+/* A flat chip: a 1px border on the warm neutral, no lift. */
+.chip-surface {
+  background: var(--color-secondary);
+  border: 1px solid var(--color-border);
+  color: var(--color-secondary-foreground);
+  box-shadow: var(--elev-0);
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 120ms ease;
+}
+
+.chip-surface:hover {
+  background: color-mix(in srgb, var(--color-secondary) 94%, black);
+}
+
+.chip-surface:active {
+  transform: translateY(1px);
+  box-shadow: var(--elev-pressed);
+}
+
+/* The accent is an *olive* (the palette's secondary hue). Neither foreground token
+   reaches 4.5:1 against it as a solid fill — `#f2f6ee` on `#6b7c5e` is 4.11:1 and
+   `#fff7ed` only 4.24:1 — so the accent control is tonal: a light olive wash with
+   the ordinary foreground on top. That measures 9.7:1 in light and 12.0:1 in dark,
+   and it reads as a quieter, secondary action, which is what the accent is for. */
+.accent-button {
+  background: color-mix(in srgb, var(--color-accent) 18%, var(--color-background));
+  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  color: var(--color-foreground);
+  box-shadow: var(--elev-1);
+  transition:
+    background-color 180ms ease,
+    box-shadow 200ms ease,
+    transform 120ms ease;
+}
+
+.accent-button:hover {
+  background: color-mix(in srgb, var(--color-accent) 26%, var(--color-background));
+  box-shadow: var(--elev-1);
+}
+
+.accent-button:active {
+  transform: translateY(1px);
+  box-shadow: var(--elev-pressed);
+}
+
+/* The destructive hue is darkened enough to carry light text on the light theme
+   (`#fff7ed` on `#b64032` = 5.25:1) and dark text on the dark theme (`#1d140d`
+   on `#d4634f` = 4.92:1), so the canonical `danger` control is a solid fill and
+   passes 4.5:1 in both. */
+.danger-button {
+  background: var(--color-destructive);
+  color: var(--color-destructive-foreground);
+  box-shadow: var(--elev-1);
+  transition:
+    background-color 180ms ease,
+    box-shadow 200ms ease,
+    transform 120ms ease;
+}
+
+.danger-button:hover {
+  background: color-mix(in srgb, var(--color-destructive) 94%, black);
+  box-shadow: var(--elev-1);
+}
+
+.danger-button:active {
+  transform: translateY(1px);
+  box-shadow: var(--elev-pressed);
+}
+
+/* Compact buttons (sm/md) grow to a 44px touch target only on touch pointers, so
+   the desktop layout keeps its visual height. */
+@media (pointer: coarse) {
+  .btn-compact {
+    min-height: 44px;
+  }
 }
 
 .inset-surface {
   border: 1px solid var(--inset-border);
   background: var(--inset-bg);
-  box-shadow: var(--elev-inset-shadow);
+  /* Pressed rung: an inset dark-side shadow, no inner light rim. */
+  box-shadow: var(--elev-pressed);
   transition:
     background-color 250ms ease,
     box-shadow 250ms ease,
@@ -455,57 +642,54 @@ select {
 }
 
 .primary-button {
-  background: var(--color-primary);
-  /* Subtle, professional shadow without the bright highlight that caused bloom */
-  box-shadow:
-    2px 2px 6px var(--shadow-color-dark),
-    inset 0 1px 0 rgb(255 255 255 / 12%);
+  /* 4% below `--color-primary`. The palette token is unchanged; only the button's
+     own surface is shaded, so its `#fff7ed` label clears 4.5:1 — 4.47:1 at the raw
+     token, 4.80:1 here — while dark mode stays at 5.14:1.
+     One soft drop shadow from the control ladder. The former
+     `inset 0 1px 0 rgb(255 255 255 / 12%)` was a bright inner rim in *both*
+     themes — a white halo in light mode and a bright rim light in dark mode. */
+  background: color-mix(in srgb, var(--color-primary) 96%, black);
+  box-shadow: var(--elev-1);
   transition:
     background-color 180ms ease,
-    filter 180ms ease,
     box-shadow 200ms ease,
     transform 120ms ease;
 }
 
-.dark .primary-button {
-  background: var(--color-primary);
-  box-shadow:
-    2px 2px 6px rgb(0 0 0 / 40%),
-    inset 0 1px 0 rgb(255 255 255 / 10%);
-}
-
 .primary-button:hover {
-  filter: brightness(1.03);
-  box-shadow:
-    3px 3px 10px var(--shadow-color-dark),
-    inset 0 1px 0 rgb(255 255 255 / 15%);
+  background: color-mix(in srgb, var(--color-primary) 92%, black);
+  box-shadow: var(--elev-1);
 }
 
 .primary-button:active {
-  transform: translateY(0);
-  filter: brightness(0.98);
-  box-shadow:
-    inset 2px 2px 6px var(--shadow-color-dark),
-    inset 0 1px 0 rgb(255 255 255 / 10%);
+  transform: translateY(1px);
+  background: color-mix(in srgb, var(--color-primary) 90%, black);
+  box-shadow: var(--elev-pressed);
 }
 
 .dark-panel {
   background: var(--dark-panel-bg);
   color: var(--dark-panel-fg);
-  box-shadow:
-    4px 4px 16px var(--shadow-color-dark),
-    -3px -3px 8px var(--shadow-color-light);
+  /* A single drop shadow. The former `-3px -3px 8px var(--shadow-color-light)`
+     half is near-white in light mode and read as a halo blooming out from behind
+     the panel, which sits on a pale page. */
+  box-shadow: 4px 4px 16px var(--shadow-color-dark);
 }
 
 .dark-inset {
   background: var(--dark-panel-inset);
-  box-shadow:
-    inset 3px 3px 8px var(--dark-panel-inset-dark),
-    inset -3px -3px 6px var(--dark-panel-inset-light);
+  /* Inset only — the `-3px -3px 6px var(--dark-panel-inset-light)` half was an
+     inner *light*, the glow the refinement pass removes. */
+  box-shadow: inset 3px 3px 8px var(--dark-panel-inset-dark);
 }
 
 .nav-link {
   transition: color 150ms ease;
+  /* Nav labels are single tokens of meaning ("Pre-loved", "How it works") and must
+     never wrap to two lines — a wrapped label changes the header's height and
+     re-flows the row. At the widths where they no longer fit they are collapsed
+     into the menu/drawer instead. */
+  white-space: nowrap;
 }
 
 .nav-link:hover,

@@ -72,7 +72,7 @@ export function MobileActionBar({
           transition={{ duration: 0.24, ease: "easeOut" }}
           className="mobile-action-bar lg:hidden"
         >
-          <div className="border-t border-white/60 bg-background/95 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur-xl dark:border-white/5">
+          <div className="border-t border-border bg-background/95 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur-xl">
             <div className="mx-auto flex max-w-3xl items-center gap-3">{children}</div>
           </div>
         </motion.div>
