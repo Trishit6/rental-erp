@@ -28,7 +28,8 @@
     "format": "prettier --write \"src/**/*.{ts,tsx}\" \"server/**/*.ts\" \"tests/**/*.ts\"",
     "generate:routes": "tsr generate",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "payments:reconcile": "tsx server/payments-reconcile.ts"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.2.6",

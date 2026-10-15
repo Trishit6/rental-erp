@@ -211,6 +211,13 @@
       "when": 1791902067803,
       "tag": "0029_true_squirrel_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "5",
+      "when": 1791989488776,
+      "tag": "0030_awesome_red_wolf",
+      "breakpoints": true
     }
   ]
 }

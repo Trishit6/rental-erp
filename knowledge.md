@@ -3,7 +3,7 @@
 ## What this is
 **Revaro** (`revaro-marketplace`, tagline *Rent. Buy. Sell. Reuse.*) — a full-stack
 neighbour-to-neighbour rent/buy/sell marketplace.
-React 19 + Vite + TanStack (Router/Query/Form/Table) frontend · Hono API · Drizzle ORM · MariaDB.
+React 19 + Vite + TanStack (Router/Query/Form/Table) frontend · Express 5 API · Drizzle ORM · MariaDB.
 Package manager: **pnpm**. Currency: **INR (₹)**, all money stored as integer paise.
 
 ## Feature-module architecture (IMPORTANT)
@@ -173,7 +173,18 @@ Schema change flow: edit `server/schema.ts` → `pnpm db:generate` → `pnpm db:
   - Global components: `src/components/ui/` (shadcn-style primitives, neumorphically styled),
     `src/components/layout/` (site-header, site-footer), `src/components/shared/` (product-card,
     product-grid, empty-state, pagination, **product-filters/**).
-- **Backend** (`server/`): Hono on @hono/node-server, run by tsx (no build step).
+- **Backend** (`server/`): **Express 5** behind a small Hono-style router shim (`server/lib/http.ts`), run by tsx (no build step).
+  - **The shim is load-bearing.** Route files are still written Hono-style against `Ctx`
+    (`c.req.param()`, `c.req.query()`, `c.req.json()`, `c.json(...)`, `c.set/get("user")`).
+    Two behaviours it preserves — do not lose them when touching this file:
+    1. **Path constraints** like `/:id{[0-9]+}` are compiled into the matcher (Express 5's
+       path-to-regexp v8 dropped inline regex). An unconstrained `:id` shadows `GET /mine` and
+       coerces `"mine"` to `NaN` — a real shipped bug. Constraints must stay part of the path.
+    2. **Raw bodies**: `express.json({ verify })` stashes the buffer so `c.req.text()` returns exact
+       bytes — the payment webhook verifies its signature over them, and the storage binary PUT
+       reads the stream. Registering `express.raw` after `express.urlencoded` covers binary routes.
+    Mounted sub-routers are additive (no-match falls through to the next mount); a mount's
+    `next()` resumes the parent chain so a sub-router's errors still reach the root `onError`.
   - `index.ts` — `app.onError(onErrorHandler)` (in `server/lib/api.ts`) handles ALL errors →
     `{success:false,error:{code,message}}`. `attachUser` middleware resolves session cookie.
   - `lib/auth.ts` — sessions store a SHA-256 hash of the token (`sessions.id`) with the raw
@@ -714,8 +725,10 @@ Schema change flow: edit `server/schema.ts` → `pnpm db:generate` → `pnpm db:
 - Strict TS: `verbatimModuleSyntax` (use `import type`), `noUnusedLocals`/`noUnusedParameters`.
 - **Drizzle mysql2 inserts do NOT return rows** — use `.$returningId()` and re-select, or
   `result[0].affectedRows` for deletes. `db.transaction(async (tx) => ...)` for multi-step writes.
-- **Hono**: use `app.onError(handler)` for async route errors — an `app.use()` error-catcher
-  middleware does NOT catch handler throws. Status codes need `ContentfulStatusCode` cast.
+- **Express (via the Hono shim)**: route handlers are async — `app.onError(handler)` routes their
+  throws to the error middleware; status codes are plain numbers again, no `ContentfulStatusCode`
+  cast (that was Hono-specific). Path constraints go in the path (`/:id{[0-9]+}`), never as a guard
+  after an unconstrained param.
 - **TanStack Table is v8** (v9 was pulled and reverted — its API broke; if upgrading, rewrite the
   products table against the v9 API deliberately). `useReactTable` triggers a benign React Compiler
   lint warning (react-hooks/incompatible-library) — known, ignorable.

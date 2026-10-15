@@ -1,0 +1,808 @@
+﻿{
+  "counts": {
+    "products": 20022,
+    "categories": 63,
+    "brands": 0,
+    "tags": 0,
+    "product_tags": 96639,
+    "attribute_definitions": 0,
+    "category_attributes": 0,
+    "product_attribute_values": 0,
+    "category_slug_redirects": 0,
+    "category_rules": 0
+  },
+  "schemaVersion": "unknown",
+  "timings": [
+    {
+      "name": "browseCategoryRecommended",
+      "ms": 2.58,
+      "rows": 12
+    },
+    {
+      "name": "browseCategoryCount",
+      "ms": 0.47,
+      "rows": 1
+    },
+    {
+      "name": "browseNoFilterNewest",
+      "ms": 0.24,
+      "rows": 12
+    },
+    {
+      "name": "browsePriceSort",
+      "ms": 15.92,
+      "rows": 12
+    },
+    {
+      "name": "browseCategoryPriceSort",
+      "ms": 1.52,
+      "rows": 12
+    },
+    {
+      "name": "browseSubtreePathPrefix",
+      "ms": 23.76,
+      "rows": 0
+    },
+    {
+      "name": "browseAttrExists",
+      "ms": 0.24,
+      "rows": 0
+    },
+    {
+      "name": "browseBrandSlug",
+      "ms": 0.11,
+      "rows": 0
+    },
+    {
+      "name": "browseTagSlug",
+      "ms": 1.28,
+      "rows": 12
+    },
+    {
+      "name": "facetBrands",
+      "ms": 23.63,
+      "rows": 0
+    },
+    {
+      "name": "facetAttributeValues",
+      "ms": 0.25,
+      "rows": 0
+    }
+  ],
+  "plans": {
+    "browseCategoryRecommended": [
+      {
+        "select_type": "PRIMARY",
+        "table": "c",
+        "type": "const",
+        "possible_keys": "PRIMARY,categories_slug_unique",
+        "key": "categories_slug_unique",
+        "key_len": "242",
+        "ref": "const",
+        "rows": "1",
+        "Extra": ""
+      },
+      {
+        "select_type": "PRIMARY",
+        "table": "p",
+        "type": "ref",
+        "possible_keys": "products_category_id_idx,products_status_idx,products_status_category_created_idx",
+        "key": "products_category_id_idx",
+        "key_len": "4",
+        "ref": "const",
+        "rows": "1668",
+        "Extra": "Using where; Using filesort"
+      },
+      {
+        "select_type": "DEPENDENT SUBQUERY",
+        "table": "pi",
+        "type": "ref",
+        "possible_keys": "product_images_product_id_idx",
+        "key": "product_images_product_id_idx",
+        "key_len": "4",
+        "ref": "reloop.p.id",
+        "rows": "3",
+        "Extra": "Using where; Using filesort"
+      }
+    ],
+    "browseCategoryCount": [
+      {
+        "select_type": "SIMPLE",
+        "table": "c",
+        "type": "const",
+        "possible_keys": "PRIMARY,categories_slug_unique",
+        "key": "categories_slug_unique",
+        "key_len": "242",
+        "ref": "const",
+        "rows": "1",
+        "Extra": ""
+      },
+      {
+        "select_type": "SIMPLE",
+        "table": "p",
+        "type": "range",
+        "possible_keys": "products_category_id_idx,products_status_idx,products_status_category_created_idx",
+        "key": "products_status_category_created_idx",
+        "key_len": "70",
+        "ref": null,
+        "rows": "1669",
+        "Extra": "Using where; Using index"
+      }
+    ],
+    "browseNoFilterNewest": [
+      {
+        "select_type": "SIMPLE",
+        "table": "p",
+        "type": "index",
+        "possible_keys": "products_category_id_idx,products_status_idx,products_status_category_created_idx",
+        "key": "products_created_at_idx",
+        "key_len": "4",
+        "ref": null,
+        "rows": "12",
+        "Extra": "Using where"
+      },
+      {
+        "select_type": "SIMPLE",
+        "table": "c",
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "reloop.p.category_id",
+        "rows": "1",
+        "Extra": ""
+      }
+    ],
+    "browsePriceSort": [
+      {
+        "select_type": "SIMPLE",
+        "table": "p",
+        "type": "range",
+        "possible_keys": "products_category_id_idx,products_status_idx,products_status_category_created_idx",
+        "key": "products_status_idx",
+        "key_len": "66",
+        "ref": null,
+        "rows": "19537",
+        "Extra": "Using index condition; Using filesort"
+      },
+      {
+        "select_type": "SIMPLE",
+        "table": "c",
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "reloop.p.category_id",
+        "rows": "1",
+        "Extra": ""
+      }
+    ],
+    "browseCategoryPriceSort": [
+      {
+        "select_type": "SIMPLE",
+        "table": "c",
+        "type": "const",
+        "possible_keys": "PRIMARY,categories_slug_unique",
+        "key": "categories_slug_unique",
+        "key_len": "242",
+        "ref": "const",
+        "rows": "1",
+        "Extra": ""
+      },
+      {
+        "select_type": "SIMPLE",
+        "table": "p",
+        "type": "ref",
+        "possible_keys": "products_category_id_idx,products_status_idx,products_status_category_created_idx",
+        "key": "products_category_id_idx",
+        "key_len": "4",
+        "ref": "const",
+        "rows": "1668",
+        "Extra": "Using where; Using filesort"
+      }
+    ],
+    "browseSubtreePathPrefix": [
+      {
+        "select_type": "SIMPLE",
+        "table": "p",
+        "type": "index",
+        "possible_keys": "products_category_id_idx,products_status_idx,products_status_category_created_idx",
+        "key": "products_created_at_idx",
+        "key_len": "4",
+        "ref": null,
+        "rows": "12",
+        "Extra": "Using where"
+      },
+      {
+        "select_type": "SIMPLE",
+        "table": "c",
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "reloop.p.category_id",
+        "rows": "1",
+        "Extra": "Using where"
+      }
+    ],
+    "browseAttrExists": [
+      {
+        "select_type": "PRIMARY",
+        "table": "pav",
+        "type": "ref",
+        "possible_keys": "product_attr_unique,product_attr_attr_idx,product_attr_number_idx,product_attr_product_idx",
+        "key": "product_attr_attr_idx",
+        "key_len": "406",
+        "ref": "const,const",
+        "rows": "1",
+        "Extra": "Using index condition; Using temporary; Using filesort"
+      },
+      {
+        "select_type": "PRIMARY",
+        "table": "p",
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY,products_category_id_idx,products_status_idx,products_status_category_created_idx",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "reloop.pav.product_id",
+        "rows": "1",
+        "Extra": "Using where"
+      },
+      {
+        "select_type": "PRIMARY",
+        "table": "c",
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "reloop.p.category_id",
+        "rows": "1",
+        "Extra": ""
+      }
+    ],
+    "browseBrandSlug": [
+      {
+        "select_type": "SIMPLE",
+        "table": null,
+        "type": null,
+        "possible_keys": null,
+        "key": null,
+        "key_len": null,
+        "ref": null,
+        "rows": null,
+        "Extra": "Impossible WHERE noticed after reading const tables"
+      }
+    ],
+    "browseTagSlug": [
+      {
+        "select_type": "PRIMARY",
+        "table": "pt",
+        "type": "ref",
+        "possible_keys": "PRIMARY,product_tags_tag_idx",
+        "key": "product_tags_tag_idx",
+        "key_len": "162",
+        "ref": "const",
+        "rows": "991",
+        "Extra": "Using where; Using index; Using temporary; Using filesort"
+      },
+      {
+        "select_type": "PRIMARY",
+        "table": "p",
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY,products_category_id_idx,products_status_idx,products_status_category_created_idx",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "reloop.pt.product_id",
+        "rows": "1",
+        "Extra": "Using where"
+      },
+      {
+        "select_type": "PRIMARY",
+        "table": "c",
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "reloop.p.category_id",
+        "rows": "1",
+        "Extra": ""
+      }
+    ],
+    "facetBrands": [
+      {
+        "select_type": "SIMPLE",
+        "table": "p",
+        "type": "range",
+        "possible_keys": "products_category_id_idx,products_status_idx,products_status_category_created_idx",
+        "key": "products_status_idx",
+        "key_len": "66",
+        "ref": null,
+        "rows": "19537",
+        "Extra": "Using index condition; Using temporary; Using filesort"
+      },
+      {
+        "select_type": "SIMPLE",
+        "table": "c",
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "reloop.p.category_id",
+        "rows": "1",
+        "Extra": "Using where"
+      },
+      {
+        "select_type": "SIMPLE",
+        "table": "b",
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "reloop.p.brand_id",
+        "rows": "1",
+        "Extra": "Using where"
+      }
+    ],
+    "facetAttributeValues": [
+      {
+        "select_type": "SIMPLE",
+        "table": "pav",
+        "type": "ref",
+        "possible_keys": "product_attr_unique,product_attr_attr_idx,product_attr_number_idx,product_attr_product_idx",
+        "key": "product_attr_attr_idx",
+        "key_len": "4",
+        "ref": "const",
+        "rows": "1",
+        "Extra": "Using where; Using temporary; Using filesort"
+      },
+      {
+        "select_type": "SIMPLE",
+        "table": "p",
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY,products_category_id_idx,products_status_idx,products_status_category_created_idx",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "reloop.pav.product_id",
+        "rows": "1",
+        "Extra": "Using where"
+      },
+      {
+        "select_type": "SIMPLE",
+        "table": "c",
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "reloop.p.category_id",
+        "rows": "1",
+        "Extra": "Using where"
+      }
+    ]
+  },
+  "indexes": {
+    "products": [
+      "PRIMARY(id,unique)",
+      "products_slug_unique(slug,unique)",
+      "products_seller_id_idx(seller_id)",
+      "products_category_id_idx(category_id)",
+      "products_status_idx(status)",
+      "products_listing_type_idx(listing_type)",
+      "products_created_at_idx(created_at)",
+      "products_status_category_created_idx(status)",
+      "products_status_category_created_idx(category_id)",
+      "products_status_category_created_idx(created_at)",
+      "products_seller_status_idx(seller_id)",
+      "products_seller_status_idx(status)",
+      "products_title_idx(title)",
+      "products_brand_id_brands_id_fk(brand_id)",
+      "products_search_fulltext(search_text)"
+    ],
+    "categories": [
+      "PRIMARY(id,unique)",
+      "categories_slug_unique(slug,unique)",
+      "categories_parent_id_idx(parent_id)"
+    ],
+    "brands": [
+      "PRIMARY(id,unique)",
+      "brands_name_key_unique(name_key,unique)",
+      "brands_slug_unique(slug,unique)",
+      "brands_created_by_users_id_fk(created_by)"
+    ],
+    "tags": [
+      "PRIMARY(id,unique)",
+      "tags_name_key_unique(name_key,unique)",
+      "tags_slug_unique(slug,unique)"
+    ],
+    "product_tags": [
+      "PRIMARY(product_id,unique)",
+      "PRIMARY(tag,unique)",
+      "product_tags_tag_idx(tag)",
+      "product_tags_tag_id_tags_id_fk(tag_id)"
+    ],
+    "attribute_definitions": [
+      "PRIMARY(id,unique)",
+      "attribute_definitions_key_unique(key,unique)"
+    ],
+    "category_attributes": [
+      "PRIMARY(category_id,unique)",
+      "PRIMARY(attribute_id,unique)",
+      "category_attributes_attribute_id_attribute_definitions_id_fk(attribute_id)"
+    ],
+    "product_attribute_values": [
+      "PRIMARY(id,unique)",
+      "product_attr_unique(product_id,unique)",
+      "product_attr_unique(attribute_id,unique)",
+      "product_attr_unique(value_key,unique)",
+      "product_attr_attr_idx(attribute_id)",
+      "product_attr_attr_idx(value_key)",
+      "product_attr_number_idx(attribute_id)",
+      "product_attr_number_idx(value_number)",
+      "product_attr_product_idx(product_id)"
+    ]
+  },
+  "attributeDefinitions": [],
+  "categoryAttributes": [],
+  "topCategories": [
+    {
+      "id": 17,
+      "name": "Test category",
+      "slug": "test-category",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 18,
+      "name": "Test category",
+      "slug": "test-category-2",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 19,
+      "name": "Test category",
+      "slug": "test-category-3",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 20,
+      "name": "Test category",
+      "slug": "test-category-4",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 21,
+      "name": "Test category",
+      "slug": "test-category-5",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 22,
+      "name": "Test category",
+      "slug": "test-category-6",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 23,
+      "name": "Test category",
+      "slug": "test-category-7",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 24,
+      "name": "Test category",
+      "slug": "test-category-8",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 25,
+      "name": "Test category",
+      "slug": "test-category-9",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 26,
+      "name": "Test category",
+      "slug": "test-category-10",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 27,
+      "name": "Test category",
+      "slug": "test-category-11",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 28,
+      "name": "Test category",
+      "slug": "test-category-12",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 29,
+      "name": "Test category",
+      "slug": "test-category-13",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 30,
+      "name": "Test category",
+      "slug": "test-category-14",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 31,
+      "name": "Test category",
+      "slug": "test-category-15",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 32,
+      "name": "Test category",
+      "slug": "test-category-16",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 33,
+      "name": "Test category",
+      "slug": "test-category-17",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 34,
+      "name": "Test category",
+      "slug": "test-category-18",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 35,
+      "name": "Test category",
+      "slug": "test-category-19",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 36,
+      "name": "Test category",
+      "slug": "test-category-20",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 37,
+      "name": "Test category",
+      "slug": "test-category-21",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 38,
+      "name": "Test category",
+      "slug": "test-category-22",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 39,
+      "name": "Test category",
+      "slug": "test-category-23",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 40,
+      "name": "Test category",
+      "slug": "test-category-24",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 41,
+      "name": "Test category",
+      "slug": "test-category-25",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 42,
+      "name": "Test category",
+      "slug": "test-category-26",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 43,
+      "name": "Test category",
+      "slug": "test-category-27",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 44,
+      "name": "Test category",
+      "slug": "test-category-28",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 45,
+      "name": "Test category",
+      "slug": "test-category-29",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 46,
+      "name": "Test category",
+      "slug": "test-category-30",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 47,
+      "name": "Test category",
+      "slug": "test-category-31",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 48,
+      "name": "Test category",
+      "slug": "test-category-32",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 49,
+      "name": "Test category",
+      "slug": "test-category-33",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 50,
+      "name": "Test category",
+      "slug": "test-category-34",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 51,
+      "name": "Test category",
+      "slug": "test-category-35",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 52,
+      "name": "Test category",
+      "slug": "test-category-36",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 53,
+      "name": "Test category",
+      "slug": "test-category-37",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 54,
+      "name": "Test category",
+      "slug": "test-category-38",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 55,
+      "name": "Test category",
+      "slug": "test-category-39",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    },
+    {
+      "id": 56,
+      "name": "Test category",
+      "slug": "test-category-40",
+      "depth": 1,
+      "path": "/",
+      "is_active": 1,
+      "product_count": 0
+    }
+  ],
+  "brandSample": []
+}

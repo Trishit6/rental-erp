@@ -14,6 +14,7 @@ import { cmsRoute } from "./routes/cms";
 import { favoritesRoute, cartRoute, addressesRoute } from "./routes/market";
 import { ordersRoute, rentalsRoute } from "./routes/orders";
 import { paymentsRoute } from "./routes/payments";
+import { reconcilePendingPaymentIntents } from "./lib/payments/reconciliation";
 import { reviewsRoute } from "./routes/reviews";
 import { reportsRoute } from "./routes/reports";
 import { supportRoute } from "./routes/support";
@@ -211,6 +212,12 @@ app.use((_req, res) => {
 app.disable("x-powered-by");
 
 const port = Number(process.env.API_PORT ?? 3001);
+if (process.env.NODE_ENV === "production") {
+  setInterval(() => {
+    void reconcilePendingPaymentIntents();
+  }, 30 * 60 * 1000);
+}
+
 const server = app.listen(port, () => {
   console.log(`Revaro API listening on http://localhost:${port}`);
 });

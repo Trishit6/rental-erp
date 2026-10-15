@@ -166,7 +166,8 @@ describe("the tables the spec asks for", () => {
   it("introduces no table that does not exist in MariaDB", () => {
     // The other direction: a table left behind in the schema after being dropped
     // would make every query against it fail at runtime and only at runtime.
-    expect(tablesByName.size).toBe(59);
+    expect(tablesByName.size).toBe(68);
+
   });
 
   it("gives every table a created_at", () => {
@@ -183,11 +184,14 @@ describe("the tables the spec asks for", () => {
     // is not answerable after the fact.
     const appendOnly: Record<string, string> = {
       admin_audit_log: "append-only log; id + created_at is the whole record",
+      category_slug_redirects: "append-only redirect record",
       conversations: "only `last_message_at` moves",
       favorites: "a favorite is created or removed, never edited",
       user_blocks: "a block is created or removed, never edited",
       messages: "append-only transcript",
       order_events: "append-only timeline; events are never rewritten",
+      category_slug_redirects: "append-only slug redirect",
+      collection_items: "junction; created or removed",
       product_tags: "junction row; created or removed",
       rental_events: "append-only lifecycle log",
       review_helpful_votes: "cast or withdrawn, never edited",

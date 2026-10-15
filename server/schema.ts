@@ -10,6 +10,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  tinyint,
   uniqueIndex,
   varchar,
   type AnyMySqlColumn,
@@ -188,6 +189,11 @@ export const categories = mysqlTable(
     parentId: int("parent_id").references((): AnyMySqlColumn => categories.id, {
       onDelete: "set null",
     }),
+    depth: tinyint("depth").notNull().default(1),
+    path: varchar("path", { length: 255 }).notNull().default("/"),
+    seoTitle: varchar("seo_title", { length: 120 }),
+    seoDescription: varchar("seo_description", { length: 320 }),
+    productCount: int("product_count").notNull().default(0),
     sortOrder: int("sort_order").notNull().default(0),
     isFeatured: boolean("is_featured").notNull().default(false),
     isActive: boolean("is_active").notNull().default(true),
@@ -200,7 +206,141 @@ export const categories = mysqlTable(
   ],
 );
 
+/* ------------------------ taxonomy tables ------------------------ */
+export const brands = mysqlTable(
+  "brands",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    name: varchar("name", { length: 80 }).notNull(),
+    nameKey: varchar("name_key", { length: 80 }).notNull(),
+    slug: varchar("slug", { length: 90 }).notNull(),
+    logoUrl: varchar("logo_url", { length: 500 }),
+    description: varchar("description", { length: 320 }),
+    status: varchar("status", { length: 16 }).notNull().default("ACTIVE"),
+    productCount: int("product_count").notNull().default(0),
+    createdBy: int("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [uniqueIndex("brands_name_key_unique").on(table.nameKey), uniqueIndex("brands_slug_unique").on(table.slug)],
+);
+export const tags = mysqlTable(
+  "tags",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    name: varchar("name", { length: 40 }).notNull(),
+    nameKey: varchar("name_key", { length: 40 }).notNull(),
+    slug: varchar("slug", { length: 60 }).notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [uniqueIndex("tags_name_key_unique").on(table.nameKey), uniqueIndex("tags_slug_unique").on(table.slug)],
+);
+export const categorySlugRedirects = mysqlTable(
+  "category_slug_redirects",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    oldSlug: varchar("old_slug", { length: 60 }).notNull(),
+    categoryId: int("category_id").notNull().references(() => categories.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("category_slug_redirects_old_slug_unique").on(table.oldSlug)],
+);
+export const attributeDefinitions = mysqlTable(
+  "attribute_definitions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    key: varchar("key", { length: 60 }).notNull(),
+    label: varchar("label", { length: 80 }).notNull(),
+    type: varchar("type", { length: 16 }).notNull(),
+    unit: varchar("unit", { length: 24 }),
+    options: text("options"),
+    groupLabel: varchar("group_label", { length: 60 }),
+    isFilterable: boolean("is_filterable").notNull().default(false),
+    isSearchable: boolean("is_searchable").notNull().default(false),
+    sortOrder: int("sort_order").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [uniqueIndex("attribute_definitions_key_unique").on(table.key)],
+);
+export const categoryAttributes = mysqlTable(
+  "category_attributes",
+  {
+    categoryId: int("category_id").notNull().references(() => categories.id, { onDelete: "cascade" }),
+    attributeId: int("attribute_id").notNull().references(() => attributeDefinitions.id, { onDelete: "cascade" }),
+    isRequired: boolean("is_required").notNull().default(false),
+    sortOrder: int("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [primaryKey({ columns: [table.categoryId, table.attributeId] })],
+);
+export const productAttributeValues = mysqlTable(
+  "product_attribute_values",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    productId: int("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+    attributeId: int("attribute_id").notNull().references(() => attributeDefinitions.id, { onDelete: "restrict" }),
+    valueKey: varchar("value_key", { length: 100 }).notNull(),
+    valueText: varchar("value_text", { length: 255 }),
+    valueNumber: varchar("value_number", { length: 64 }),
+    valueBool: tinyint("value_bool"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [uniqueIndex("product_attr_unique").on(table.productId, table.attributeId, table.valueKey)],
+);
+export const categoryRules = mysqlTable(
+  "category_rules",
+  {
+    categoryId: int("category_id").primaryKey().references(() => categories.id, { onDelete: "cascade" }),
+    minRentalDays: int("min_rental_days"),
+    maxRentalDays: int("max_rental_days"),
+    depositPctBp: int("deposit_pct_bp"),
+    lateFeePctBp: int("late_fee_pct_bp"),
+    allowedModes: text("allowed_modes"),
+    rentToOwnAllowed: boolean("rent_to_own_allowed"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+);
+export const collections = mysqlTable(
+  "collections",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    name: varchar("name", { length: 80 }).notNull(),
+    slug: varchar("slug", { length: 90 }).notNull(),
+    description: varchar("description", { length: 320 }),
+    imageUrl: varchar("image_url", { length: 500 }),
+    type: varchar("type", { length: 16 }).notNull().default("MANUAL"),
+    rule: text("rule"),
+    isActive: boolean("is_active").notNull().default(true),
+    startsAt: timestamp("starts_at"),
+    endsAt: timestamp("ends_at"),
+    sortOrder: int("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [uniqueIndex("collections_slug_unique").on(table.slug)],
+);
+export const collectionItems = mysqlTable(
+  "collection_items",
+  {
+    collectionId: int("collection_id").notNull().references(() => collections.id, { onDelete: "cascade" }),
+    productId: int("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+    sortOrder: int("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [primaryKey({ columns: [table.collectionId, table.productId] })],
+);
+
 /* --------------------------------- products -------------------------------- */
+
+/* keep */
 
 export const products = mysqlTable(
   "products",
@@ -216,6 +356,7 @@ export const products = mysqlTable(
       .notNull()
       .references(() => categories.id, { onDelete: "restrict" }),
     brand: varchar("brand", { length: 80 }),
+    brandId: int("brand_id").references(() => brands.id, { onDelete: "set null" }),
     condition: varchar("condition", { length: 12 }).notNull().default("GOOD"),
     /**
      * Seller-entered specification rows, as a JSON array of `{ label, value }`.
@@ -347,6 +488,7 @@ export const productTags = mysqlTable(
     productId: int("product_id")
       .notNull()
       .references(() => products.id, { onDelete: "cascade" }),
+    tagId: int("tag_id").references(() => tags.id, { onDelete: "cascade" }),
     tag: varchar("tag", { length: 40 }).notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
@@ -3490,3 +3632,12 @@ export const rateLimitCounters = mysqlTable(
 
 export type RateLimitCounter = typeof rateLimitCounters.$inferSelect;
 export type NewRateLimitCounter = typeof rateLimitCounters.$inferInsert;
+
+export const brandsRelations = relations(brands, ({ one }) => ({ createdBy: one(users, { fields: [brands.createdBy], references: [users.id] }) }));
+export const categorySlugRedirectsRelations = relations(categorySlugRedirects, ({ one }) => ({ category: one(categories, { fields: [categorySlugRedirects.categoryId], references: [categories.id] }) }));
+export const categoryAttributesRelations = relations(categoryAttributes, ({ one }) => ({ category: one(categories, { fields: [categoryAttributes.categoryId], references: [categories.id] }), attribute: one(attributeDefinitions, { fields: [categoryAttributes.attributeId], references: [attributeDefinitions.id] }) }));
+export const productAttributeValuesRelations = relations(productAttributeValues, ({ one }) => ({ product: one(products, { fields: [productAttributeValues.productId], references: [products.id] }), attribute: one(attributeDefinitions, { fields: [productAttributeValues.attributeId], references: [attributeDefinitions.id] }) }));
+export const categoryRulesRelations = relations(categoryRules, ({ one }) => ({ category: one(categories, { fields: [categoryRules.categoryId], references: [categories.id] }) }));
+export const collectionItemsRelations = relations(collectionItems, ({ one }) => ({ collection: one(collections, { fields: [collectionItems.collectionId], references: [collections.id] }), product: one(products, { fields: [collectionItems.productId], references: [products.id] }) }));
+export const collectionsRelations = relations(collections, ({ many }) => ({ items: many(collectionItems) }));
+

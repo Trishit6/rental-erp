@@ -101,9 +101,12 @@ export type PaymentIntent = {
 
 export type VerifyPaymentInput = {
   providerPaymentId: string;
+  /** Provider payment id for checkout flows that distinguish order and payment ids (Razorpay). */
+  paymentId?: string;
+  /** Provider order id, defaults to providerPaymentId when absent. */
+  orderId?: string;
   /**
-   * Opaque proof returned by the provider's own UI/redirect. The provider
-   * validates it — the server never treats its presence as confirmation.
+   * Opaque proof returned by the provider's own UI/redirect.
    */
   signature?: string;
 };

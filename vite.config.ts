@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
+// Code-split every route so the storefront's first paint does not download the
+// admin/seller panels or the whole feature tree up front.
 
 export default defineConfig({
   plugins: [
@@ -10,6 +12,10 @@ export default defineConfig({
       target: "react",
       rootDirectory: "./src/routes",
       generatedRouteTree: "./src/routeTree.gen.ts",
+      // Route-level code splitting: each route's component/loaders ship in its
+      // own chunk, so the admin panel, seller panel and feature pages are not
+      // downloaded with the storefront's first paint.
+      autoCodeSplitting: true,
     }),
     react(),
     tailwindcss(),

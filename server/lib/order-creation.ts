@@ -103,6 +103,10 @@ export async function createOrderFromPayment(input: CreateOrderInput): Promise<O
         .where(eq(orders.id, transaction.orderId))
         .limit(1);
       if (existing) {
+        const orderRentals = await tx
+          .select({ id: rentals.id })
+          .from(rentals)
+          .where(eq(rentals.orderId, transaction.orderId));
         return {
           orderId: existing.id,
           orderNumber: existing.orderNumber ?? `#${existing.id}`,
@@ -110,7 +114,7 @@ export async function createOrderFromPayment(input: CreateOrderInput): Promise<O
           paymentStatus: existing.paymentStatus,
           total: existing.total,
           currency: existing.currency,
-          rentalCount: 0,
+          rentalCount: orderRentals.length,
           created: false,
         };
       }

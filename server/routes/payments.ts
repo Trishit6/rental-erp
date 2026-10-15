@@ -73,6 +73,12 @@ const couponPreviewSchema = z.object({
 const verifySchema = z
   .object({
     paymentMethod: z.enum(["UPI", "CARD", "NET_BANKING", "WALLET"]).optional(),
+    // Razorpay checkout returns these under its own names; both are accepted
+    // and normalised to the provider call. None of them are trusted on their
+    // own — the provider signature is what makes them real.
+    razorpayPaymentId: z.string().optional(),
+    razorpayOrderId: z.string().optional(),
+    razorpaySignature: z.string().optional(),
   })
   .strict();
 
@@ -255,7 +261,9 @@ paymentsRoute.post(
           currency: existing.currency,
           status: existing.status as PaymentStatus,
           isProductionReady: provider.isProductionReady,
-          // The same intent resumed, so the same collect code is still valid.
+          keyId: provider.name === "razorpay" ? readPaymentConfig().keyId : undefined,
+          providerOrderId: existing.providerTransactionId,
+          methods: await provider.listMethods(),
           upi: await upiForTransaction(existing, provider.isProductionReady),
           // Only a still-open intent is resumable; a settled one must not be
           // handed back for a second charge.
@@ -302,10 +310,13 @@ paymentsRoute.post(
         transactionId: Number(inserted.id),
         provider: provider.name,
         providerPaymentId: intent.providerPaymentId,
+        providerOrderId: intent.providerPaymentId,
         amount: intent.amount,
         currency: intent.currency,
         status: intent.status,
         isProductionReady: provider.isProductionReady,
+        keyId: provider.name === "razorpay" ? readPaymentConfig().keyId : undefined,
+        methods: await provider.listMethods(),
         // Built from the amount just written, never from anything the client sent.
         upi: await upiForTransaction(
           {
@@ -403,12 +414,11 @@ paymentsRoute.post(
     }
 
     const provider = getPaymentProvider();
-    // The server asks the provider what happened; it never asks the browser.
-    // A real adapter may additionally require a proof the provider's own UI
-    // returned, and this is where it would be handed over — but that is the
-    // provider's call to make, not the browser's.
     const result = await provider.verifyPayment({
       providerPaymentId: row.providerTransactionId,
+      paymentId: input.razorpayPaymentId,
+      orderId: input.razorpayOrderId,
+      signature: input.razorpaySignature,
     });
 
     if (!result.verified || result.status !== "SUCCEEDED") {
@@ -561,7 +571,10 @@ paymentsRoute.post("/webhook", async (c) => {
   const provider = getPaymentProvider();
   const rawBody = await c.req.text();
 
-  const signature = c.req.header("x-revaro-signature") ?? undefined;
+  const signature =
+    c.req.header("x-razorpay-signature") ??
+    c.req.header("x-revaro-signature") ??
+    undefined;
   if (!provider.verifyWebhookSignature(rawBody, signature)) {
     // 401, and nothing is written.
     throw new HttpError(401, "INVALID_SIGNATURE", "Webhook signature verification failed.");

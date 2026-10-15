@@ -147,6 +147,15 @@ export const TRUNCATED_TABLES = [
   // exactly what a reseed wants — a stale counter from a previous run must not
   // rate-limit the first requests against the freshly seeded data.
   "rate_limit_counters",
+  "category_attributes",
+  "category_rules",
+  "category_slug_redirects",
+  "product_attribute_values",
+  "attribute_definitions",
+  "collection_items",
+  "collections",
+  "brands",
+  "tags",
   "categories",
   "users",
 ] as const;

@@ -1,76 +1,83 @@
-# Revaro Agent Guide
+# Revaro — agent guide
 
-## Critical Workflows
-- **Command order (must follow):** `pnpm typecheck` → `pnpm lint` → `pnpm test` → `pnpm build` (build also type-checks both tsconfigs).
-- **Verify before pushing:** run the full sequence locally. No CI workflow exists.
+React 19 + Vite frontend (`src/`) talking to a Hono-compatible Express 5 API (`server/`) backed by MariaDB, orchestrated through TanStack Router / TanStack Query / TanStack DB + Drizzle ORM. pnpm 11 (settings in `pnpm-workspace.yaml`, not the package.json `pnpm` field).
 
-## Dev Commands
+## Critical workflows
+
+- **Command order (must run, in this order):** `pnpm typecheck` → `pnpm lint` → `pnpm test` → `pnpm build`. The build re-runs both TS configs and bundles.
+- **Single test:** `pnpm test -- <path>` (or `pnpm test -- <name-filter>`); Vitest, jsdom, no DB/network.
+- **DB seeds truncate tables** — never run `pnpm db:seed*` against production. Seeds hard-refuse `NODE_ENV=production`.
+- **Regenerate routes after adding/modifying `route.tsx` files** with `pnpm generate:routes`; never hand-edit `src/routeTree.gen.ts`.
+- **DB schema changes:** modify `server/schema.ts` first, then `pnpm db:generate` → inspect the generated SQL in `drizzle/` → `pnpm db:migrate` → `pnpm db:verify:migrate`. Do not drop data; inspect generated SQL before applying.
+- **Keep `admin@revaro.local` password-only in dev.** It retains `must_change_password` / `must_enroll_mfa` flags from the seed. Dev MFA bypass flows via `isDevMfaBypass`.
+
+## Dev commands
+
 ```bash
-pnpm dev              # Vite :5173 + API server (Hono/tsx) :3001; Vite proxies /api/* to :3001
-pnpm typecheck        # TypeScript checks (both tsconfig.app.json + tsconfig.server.json)
-pnpm lint             # ESLint (uses _varsIgnorePattern)
-pnpm test             # Vitest (no DB/network, jsdom)
-pnpm build            # Production build (type-checks both tsconfigs + vite build)
-pnpm format           # Prettier (100 width, double quotes)
-pnpm generate:routes  # Regenerate routeTree.gen.ts from file-based routes
-pnpm db:studio        # Drizzle Studio to browse DB
-pnpm start:api        # Run API only (tsx server/index.ts)
+pnpm dev            # Vite :5173 + API (tsx) :3001; /api/* proxied to :3001
+pnpm typecheck      # both tsconfig.app.json + tsconfig.server.json (parallel)
+pnpm lint           # ESLint (ignore pattern _vars)
+pnpm test           # vitest run
+pnpm test:watch     # vitest
+pnpm format         # prettier 100 width, double quotes
+pnpm generate:routes # tsr generate (file-based router)
+pnpm start:api      # API only
+pnpm db:studio      # Drizzle Studio
+pnpm preview        # preview production build
 ```
 
-## Database (MariaDB)
-- **Local DB:** port `3307`, database `reloop`. Never prefix DB credentials with `VITE_`. `DATABASE_URL` overrides `DB_*` vars.
-- **Lifecycle:**
-  ```bash
-  pnpm db:create        # First run only
-  pnpm db:generate      # Before migrate (Drizzle codegen)
-  pnpm db:migrate       # Apply schema changes
-  pnpm db:seed          # Full deterministic pipeline (see below); TRUNCATEs first
-  pnpm db:seed:products # Stage 2 only — appends 20k bulk products (needs demo sellers)
-  pnpm db:seed:history  # Stage 3 only — additive volume data (needs products)
-  pnpm db:seed:admin    # Stage 4 only — admin, support, growth, security, ops data
-  pnpm db:sync:rbac     # Additive sync of the staff permission catalogue (no deletes)
-  ```
-- **Seed pipeline:** `pnpm db:seed` = `seed.ts` (demo) → `seed-products.ts` (20k products) →
-  `seed-history.ts` (volume orders/rentals/reviews/…) → `seed-admin.ts` (staff, RBAC grants, audit,
-  tickets, refunds, disputes, coupons, CMS, payouts, sessions/security). It is deterministic
-  (hand-rolled seeded PRNG, no faker) and **refuses to run when `NODE_ENV=production`**. Seeded
-  accounts carry `users.must_change_password` / `users.must_enroll_mfa` so first-login flows can
-  force a password rotation and MFA enrolment.
-- **Migrations:** `0007_*.sql` and `0009_*.sql` rewrite `products.status`. Inspect generated SQL before applying, verify it's non-destructive, and never drop existing data. Always modify schema first, then generate → inspect → migrate.
+DB lifecycle: `pnpm db:create` (first run), `db:generate`, `db:migrate`, then `db:seed` (full pipeline). Also `db:seed:products`, `db:seed:history`, `db:seed:admin`, `db:sync:rbac`.
 
 ## Architecture
-- **Feature modules:** `src/features/<name>/` with `api.ts`, `query.ts`, `types.ts`, `route.tsx`. No cross-feature imports. Shared code only in `src/components/shared/` or `src/lib/`.
-- **Routing:** TanStack Router (file-based). Regenerate `routeTree.gen.ts` after adding/modifying `route.tsx`. Do not hand-edit it.
-- **Data layer:** TanStack Query + TanStack DB. Always use query key prefixes from `src/lib/query/keys.ts`. Private collections use `orderAll`/`conversationAll` keys.
-- **Providers:** payment and image storage use interface-based providers (`server/lib/payments/types.ts`). Do **not** hardcode a specific payment provider.
-- **Entry points:** client `src/main.tsx` (Vite), API `server/*` (tsx).
-- **Schemas:** Drizzle schema in `server/schema.ts` (single source). Component-level Zod schemas live under `src/features/*/components/schema.ts`. Never duplicate tables/enums.
 
-## Checkout, Orders & Payments (Critical)
-- **Server-authoritative pricing:** Never trust client prices, totals, user/seller IDs, or payment status. Recompute final amounts from DB at validation and order creation time. Validate cart items against DB (exists, active, available, quantity valid, current prices, rental dates available, seller/listing active).
-- **Transactions & consistency:** Create orders (Order + OrderItems + Payment + Rental if applicable + Inventory updates) inside a DB transaction. On failure, leave no partial data. Verify availability again at finalization (prevent oversell, overlap for rentals).
-- **Payment flow:** Reaching a "success" page is not sufficient. Payment confirmation must come from the authoritative payment/data flow. Support PENDING/PROCESSING/PAID/FAILED/CANCELLED/REFUNDED (and PARTIALLY_REFUNDED if schema supports).
-- **Idempotency & UX:** Prevent double submissions (idempotency key/checkout attempt guard). Show loading/disabled states, inline errors, progress. If payment succeeds but order creation fails, do not silently report success—preserve recoverable info; if navigation fails, order still exists (Profile → My Orders).
-- **Schema reuse:** Inspect `server/schema.ts` and existing enums before adding fields. Only add missing relationships/fields. Rental/RT-O behavior must match existing business rules (identify missing DB fields before implementing).
-- **State sync:** Use TanStack DB for reactive checkout/order state (cart, checkout, selected address, order/rental status) but never store payment secrets/sensitive details. Synchronize/invalidate TanStack Query after mutations.
+- **Single package.** Client in `src/`, server in `server/`, tests in `tests/`. Entry points: client `src/main.tsx`; API `server/index.ts`; root schema `server/schema.ts` (single source).
+- **Feature modules:** `src/features/<name>/` expose `api.ts`, `query.ts`, `types.ts`, `route.tsx` (windows shape). No cross-feature imports; shared code only in `src/components/shared/` / `src/lib/`.
+- **Routing:** TanStack Router (file-based from `src/routes/`). Generated artifact: `src/routeTree.gen.ts` (never hand-edit).
+- **Data:** TanStack Query + TanStack DB. Query keys from `src/lib/query/keys.ts`. Server-derived only—never trust client-supplied identity, prices, totals, status.
+- **Providers:** payment + image storage behind abstractions (`server/lib/payments/types.ts`), don't hardcode a specific provider.
+- **Tailwind v4** with `@utility`/tokens in `src/styles.css`. `.inset-surface`/`.raised-surface` are unlayered classes — they defeat Tailwind utilities. Don't nest `Input` (which hard-codes `.inset-surface`) inside a surface that already has its own; use a raw `<input>`.
+- **Trailing-underscore siblings:** routes named `x_.$param.tsx` are siblings of `x.tsx` (preferred when parent is a page, not a layout) so the URL stays the same without rendering under a missing `<Outlet/>`. `support_.$ticketId.tsx` was the precedent.
 
-## Notifications, Messaging & Activity
-- **Existing schema:** `notifications`, `conversations`, `conversationParticipants`, `messages` already exist in `server/schema.ts`. Do not duplicate tables; extend as needed.
-- **Feature location:** Use `src/features/notifications/` (or existing equivalent). Follow feature conventions (`index.tsx`, `components/`, `schema.ts`, `query.ts`, `types.ts`, mutations).
-- **Auth & authorization:** Authoritative user comes from authenticated session. Never trust client-supplied user IDs. For conversations, verify participant membership at the data layer (do not trust `conversationId` alone).
-- **Server-authoritative:** Notification counts, unread badges, and feeds must come from real data (no hardcoded values). Notification clicks must deep-link to the relevant entity when one exists.
-- **UX:** Use skeletons, clear empty/error states ("You're all caught up", "No conversations yet"), optimistic updates for read states with rollback on failure. Prevent duplicate notifications and duplicate message submissions. Keep accessible labels, proper z-index with the floating controls.
-- **Privacy/security:** Never expose private message contents to admins beyond what existing rules allow. No secrets in client state. Email notifications must be provider-independent and work gracefully if no provider is configured.
+## Security / non-negotiables
 
-## Testing
-- **Config:** Vitest (`vite.config.ts`, `environment: "jsdom"`). React Router mocked with plain `<a>` tags. Fixtures in `tests/support/*-fixtures.ts`. No DB/network.
-- **Single test:** `pnpm test -- <path/to/test>` (or filter by name).
+- No secrets in client code or logs. Redaction via `server/lib/logger.ts` (`redactError`); `server/lib/storage/types.ts` keys use `crypto.randomBytes`, not `Math.random`.
+- `server/db-*`, `server/lib/env.ts`: production refuses `root`/empty-password DB configs; migrations use the `MIGRATE_DB_*` credentials and `db-migrate.ts`.
+- Missing budgets: named rate-limit budgets per endpoint return `429`+`Retry-After`; `guarded(...)` wraps handlers. Single named budgets table at top of `server/lib/rate-limit.ts`.
+- `POST /api/*` and admin mutations budgeted globally via `admin.mutation` routed at `adminRoute.use('*')`.
+- After successful auth, JWTs never stored; session via HttpOnly cookies.
+- Server-authoritative checkout/repeat purchase flows must happen inside DB transactions with re-verified availability.
+- Frontend must never use `fetch()` directly; use feature `api.ts` + TanStack Query.
 
-## Constraints & Traps
-- **No `fetch()` in React components:** use feature `api.ts` + TanStack Query.
-- **Query keys:** always use `src/lib/query/keys.ts` prefixes.
-- **Secrets:** never expose DB credentials, payment secrets, private keys, or admin passwords to the client.
-- **Extensibility:** extend existing features/routes. Do not rebuild/redesign auth, user profile, admin workspace, seller dashboard, product management, existing cart UI, wishlist, hero, logo system, TanStack DB architecture, or MariaDB/Drizzle setup.
-- **Safety:** never auto-reset DB. Checkout must handle cart items becoming unavailable (show message, don't silently remove) and only allow cancellations in cancellable states with confirmation. 
-- **Generated artifacts:** `routeTree.gen.ts` is generated—do not hand-edit.
-- **Keep consistent:** match surrounding code style, naming, and structure.
+## Networking/config quirks
+
+- Ports: Vite 5173, API `server/index.ts` 3001, MariaDB 3307, DB name `reloop`.
+- Vite proxies `/api/*` to 3001.
+- Credentials come from env (or `.env`); never prefix DB credentials with `VITE_`.
+- App URL: `APP_URL` (canonical), `APP_BASE_URL` accepted as deprecated fallback (one-time warning via `server/lib/env.ts#appBaseUrl`).
+- Seed credentials: `ADMIN_PASSWORD`/`DEMO_PASSWORD` or generated into `.seed-credentials.local` (gitignored, 0600). `resolveSeedCredentials()` in `server/lib/seed-credentials.ts`.
+- Local seed accounts printed only to the terminal that ran `pnpm db:seed`; credentials never broadcast to UI.
+
+## Testing quirks
+
+- Vitest jsdom. React Router mocked with plain `<a>` tags pattern.
+- Tests must not hit DB/network; fixtures in `tests/support/*-fixtures.ts`.
+- `tests/no-client-secrets.test.ts` enforces that client source/bundle contains no password literal patterns.
+- password checksum tests must be deterministic (digest + salt both tamper).
+- New endpoints need 429 + `Retry-After` assertions (pattern in `tests/rate-limit-budgets.test.ts`), and ownership failures are expected to be `404`, not `403`.
+
+## Generated / do-not-edit artifacts
+
+- `src/routeTree.gen.ts` (tsr generate).
+- `drizzle/meta/_journal.json`, snapshot files (via `db:generate`).
+- `dist/` build output.
+- `.seed-credentials.local`.
+
+## R4 outcomes (quick reference)
+
+Rate-limit budgets in `RATE_LIMITS` (single const at top of `server/lib/rate-limit.ts`); db least-privilege SQL at `docs/deploy/db-least-privilege.sql`; error logging redacted via `redactError` in `server/lib/logger.ts`; `orders.ts` buy endpoint returns `404` on ownership; admin status/report handlers use zod schemas `adminProductStatusSchema` / `adminReportStatusSchema` exported from `server/routes/admin.ts`.
+
+## Sources
+
+- `docs/PROJECT_ANALYSIS.md` — prior read-only audit (findings).
+- `.github/workflows/work.yml` + `docs/deploy/VPS.md` + `docs/deploy/revaro-api.service` — deployment flow (verify → deploy with release folders + rollback).
+- See tests under `tests/` as executable documentation of behavior.

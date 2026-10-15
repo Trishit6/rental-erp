@@ -51,6 +51,9 @@ import type { Request, RequestHandler, Response } from "express";
 export const SECURITY_HEADERS: Record<string, string> = {
   "Content-Security-Policy":
     "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; " +
+    // BEGIN RAZORPAY HOSTED CHECKOUT (remove if no longer using Razorpay)
+    "script-src 'self' https://checkout.razorpay.com; frame-src https://checkout.razorpay.com https://api.razorpay.com; " +
+    // END RAZORPAY HOSTED CHECKOUT
     "object-src 'none'; img-src 'self' data: blob: https:; connect-src 'self' https:",
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
   "X-Content-Type-Options": "nosniff",

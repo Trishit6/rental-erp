@@ -65,6 +65,8 @@ export const PERMISSION_CATALOGUE: readonly PermissionEntry[] = [
   { key: "content.manage", description: "Edit banners and CMS blocks" },
   { key: "audit.view", description: "Read the audit log" },
   { key: "settings.manage", description: "Change platform settings and feature flags" },
+  { key: "taxonomy.view", description: "Read the taxonomy (categories, brands, tags, attributes, collections)" },
+  { key: "taxonomy.manage", description: "Manage the taxonomy (categories, brands, tags, attributes, collections)" },
   { key: "rbac.manage", description: "Grant and revoke roles and permissions" },
   { key: "exports.run", description: "Start a data export" },
 ];
@@ -101,6 +103,7 @@ export const ROLE_PERMISSION_GRANTS: Record<CatalogueRoleName, readonly string[]
     "reports.resolve",
     "refunds.view",
     "exports.run",
+    "taxonomy.view",
   ],
   FINANCE: [
     "dashboard.view",
@@ -129,12 +132,15 @@ export const ROLE_PERMISSION_GRANTS: Record<CatalogueRoleName, readonly string[]
     "disputes.manage",
     "users.view",
     "support.view",
+    "taxonomy.view",
   ],
   CONTENT_MANAGER: [
     "dashboard.view",
     "products.view",
     "categories.view",
     "categories.manage",
+    "taxonomy.view",
+    "taxonomy.manage",
     "content.manage",
     // Promotions are a content/marketing concern: the role that owns the storefront
     // copy owns the codes that discount it. Money movement ([payouts/refunds]) stays

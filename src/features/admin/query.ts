@@ -18,6 +18,8 @@ import {
   fetchAdminOrdersPage,
   fetchAdminOverview,
   fetchAdminPermissions,
+  fetchAdminPage,
+  adminProductImagesPath,
   fetchAdminProductDetail,
   fetchAdminProductFacets,
   fetchAdminProductImageDetail,
@@ -115,6 +117,7 @@ import {
   updateAdminCoupon,
 } from "./api";
 import type {
+  AdminProductImageRow,
   AdminAuditFilters,
   AdminBulkStatusInput,
   AdminDisputeFilters,
@@ -492,12 +495,7 @@ export function useAdminCategoryActiveMutation() {
 export function useAdminProductImages(page: number, pageSize: number) {
   return useQuery({
     queryKey: [...queryKeys.adminProductImages, "list", page, pageSize] as const,
-    queryFn: () =>
-      import("./api").then((m) =>
-        m.fetchAdminPage<import("./api").AdminProductImageRow>(
-          m.adminProductImagesPath(page, pageSize),
-        ),
-      ),
+    queryFn: () => fetchAdminPage<AdminProductImageRow>(adminProductImagesPath(page, pageSize)),
     placeholderData: keepPreviousData,
   });
 }
