@@ -129,6 +129,8 @@ export const productSearchSchema = z.object({
   search: text(SEARCH_MAX_LENGTH),
   category: text(NAME_MAX_LENGTH),
   subcategory: text(NAME_MAX_LENGTH),
+  /** `/browse?brand=<slug>` — a suggestion-box brand choice lands here as a filter pill. */
+  brand: text(NAME_MAX_LENGTH),
   mode: oneOf(MODES),
   condition: oneOf(CONDITIONS),
   availability: oneOf(AVAILABILITY),
@@ -192,6 +194,7 @@ export function toProductUrlSearch(search: ProductSearch): Record<string, string
   if (search.mode) out.mode = search.mode;
   if (search.condition) out.condition = search.condition;
   if (search.availability) out.availability = search.availability;
+  if (search.brand) out.brand = search.brand;
   if (search.sort && search.sort !== DEFAULT_SORT) out.sort = search.sort;
   if (search.minPrice !== undefined) out.minPrice = search.minPrice;
   if (search.maxPrice !== undefined) out.maxPrice = search.maxPrice;
@@ -216,6 +219,7 @@ export function toProductFilters(
     // A subcategory is a category one level down, so it replaces the scope rather
     // than stacking with it — products live in exactly one category row.
     category: search.subcategory ?? categorySlug ?? search.category,
+    brand: search.brand,
     mode: search.mode,
     condition: search.condition,
     availability: search.availability,

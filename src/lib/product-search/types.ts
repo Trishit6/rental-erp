@@ -31,6 +31,8 @@ export type ProductSearch = {
   search?: string;
   category?: string;
   subcategory?: string;
+  /** The server accepts `seller=` for public seller pages; `brand=` is the R11 suggestion landing. */
+  brand?: string;
   mode?: ListingMode;
   condition?: ConditionFilterValue;
   availability?: ProductAvailability;
@@ -44,6 +46,7 @@ export type ProductSearch = {
 export type ProductFilters = {
   search?: string;
   category?: string;
+  brand?: string;
   mode?: ListingMode;
   condition?: ConditionFilterValue;
   availability?: ProductAvailability;

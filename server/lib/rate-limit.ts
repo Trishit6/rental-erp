@@ -51,6 +51,7 @@ export type RateLimitBudget =
   | "auth.mfa"
   | "auth.sessions"
   | "search"
+  | "search.history"
   | "storage.upload"
   | "messages.send"
   | "social.block"
@@ -100,6 +101,10 @@ export const RATE_LIMITS: Record<RateLimitBudget, RateLimitRule> = {
   "auth.mfa": { limit: 10, windowMs: 60_000, perAccount: true },
   "auth.sessions": { limit: 40, windowMs: 60_000 },
   search: { limit: 120, windowMs: 60_000 },
+  // History writes are one suggestion box's keystrokes: a submit records at most
+  // a term per navigation, so 40/min per account covers a person comfortably and
+  // keeps the table from being churned by a script replaying submits.
+  "search.history": { limit: 40, windowMs: 60_000, perAccount: true },
   "storage.upload": { limit: 20, windowMs: 60_000, perAccount: true },
   "messages.send": { limit: 60, windowMs: 60_000, perAccount: true },
   // Blocking and unblocking are rare, deliberate actions. A tighter budget than

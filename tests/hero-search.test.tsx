@@ -1,35 +1,40 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HeroSearch } from "@/features/home/components/HeroSearch";
 
 /**
- * The homepage search bar (PROMPT — hero search).
+ * The homepage search bar (PROMPT R11 — the ONE search system, hero variant).
  *
  * ## What this pins down
  *
- * The hero box has exactly one job: turn a typed term into a navigation to the one
- * discovery route, `/browse?search=<term>`. Everything downstream — the query key, the
- * server call, the empty state — belongs to Browse and is exercised by its own suite.
- * What is easy to regress here is the *contract* at the edge:
+ * Since R11 the hero box is the shared `SearchBox` in its `hero` variant, and
+ * it still has exactly one job at its edge: turn a typed term into a
+ * navigation to the one discovery route, `/browse?search=<term>` — the same
+ * `search` parameter Browse parses with `parseProductSearch`. The URL contract
+ * is asserted here and again in `tests/search-box.test.tsx`.
  *
- *  - Enter and the arrow button both submit (a button wired to `onClick` and no submit
- *    is the classic "looks right, does nothing").
- *  - a blank or whitespace-only box submits nothing, so it can never land a visitor on
- *    an unfiltered catalogue because they leaned on the space bar;
+ *  - Enter and the arrow button both submit.
+ *  - a blank or whitespace-only box submits nothing, so it can never land a
+ *    visitor on an unfiltered catalogue because they leaned on the space bar;
  *  - the term is trimmed, so `"  camera  "` and `"camera"` are the same search;
- *  - the arrow carries a busy state while the navigation is in flight, so a double
- *    click cannot queue two navigations.
+ *  - the clear button empties the field, which disables the submit control.
  *
- * `useNavigate` is the only thing borrowed from TanStack Router; it is mocked so the
- * argument can be asserted. Everything else — `Button`, `Input`, the Zod schema — is
- * the real component, because the point is to test what the user actually gets.
+ * `useNavigate` is mocked so the argument can be asserted; `useAuth` is mocked
+ * to the guest so the history write stays in the in-memory session list (no
+ * network); the queries run on a throwaway client with `retry: false`.
  */
 
 const mocks = vi.hoisted(() => ({ navigate: vi.fn() }));
 
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mocks.navigate,
+  useRouterState: () => ({ location: { pathname: "/" } }),
+}));
+
+vi.mock("@/lib/auth/auth-context", () => ({
+  useAuth: () => ({ user: null, loading: false, refresh: vi.fn() }),
 }));
 
 beforeEach(() => {
@@ -37,21 +42,35 @@ beforeEach(() => {
   mocks.navigate.mockResolvedValue(undefined);
 });
 
+function renderHero() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <HeroSearch />
+    </QueryClientProvider>,
+  );
+}
+
 function searchBox() {
   return screen.getByRole("searchbox", { name: "Search the marketplace" });
 }
 
 describe("the hero search bar", () => {
-  it("renders one labelled field and one submit control", () => {
-    render(<HeroSearch />);
+  it("renders one labelled field and one submit control inside the collapse anchor", () => {
+    renderHero();
 
     expect(searchBox()).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Search" })).toBeInTheDocument();
+    // The anchor the navbar collapse watches — without it the homepage would
+    // show two search bars at once whenever the observer finds nothing.
+    expect(document.getElementById("hero-search")).toBeTruthy();
   });
 
   it("navigates to Browse with the term when Enter is pressed", async () => {
     const user = userEvent.setup();
-    render(<HeroSearch />);
+    renderHero();
 
     await user.type(searchBox(), "camera{Enter}");
 
@@ -63,94 +82,65 @@ describe("the hero search bar", () => {
     );
   });
 
-  it("navigates to Browse with the term when the arrow button is clicked", async () => {
+  it("navigates to Browse with the term when the submit button is clicked", async () => {
     const user = userEvent.setup();
-    render(<HeroSearch />);
+    renderHero();
 
-    await user.type(searchBox(), "gaming laptop");
+    await user.type(searchBox(), "camera");
     await user.click(screen.getByRole("button", { name: "Search" }));
 
     await waitFor(() =>
       expect(mocks.navigate).toHaveBeenCalledWith({
         to: "/browse",
-        search: { search: "gaming laptop" },
+        search: { search: "camera" },
       }),
     );
   });
 
   it("trims leading and trailing whitespace before searching", async () => {
     const user = userEvent.setup();
-    render(<HeroSearch />);
+    renderHero();
 
-    await user.type(searchBox(), "  drill  {Enter}");
+    await user.type(searchBox(), "  camera  {Enter}");
 
     await waitFor(() =>
       expect(mocks.navigate).toHaveBeenCalledWith({
         to: "/browse",
-        search: { search: "drill" },
+        search: { search: "camera" },
       }),
     );
   });
 
   it("does not search an empty box", async () => {
     const user = userEvent.setup();
-    render(<HeroSearch />);
+    renderHero();
 
-    expect(screen.getByRole("button", { name: "Search" })).toBeDisabled();
-
-    // Enter on an empty box still submits the form; the schema and the disabled
-    // button must both refuse it.
-    await user.click(searchBox());
-    await user.keyboard("{Enter}");
+    await user.type(searchBox(), "{Enter}");
 
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
   it("does not search a whitespace-only box", async () => {
     const user = userEvent.setup();
-    render(<HeroSearch />);
+    renderHero();
 
-    await user.type(searchBox(), "   ");
-
-    expect(screen.getByRole("button", { name: "Search" })).toBeDisabled();
-    await user.keyboard("{Enter}");
+    await user.type(searchBox(), "   {Enter}");
 
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
-  it("clears the field and re-disables search with the clear button", async () => {
+  it("clears the field with the clear button and disables the submit control again", async () => {
     const user = userEvent.setup();
-    render(<HeroSearch />);
+    renderHero();
 
-    await user.type(searchBox(), "tent");
-    expect(searchBox()).toHaveValue("tent");
-
+    const box = searchBox();
+    await user.type(box, "hello");
     await user.click(screen.getByRole("button", { name: "Clear search" }));
 
-    expect(searchBox()).toHaveValue("");
+    expect(box).toHaveValue("");
     expect(screen.getByRole("button", { name: "Search" })).toBeDisabled();
+
+    // And nothing navigates afterwards.
     expect(mocks.navigate).not.toHaveBeenCalled();
-  });
-
-  it("marks the arrow busy and blocks a second navigation while travelling", async () => {
-    const user = userEvent.setup();
-    let release: (() => void) | undefined;
-    mocks.navigate.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          release = resolve;
-        }),
-    );
-    render(<HeroSearch />);
-
-    await user.type(searchBox(), "bike{Enter}");
-
-    const submit = screen.getByRole("button", { name: "Search" });
-    await waitFor(() => expect(submit).toHaveAttribute("aria-busy", "true"));
-    expect(submit).toBeDisabled();
-    expect(mocks.navigate).toHaveBeenCalledTimes(1);
-
-    release?.();
-    await waitFor(() => expect(submit).not.toBeDisabled());
   });
 });

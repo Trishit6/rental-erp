@@ -269,6 +269,36 @@ with relation`.
 * `export_jobs` — asynchronous export requests (`ORDERS`, `PAYOUTS`,
   `AUDIT_LOG`, …), `job_key` unique, `expires_at > created_at` CHECKed.
 
+**Search history (PROMPT R11)**
+
+* `search_history` — what each signed-in user typed into search, written by
+  `POST /api/search/history` and read back by
+  `GET /api/search/history` (the "Recent searches" list, last 8 terms) and
+  `GET /api/search/trending`.
+  * **Identity**: one row per distinct term per user — unique
+    `(user_id, term)`; a repeat term upserts, refreshing `created_at` and
+    `result_count`. `user_id` is `CASCADE`, so the account's terms delete with
+    it; a user deletion leaves no orphaned history.
+  * **Privacy rules** (enforced in `server/lib/search-suggest.ts`): terms that
+    look like a personal identifier are never stored — an email address, or
+    any term containing a run of 8+ digits (phone-like, card-like). Storing is
+    skipped silently; the request still succeeds so the choice to skip is not
+    observable as an error signature. Terms are capped at 60 characters.
+    Nothing user-identifying is ever returned: history endpoints answer only
+    for the caller's own rows, and trending returns terms only, never ids.
+  * **Empty searches**: `result_count = 0` rows are stored (it is the user's
+    own history) but are excluded from both the "Recent searches" list and
+    trending — a suggestion must not be offered back from a search that
+    proved there is nothing to find.
+  * **Retention**: a user's stored terms are pruned to their newest **50**
+    after each write. The user can delete one term
+    (`DELETE /api/search/history/:id` — another user's id is the same 404 as a
+    non-existent one) or everything (`DELETE /api/search/history/clear`).
+  * **Trending**: top terms from a **7-day window** searched by **≥ 3 distinct
+    users** (the privacy threshold — one person's repeated typo never
+    headlines the site), served from a 10-minute cache; the empty state falls
+    back to featured category *names*.
+
 ### Pre-existing (34 tables) — brief sketch
 
 * **auth**: `users`, `sessions` (see §7 for the extended columns).

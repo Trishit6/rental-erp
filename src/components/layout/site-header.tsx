@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowRight,
@@ -13,7 +13,6 @@ import {
   Package,
   Plus,
   Repeat2,
-  Search,
   Settings,
   ShieldCheck,
   ShoppingBag,
@@ -26,13 +25,13 @@ import { useAuth } from "../../lib/auth/auth-context";
 import { useLogoutMutation } from "@/features/auth/query";
 import { isSellerRole } from "@/features/auth/types";
 import { CartDrawerTrigger } from "@/features/cart/components/CartDrawerTrigger";
+import { NavbarSearch } from "@/components/shared/search/SearchBox";
 import { NotificationBell } from "@/features/notifications/components/NotificationBell";
 import { useUnreadCount } from "@/features/notifications/query";
 import { badgeLabel } from "@/features/notifications/components/schema";
 import { ThemeToggle } from "@/lib/theme";
 import { Avatar } from "../shared/avatar";
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,11 +42,11 @@ import {
 } from "../ui/dropdown-menu";
 
 export function SiteHeader() {
-  const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const navigate = useNavigate();
   const { user } = useAuth();
+  const isHome = useRouterState({ select: (state) => state.location.pathname === "/" });
 
   // Navbar elevation on scroll: more opaque, stronger shadow.
   useEffect(() => {
@@ -56,12 +55,6 @@ export function SiteHeader() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
-
-  function search(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    navigate({ to: "/browse", search: { search: query.trim() || undefined } });
-    setMenuOpen(false);
-  }
 
   const logoutMutation = useLogoutMutation();
 
@@ -111,20 +104,12 @@ export function SiteHeader() {
           </Link>
         </nav>
 
+        {/* The one search system (PROMPT R11): cross-placement owned by the shared
+            component — collapses to an icon while the homepage hero is visible,
+            opens the overlay below 640px. */}
+        <NavbarSearch onHomepage={isHome} />
+
         <div className="hidden items-center gap-3 md:flex">
-          <form className="relative w-56" onSubmit={search} role="search">
-            <Search
-              size={16}
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground"
-            />
-            <Input
-              aria-label="Search listings"
-              className="h-10 pl-10 pr-3"
-              placeholder="Search anything..."
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </form>
           <ThemeToggle />
           <Button asChild variant="secondary" size="icon" aria-label="Saved items">
             <Link to="/favorites">
@@ -195,19 +180,6 @@ export function SiteHeader() {
             className="overflow-hidden lg:hidden"
           >
             <div className="page-wrap flex flex-col gap-3 pb-5">
-              <form className="relative" onSubmit={search} role="search">
-                <Search
-                  size={16}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground"
-                />
-                <Input
-                  aria-label="Search listings"
-                  className="pl-10"
-                  placeholder="Search anything..."
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-              </form>
               <div className="flex items-center justify-between py-1">
                 <span className="eyebrow">Theme</span>
                 <div className="flex items-center gap-2">

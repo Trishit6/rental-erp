@@ -39,6 +39,18 @@ export const queryKeys = {
   /** Date-range availability; `range` is a stable signature of the window. */
   productAvailability: (slug: string, range: string) =>
     ["product", slug, "availability", range] as const,
+  /**
+   * The one search surface (PROMPT R11: `components/shared/search/`).
+   *
+   *  - `searchSuggest` is keyed by the normalized committed query, so each
+   *    keystroke's results are their own cache entry and a reopened box for the
+   *    same prefix renders instantly without a fetch.
+   *  - `searchHistory` / `searchTrending` hang off the `["search"]` prefix.
+   */
+  search: ["search"] as const,
+  searchSuggest: (query: string) => ["search", "suggest", query] as const,
+  searchHistory: ["search", "history"] as const,
+  searchTrending: ["search", "trending"] as const,
   auth: ["auth", "me"] as const,
   /**
    * The signed-in user's live sessions (`GET /auth/sessions`). Private: it lists

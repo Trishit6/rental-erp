@@ -15,6 +15,7 @@ function toQueryString(filters: BrowseFilters): string {
 
   set("search", filters.search);
   set("category", filters.category);
+  set("brand", filters.brand);
   set("mode", filters.mode);
   set("condition", filters.condition);
   set("availability", filters.availability);

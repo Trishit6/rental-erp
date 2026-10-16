@@ -64,6 +64,7 @@ const NEW_BUDGETS: { budget: RateLimitBudget; file: string }[] = [
   { budget: "wallet.methods", file: "server/routes/wallet.ts" },
   { budget: "seller.orders", file: "server/routes/seller-orders.ts" },
   { budget: "seller.products", file: "server/routes/seller.ts" },
+  { budget: "search.history", file: "server/routes/search.ts" }, // R11: recent-search writes
   { budget: "admin.mutation", file: "server/routes/admin.ts" },
 ];
 

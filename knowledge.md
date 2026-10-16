@@ -753,3 +753,59 @@ Schema change flow: edit `server/schema.ts` → `pnpm db:generate` → `pnpm db:
 - Lint: unused vars *and* args must be named with a leading `_` (`varsIgnorePattern: "^_"`).
   `no-explicit-any` is only a warning. `prettier --check` is not in the gate, but match
   `printWidth: 100`, double quotes, semicolons, trailing commas.
+
+## Security layer (rate-limit budgets, CSP, secrets)
+
+- **Rate limits are named budgets, one registry.** `RATE_LIMITS` is a single const at the top of
+  `server/lib/rate-limit.ts`; call sites pass a budget *name* (`auth.login`, `payments.intent`,
+  `support.create`, …) and never restate numbers. `guarded(...)` wraps handlers; missing budgets
+  return `429` + `Retry-After`. `POST /api/*` and every admin mutation draw on a global
+  `admin.mutation` budget routed at `adminRoute.use('*')`. Several budgets are `perAccount` (a
+  second bucket keyed by account, not just IP).
+- **New endpoints need 429 + `Retry-After` assertions** — pattern in `tests/rate-limit-budgets.test.ts`.
+- **Ownership failures are always `404`, never `403`** — the owner predicate goes in the lookup's
+  WHERE, so a probed id cannot be confirmed to exist.
+- `tests/no-client-secrets.test.ts` enforces that client source/bundle contains no password literal
+  patterns. Password hashing is scrypt with a bcrypt upgrade path; `admin@revaro.local` stays
+  password-only in dev and keeps `must_change_password` / `must_enroll_mfa` from the seed (dev MFA
+  bypass via `isDevMfaBypass`).
+- Secrets come from env only, never `VITE_`-prefixed. **Production refuses `root`/empty-password DB
+  configs** (`server/lib/env.ts`, `server/db-*`); migrations use separate `MIGRATE_DB_*`
+  credentials via `server/db-migrate.ts`. Least-privilege SQL for deployment lives in
+  `docs/deploy/db-least-privilege.sql`.
+- Errors are logged through `server/lib/logger.ts` (`redactError`), never raw.
+- CSP (`server/lib/security.ts`) whitelists Razorpay hosted-checkout hosts
+  (`checkout.razorpay.com`, `api.razorpay.com`).
+
+## Razorpay & payment reconciliation
+
+- The Razorpay adapter (`server/lib/payments/razorpay-provider.ts`) reads `RAZORPAY_KEY_ID` /
+  `RAZORPAY_KEY_SECRET` / `RAZORPAY_WEBHOOK_SECRET` (falling back to the generic `PAYMENT_*` vars)
+  and is selected with `PAYMENT_PROVIDER=razorpay`. It uses **hosted checkout** (hence the CSP
+  entries) — no client-side SDK encryption of money fields; verify still re-asks the provider.
+- `server/lib/payments/reconciliation.ts` — `reconcilePendingPaymentIntents()` finalises
+  `PENDING`/`PROCESSING` transactions stale > 30 min (asks the provider, drives to paid→order or
+  `FAILED`) and expires > 24 h. It is a no-op under the dev mock, re-entry-guarded (`running`),
+  runs once at API startup and via `pnpm payments:reconcile` (`server/payments-reconcile.ts`).
+- Everything else in the payment layer stands: provider-verified amounts, raw-body webhook signature
+  checks, two idempotency guards, payment committed before the order.
+
+## Taxonomy library & admin
+
+- Pure helpers (no DB) live in `server/lib/taxonomy/` (`index.ts` depth/tree helpers,
+  `attributes.ts` attribute/option helpers); unit-tested in `tests/taxonomy-tree.test.ts` /
+  `tests/taxonomy-attributes.test.ts`. Admin taxonomy writes are in `server/lib/admin-categories.ts`
+  (two levels max — a third is a 400).
+- `server/routes/admin.ts` is a gated sub-router: permission catalogue in
+  `server/lib/permission-catalogue.ts` (`taxonomy.view`/`taxonomy.manage`, `categories.view`,… ),
+  staff roles map to permissions, `adminRoute.use('*')` applies the mutation budget. Admin product
+  status / report status schemas (`adminProductStatusSchema`, `adminReportStatusSchema`) are
+  exported from `server/routes/admin.ts`.
+
+## Deployment
+
+- Flow: verify (typecheck/lint/test/build) → deploy with **release folders + rollback**; service
+  unit at `docs/deploy/revaro-api.service`, runbook `docs/deploy/VPS.md`, CI in
+  `.github/workflows/work.yml`. Serve `dist/` statically, run the API behind systemd on `API_PORT`.
+- After deploy, rely on the API's startup reconciliation, or run the one-shot
+  `pnpm payments:reconcile` manually (it takes no flags).

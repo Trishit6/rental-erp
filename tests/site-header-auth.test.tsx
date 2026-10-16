@@ -37,6 +37,22 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ to, children }: { to?: string; children?: ReactNode }) => <a href={to}>{children}</a>,
   useNavigate: () => mocks.navigate,
+  useRouterState: (options?: {
+    select?: (state: unknown) => unknown;
+  }) => {
+    const state = { location: { pathname: "/" } };
+    return options?.select ? options.select(state) : state;
+  },
+}));
+
+// The header hosts the shared search system; its internals (queries, overlay)
+// belong to tests/search-box.test.tsx. Here the header's own contract is what
+// renders around it — theme, account cluster, mobile links.
+vi.mock("@/components/shared/search/SearchBox", () => ({
+  NavbarSearch: (props: { onHomepage?: boolean }) => (
+    <div data-testid="navbar-search-slot" data-homepage={String(props.onHomepage)} />
+  ),
+  SearchBox: () => null,
 }));
 
 vi.mock("framer-motion", () => ({

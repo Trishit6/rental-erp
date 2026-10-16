@@ -3,6 +3,7 @@ import { z } from "zod";
 import { and, asc, desc, eq, gte, inArray, like, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import {
+  brands,
   categories,
   favorites,
   productImages,
@@ -426,7 +427,22 @@ export async function searchProducts(query: ProductSearchQuery, viewerId?: numbe
     conditions.push(inArray(products.condition, conditionFilter));
   }
   if (query.brand) {
-    conditions.push(eq(products.brand, query.brand));
+    // R11: the suggestion box links here with the **brands-table slug**
+    // (`/browse?brand=<slug>`), while `products.brand` stores the display name
+    // ("Sony"). Resolve slug → name, and accept a literal name too so any
+    // hand-written link with the raw value keeps working instead of 0-matching.
+    const [brandRow] = await db
+      .select({ name: brands.name })
+      .from(brands)
+      .where(
+        or(
+          eq(brands.slug, query.brand),
+          eq(brands.nameKey, query.brand.toLowerCase()),
+          eq(brands.name, query.brand),
+        ),
+      )
+      .limit(1);
+    conditions.push(eq(products.brand, brandRow?.name ?? query.brand));
   }
   if (query.tag) {
     conditions.push(

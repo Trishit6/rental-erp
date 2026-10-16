@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { ArrowLeft, SlidersHorizontal } from "lucide-react";
+import { ArrowLeft, SlidersHorizontal, X } from "lucide-react";
 import { Pagination } from "@/components/shared/pagination";
 import { FloatingSlotContent } from "@/lib/floating/rail";
 import { DESKTOP_QUERY, useMediaQuery } from "@/lib/utils/use-media-query";
@@ -138,6 +138,24 @@ export function BrowsePage() {
         />
         <SortSelect value={search.sort} onChange={(sort) => applyFilters({ sort })} />
       </div>
+
+      {/* R11: the active query is itself an active filter — shown as a chip that
+          stays in sync with the URL, removable like any other pill (the field
+          also owns its own clear button, deliberately; the field is control, this
+          is state). */}
+      {hasSearch && (
+        <span className="inset-surface inline-flex items-center gap-1.5 rounded-full py-1 pl-3 pr-1.5 text-xs font-bold text-foreground">
+          <span className="max-w-64 truncate">“{search.search}”</span>
+          <button
+            type="button"
+            onClick={() => setSearchTerm("")}
+            aria-label="Clear search"
+            className="flex size-5 items-center justify-center rounded-full text-muted-foreground transition hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+          >
+            <X size={12} />
+          </button>
+        </span>
+      )}
 
       <ActiveFilters
         filters={activeProductFilters(search)}

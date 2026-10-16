@@ -220,7 +220,12 @@ async function request<T>(
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path),
+  /**
+   * Optional `RequestInit` lets a caller pass an `AbortSignal` — typed
+   * suggestions hand TanStack Query's own signal through, so navigating away
+   * or a newer keystroke cancels the previous fetch instead of racing it.
+   */
+  get: <T>(path: string, options?: RequestInit) => request<T>(path, options),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
   patch: <T>(path: string, body?: unknown) =>

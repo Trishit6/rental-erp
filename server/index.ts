@@ -10,6 +10,7 @@ import { configureRateLimitStoreFromEnv } from "./lib/rate-limit";
 import { logger, redactError, redactUrl } from "./lib/logger";
 import { auth } from "./routes/auth";
 import { productsRoute, categoriesRoute } from "./routes/products";
+import { searchRoute } from "./routes/search";
 import { cmsRoute } from "./routes/cms";
 import { favoritesRoute, cartRoute, addressesRoute } from "./routes/market";
 import { ordersRoute, rentalsRoute } from "./routes/orders";
@@ -168,6 +169,9 @@ router.route("/api/categories", categoriesRoute);
 router.route("/api/cms", cmsRoute);
 router.route("/api/products", productsRoute);
 router.route("/api/products/search", productsRoute);
+// The one search surface (PROMPT R11): suggest, trending and history under
+// their own prefix so the browsing search stays on /api/products.
+router.route("/api/search", searchRoute);
 router.route("/api/favorites", favoritesRoute);
 router.route("/api/cart", cartRoute);
 router.route("/api/addresses", addressesRoute);
