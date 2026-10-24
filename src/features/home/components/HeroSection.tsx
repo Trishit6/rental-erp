@@ -22,6 +22,7 @@ import { TrustPoint } from "./TrustPoint";
 import { HERO_SLIDES, useHeroSlides, useHeroSwipe } from "./schema";
 import type { HeroSlide } from "./schema";
 import { joinHeadlineText, HeroWordReveal } from "@/components/motion-effects/hero-word-reveal";
+import { WordRotator } from "@/components/motion-effects/word-rotator";
 import { useHeroBanners } from "../query";
 import type { PublicBanner } from "../api";
 
@@ -133,19 +134,11 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
           </AnimatePresence>
         </div>
 
-        <div className="mt-4 max-w-lg" aria-live="polite">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.p
-              key={`${slide.id}-body`}
-              initial={prefersReducedMotion ? false : { opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={prefersReducedMotion ? undefined : { opacity: 0 }}
-              transition={{ duration: 0.22 }}
-              className="text-base leading-relaxed text-muted-foreground"
-            >
-              {slide.body}
-            </motion.p>
-          </AnimatePresence>
+        {/* The subline is the fixed four-promise rotator (U4 effect 02). An
+            admin banner's subtitle still appears — it already lives on the
+            caption card as `captionLabel` — so no copy is lost. */}
+        <div className="mt-4 max-w-lg">
+          <WordRotator testId="hero-word-rotator" />
         </div>
 
         <motion.div
