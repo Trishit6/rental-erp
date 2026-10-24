@@ -23,6 +23,7 @@ import { usersRoute } from "./routes/social";
 import { messagesRoute } from "./routes/messages";
 import { notificationsRoute } from "./routes/notifications";
 import { activityRoute } from "./routes/activity";
+import { socialProofRoute } from "./routes/social-proof";
 import { sellerRoute } from "./routes/seller";
 import { sellersRoute } from "./routes/sellers";
 import { storageRoute } from "./routes/storage";
@@ -187,6 +188,9 @@ router.route("/api/notifications", notificationsRoute);
 // The session user's own history. Mounted under its own prefix because it takes no
 // user id — see `routes/activity.ts`.
 router.route("/api/activity", activityRoute);
+// U4 effect 03: the public, anonymised recent-activity feed. Not under any auth
+// router — the whole point is showing a *visitor* something; see routes/social-proof.ts.
+router.route("/api/social-proof", socialProofRoute);
 router.route("/api/seller/orders", sellerOrdersRoute);
 // The wallet sits under `/api/seller/` for the same reason the orders router does:
 // it is the signed-in seller's own money, and keeping the prefix means the guard

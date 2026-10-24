@@ -12,6 +12,7 @@ export type SettingGroup =
   | "support"
   | "payments"
   | "search"
+  | "socialProof"
   | "maintenance";
 
 export type SettingDef = {
@@ -201,6 +202,20 @@ export const SETTINGS_REGISTRY: SettingDef[] = [
       const n = asNumber(v);
       if (n < 1 || n > 168) throw new Error("Must be between 1 and 168");
       return Math.round(n);
+    },
+  },
+  {
+    key: "socialProof.enabled",
+    group: "socialProof",
+    label: "Social proof feed",
+    description: "Public, anonymised recent-activity feed (rented/bought/listed pings). Privacy rules are fixed in code; this only turns the feed on or off.",
+    defaultValue: true,
+    expose: "public",
+    validate: (v) => {
+      if (typeof v === "boolean") return v;
+      if (v === "true") return true;
+      if (v === "false") return false;
+      throw new Error("Invalid boolean");
     },
   },
   {

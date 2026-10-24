@@ -1,6 +1,6 @@
 import { Router } from "../lib/http";
 import { z } from "zod";
-import { and, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import {
   orderItems,
@@ -232,6 +232,64 @@ function toReviewPayload(row: ReviewRow) {
  * rendered from *this* answer, so it appears exactly when the server would
  * accept the submission.
  */
+/**
+ * `GET /api/reviews/featured` (U4 effect 04).
+ *
+ * The homepage review deck's data source: up to six real reviews that have
+ * earned a prominent placement — PUBLISHED, four stars or better, verified
+ * purchase, and a comment long enough to be worth shuffling (40–220 chars).
+ * The projection is deliberately narrower than the shopfront card: rating,
+ * text, the author's *public* display name, and the listing they reviewed.
+ * No user id, no order references — a homepage visitor has no need for either.
+ */
+reviewsRoute.get(
+  "/featured",
+  guarded("reviews.featured", async (c) => {
+    const rows = await db
+      .select({
+        rating: reviews.rating,
+        title: reviews.title,
+        comment: reviews.comment,
+        authorName: users.name,
+        productTitle: products.title,
+        productSlug: products.slug,
+      })
+      .from(reviews)
+      .innerJoin(users, eq(reviews.userId, users.id))
+      .innerJoin(products, eq(reviews.productId, products.id))
+      .where(
+        and(
+          inArray(reviews.status, PUBLIC_REVIEW_STATUSES),
+          gte(reviews.rating, 4),
+          eq(reviews.isVerifiedPurchase, true),
+          sql`CHAR_LENGTH(${reviews.comment}) BETWEEN 40 AND 220`,
+        ),
+      )
+      // Most helpful first, then newest: a deterministic rotation order so
+      // the deck never renders the same six differently between cache fills.
+      .orderBy(desc(reviews.helpfulCount), desc(reviews.createdAt))
+      .limit(6);
+
+    // Validate the published shape: a projection growth (the next field added
+    // by accident carries a user id) fails here instead of leaking.
+    const payload = z
+      .array(
+        z.object({
+          rating: z.number().int().min(1).max(5),
+          title: z.string().max(120).nullable(),
+          comment: z.string().min(40).max(220),
+          authorName: z.string().min(1).max(80),
+          productTitle: z.string().min(1).max(200),
+          productSlug: z.string().min(1).max(80),
+        }),
+      )
+      .parse(rows);
+
+    c.res.setHeader("Cache-Control", "public, max-age=60");
+    return c.json(ok({ reviews: payload }));
+  }),
+);
+
 reviewsRoute.get("/product/:idOrSlug", async (c) => {
   const viewer = c.get("user");
   const viewerId = viewer?.id ?? null;

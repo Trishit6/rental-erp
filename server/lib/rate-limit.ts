@@ -74,6 +74,8 @@ export type RateLimitBudget =
   | "wallet.methods"
   | "seller.orders"
   | "seller.products"
+  | "social.proof"          // U4 effect 03: public recent-activity feed
+  | "reviews.featured"      // U4 effect 04: public featured reviews
   | "admin.action"
   | "admin.mutation";
 
@@ -177,6 +179,12 @@ export const RATE_LIMITS: Record<RateLimitBudget, RateLimitRule> = {
   // delete. Each validates and writes a listing and may move inventory; 60/min is
   // comfortable for a seller managing a catalogue and a stop for bulk scripting.
   "seller.products": { limit: 60, windowMs: 60_000, perAccount: true },
+  // U4 effect 03: the social-proof feed runs two joins per uncached minute per IP and
+  // is served with a 60 s cache header, so 30/min/IP is far past any real tab's need
+  // and keeps a script from using the endpoint as an oracle for order throughput.
+  "social.proof": { limit: 30, windowMs: 60_000 },
+  // U4 effect 04: same shape — a public read, one cached result set, no account key.
+  "reviews.featured": { limit: 30, windowMs: 60_000 },
   // RBAC grant and account-state changes take multiple round trips and must not
   // be grindable — and a single admin's mistake should not consume a shared
   // budget. 30/min per admin is dozens of role flips a minute, far past human.

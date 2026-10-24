@@ -3,7 +3,7 @@
  * loop cap, the reduce-animations preference and the near-viewport lazy mount.
  */
 import { describe, expect, it, beforeEach } from "vitest";
-import { render, screen, act, fireEvent } from "@testing-library/react";
+import { render, screen, act } from "@testing-library/react";
 import { FX_FLAGS, isFxEnabled, type FxFlagKey } from "@/lib/motion/flags";
 import { pickRunningLoops } from "@/lib/motion/loop-capacity";
 import { setReduceAnimations, useReduceAnimations } from "@/lib/motion/reduce-preference";

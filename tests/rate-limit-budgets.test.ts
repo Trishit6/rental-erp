@@ -162,6 +162,32 @@ describe("every new budget refuses its (limit + 1)th request", () => {
   }
 });
 
+describe("the U4 public reads have ceilings too", () => {
+  // `social.proof` and `reviews.featured` are deliberate anonymous reads
+  // (per-IP, no account bucket — a visitor has no account to follow). The
+  // boundary matters all the same: an uncached script must not use the
+  // public feed or the featured deck as an unbounded oracle. The probe runs
+  // the real `guarded(...)` wrapper; the limiter is method-agnostic so the
+  // POST probe exercises the same budget the GET route names.
+  for (const budget of ["social.proof", "reviews.featured"] as const) {
+    it(`${budget}: 429 with Retry-After once the per-IP budget is spent`, async () => {
+      const rule = RATE_LIMITS[budget];
+      useRateLimitStore(await primed(rule.limit, `${budget}:ip:${IP}`, rule.windowMs));
+
+      const harness = await startRouter(probeRouter(budget));
+      try {
+        const blocked = await probe(harness);
+        expect(blocked.status, `${budget} admitted its (limit + 1)th call`).toBe(429);
+        expect(blocked.headers.get("retry-after")).toMatch(/^\d+$/);
+        const body = (await blocked.json()) as { error: { code: string } };
+        expect(body.error.code).toBe("RATE_LIMITED");
+      } finally {
+        await harness.close();
+      }
+    });
+  }
+});
+
 describe("the account bucket follows the identifier, not the socket", () => {
   it("refuses an authenticated account from a fresh address once its bucket is full", async () => {
     // `reviews.write` is representative: it is per-account and the assertion only
