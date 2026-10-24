@@ -21,6 +21,7 @@ import { HeroSearch } from "./HeroSearch";
 import { TrustPoint } from "./TrustPoint";
 import { HERO_SLIDES, useHeroSlides, useHeroSwipe } from "./schema";
 import type { HeroSlide } from "./schema";
+import { joinHeadlineText, HeroWordReveal } from "@/components/motion-effects/hero-word-reveal";
 import { useHeroBanners } from "../query";
 import type { PublicBanner } from "../api";
 
@@ -107,14 +108,14 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
       aria-label="Revaro highlights"
     >
       <div className="py-2">
-        <motion.div {...fadeUp} transition={{ duration: 0.3 }}>
-          <Badge className="gap-2 px-4 py-2">
-            <span className="size-2 rounded-full bg-primary" />
-            {stats
-              ? `${stats.activeListings.toLocaleString("en-IN")} neighbours sharing near you`
-              : "Neighbours sharing near you"}
-          </Badge>
-        </motion.div>
+        {(stats?.activeListings && stats.activeListings > 0) ? (
+          <motion.div {...fadeUp} transition={{ duration: 0.3 }}>
+            <Badge className="gap-2 px-4 py-2">
+              <span className="size-2 rounded-full bg-primary" />
+              {Intl.NumberFormat("en-IN").format(stats.activeListings)} neighbours sharing near you
+            </Badge>
+          </motion.div>
+        ) : null}
 
         <div className="mt-5 max-w-xl" aria-live="polite">
           <AnimatePresence mode="wait" initial={false}>
@@ -125,8 +126,9 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
               exit={prefersReducedMotion ? undefined : { opacity: 0, y: -8 }}
               transition={{ duration: 0.28, ease: "easeOut" }}
               className="font-heading text-4xl font-black leading-[1.06] tracking-tight sm:text-5xl"
+              aria-label={joinHeadlineText(slide.headingA, slide.headingB)}
             >
-              {slide.headingA} <span className="text-primary">{slide.headingB}</span>
+              <HeroWordReveal headingA={slide.headingA} headingB={slide.headingB} accentClass="text-primary" testId="hero-word-reveal" />
             </motion.h1>
           </AnimatePresence>
         </div>
