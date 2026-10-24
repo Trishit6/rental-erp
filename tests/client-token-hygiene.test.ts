@@ -59,6 +59,7 @@ const COOKIE_NAMES = ["revaro_access_token", "revaro_refresh_token", "revaro_ses
 const STORAGE_WRITERS = new Set([
   "src/lib/theme/theme-utils.ts", // the theme preference
   "src/lib/auth/session-sync.ts", // a cross-tab "auth changed, go ask the server" ping
+  "src/lib/motion/reduce-preference.ts", // the "Reduce animations" UI preference (U4): writes "1" or deletes, never a credential
 ]);
 
 function offenders(pattern: RegExp): string[] {

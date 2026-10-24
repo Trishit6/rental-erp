@@ -1,11 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Lock, Monitor, Moon, Palette, Sun } from "lucide-react";
+import { ArrowRight, Lock, Monitor, Moon, Palette, Sparkles, Sun } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { useTheme } from "@/lib/theme";
 import type { ThemePreference } from "@/lib/theme";
 import { cn } from "@/lib/utils/cn";
 import { NotificationPreferencesSection } from "@/features/notifications/components/NotificationPreferencesSection";
 import { BlockedUsersCard } from "@/features/safety/components/BlockedUsersCard";
+import { setReduceAnimations, useReduceAnimations } from "@/lib/motion/reduce-preference";
 
 /**
  * `/settings` — account preferences.
@@ -25,6 +26,7 @@ const THEME_CHOICES: { value: ThemePreference; label: string; icon: typeof Sun }
 
 export function SettingsPage() {
   const { preference, setTheme } = useTheme();
+  const reduceAnimations = useReduceAnimations();
 
   return (
     <div className="page-wrap space-y-6 pb-12 pt-8">
@@ -67,6 +69,43 @@ export function SettingsPage() {
             </button>
           ))}
         </div>
+      </Card>
+
+      <Card id="motion" className="space-y-5 p-6">
+        <div>
+          <h2 className="flex items-center gap-2 section-title text-lg">
+            <Sparkles size={17} aria-hidden className="text-primary" />
+            Motion
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Decorative animation on the homepage and product pages. When reduced,
+            every motion effect settles straight into its final state. Your device's
+            own reduced-motion setting is always respected as well.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={reduceAnimations}
+          onClick={() => setReduceAnimations(!reduceAnimations)}
+          className="group flex w-full items-center justify-between gap-4 rounded-2xl px-1 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+        >
+          <span className="text-sm font-bold">Reduce animations</span>
+          <span
+            aria-hidden
+            className={cn(
+              "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
+              reduceAnimations ? "bg-primary" : "bg-[var(--inset-bg)]",
+            )}
+          >
+            <span
+              className={cn(
+                "absolute size-5 rounded-full bg-white transition-transform",
+                reduceAnimations ? "translate-x-[22px]" : "translate-x-0.5",
+              )}
+            />
+          </span>
+        </button>
       </Card>
 
       <NotificationPreferencesSection />

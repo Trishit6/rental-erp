@@ -7,6 +7,7 @@ import { createQueryClient } from "./lib/query/client";
 import { AppProviders } from "./lib/query/providers";
 import { AuthProvider, useAuth } from "./lib/auth/auth-context";
 import { ThemeProvider } from "./lib/theme";
+import { MotionProvider } from "./lib/motion/MotionProvider";
 import { AuthGate } from "./components/shared/auth-gate";
 import "./styles.css";
 
@@ -26,8 +27,9 @@ function RouterWithAuth() {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <AppProviders queryClient={queryClient}>
-      <ThemeProvider>
-        <AuthProvider>
+    <ThemeProvider>
+      <MotionProvider>
+      <AuthProvider>
           <RouterWithAuth />
           <Toaster
             position="bottom-right"
@@ -48,6 +50,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             }}
           />
         </AuthProvider>
+      </MotionProvider>
       </ThemeProvider>
     </AppProviders>
   </React.StrictMode>,

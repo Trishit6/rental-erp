@@ -29,7 +29,9 @@
     "generate:routes": "tsr generate",
     "test": "vitest run",
     "test:watch": "vitest",
-    "payments:reconcile": "tsx server/payments-reconcile.ts"
+    "analyze:bundle": "node scripts/analyze-bundle.mjs",
+    "payments:reconcile": "tsx server/payments-reconcile.ts",
+    "db:migrate:legacy-paid": "tsx server/db-migrate-legacy-paid.ts"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.2.6",
