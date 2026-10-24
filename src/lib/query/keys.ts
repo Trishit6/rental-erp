@@ -10,6 +10,15 @@ export const queryKeys = {
    */
   storageConfig: ["storage", "config"] as const,
   stats: ["stats"] as const,
+  /**
+   * The public social-proof feed (`GET /social-proof/recent`, U4 effect 03).
+   *
+   * One entry for the whole page: every event is already the same for every
+   * visitor, so there is no per-surface key to keep in step. Public, and it
+   * is deliberately *not* evicted on logout — it contains no identity.
+   */
+  socialProof: ["social-proof"] as const,
+  reviewsFeatured: ["reviews", "featured"] as const,
   categories: ["categories"] as const,
   /**
    * Public CMS content (PROMPT 26) — hero banners and homepage blocks.

@@ -19,6 +19,7 @@ import {
   toProductFilters,
 } from "@/lib/product-search/schema";
 import { cn } from "@/lib/utils/cn";
+import { SalePings } from "@/components/motion-effects/sale-pings";
 import { BrowseEmptyState } from "./components/BrowseEmptyState";
 import { BrowseErrorState } from "./components/BrowseErrorState";
 import { BrowseHeader } from "./components/BrowseHeader";
@@ -220,6 +221,8 @@ export function BrowsePage() {
           applyFilters({ ...CLEARED_PRODUCT_FILTERS, ...next });
         }}
       />
+
+      <SalePings />
 
       {/* Mobile filter entry point — floating, with an active-filter count badge.
           It claims the `filters` slot of the shared rail rather than pinning

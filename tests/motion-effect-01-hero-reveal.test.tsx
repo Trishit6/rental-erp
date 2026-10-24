@@ -12,7 +12,7 @@ const REDUCED = { current: false };
 
 vi.mock("framer-motion", () => ({
   motion: {
-    span: ({ children, "data-motion-marker": marker, ...rest }: Record<string, unknown> & { children?: React.ReactNode }) => (
+    span: ({ children, "data-motion-marker": marker }: Record<string, unknown> & { children?: React.ReactNode }) => (
       <span data-motion-marker={marker ?? "motion"}>{children}</span>
     ),
   },

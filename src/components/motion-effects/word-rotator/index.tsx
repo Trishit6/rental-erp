@@ -57,7 +57,10 @@ export function WordRotator({ loopId = "word-rotator", testId }: { loopId?: stri
   const [index, setIndex] = useState(0);
   const [manuallyPaused, setManuallyPaused] = useState(false);
   const manuallyPausedRef = useRef(manuallyPaused);
-  manuallyPausedRef.current = manuallyPaused;
+  // Written in an effect, not during render (react-hooks/refs-in-render).
+  useEffect(() => {
+    manuallyPausedRef.current = manuallyPaused;
+  }, [manuallyPaused]);
 
   const animating = isFxEnabled("fx.wordRotator") && !prefersReducedMotion;
 

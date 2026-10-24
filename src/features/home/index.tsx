@@ -8,6 +8,7 @@ import { PreLovedSection } from "./components/PreLovedSection";
 import { RentToOwnSection } from "./components/RentToOwnSection";
 import { RentalSection } from "./components/RentalSection";
 import { SellerCTA } from "./components/SellerCTA";
+import { SalePings } from "@/components/motion-effects/sale-pings";
 import {
   useFeaturedProducts,
   useHomeCategories,
@@ -72,6 +73,8 @@ export function HomePage() {
       <SellerCTA />
 
       <FloatingActions />
+
+      <SalePings />
     </div>
   );
 }

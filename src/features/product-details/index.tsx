@@ -34,6 +34,7 @@ import {
   supportedModes,
 } from "./components/schema";
 import { useFavoriteToggle } from "@/lib/query/favorites";
+import { SalePings } from "@/components/motion-effects/sale-pings";
 import {
   useCachedProductPreview,
   useProductActions,
@@ -237,6 +238,8 @@ export function ProductPage() {
           `bottom-6 right-6`, which is the corner the global floating rail now
           owns — and `GoToTop` already covers every page, appearing only once the
           visitor has actually scrolled. */}
+
+      <SalePings />
     </motion.div>
   );
 }
