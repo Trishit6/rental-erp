@@ -31,12 +31,10 @@ export function AdminSettingsPage() {
           <SettingsIcon size={20} aria-hidden />
         </span>
         <h2 className="section-title mt-4 text-xl font-extrabold">
-          Platform settings are being prepared
+          Platform settings
         </h2>
         <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-          Marketplace fee rates and payment configuration are currently server-side
-          environment settings. The settings module will surface them here once it
-          lands — with real values, never invented ones.
+          Fees, payment and policy settings are configured on the server for now. An editable settings page is coming (R13).
         </p>
       </Card>
     </div>

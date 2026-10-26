@@ -15,7 +15,7 @@ import { CUSTOMER_CANCELLABLE_FROM } from "./order-cancellation";
 import { listOrderTimeline, orderEventKey, recordOrderEvent } from "./order-events";
 import { notifyOrderProgress } from "./order-notifications";
 import { ORDER_STATUSES, type OrderStatus } from "./order-queries";
-import { createRefundNumber } from "./reference-numbers";
+import { createRefundRequest } from "./refund-admin";
 import { notificationEventKey } from "./notification-events";
 import { notify } from "./notifications";
 
@@ -564,60 +564,23 @@ export async function requestOrderRefund(
   input: RequestRefundInput,
 ): Promise<{ id: number; refundNumber: string; amount: number; status: string; duplicate: boolean }> {
   assertRefundable(order.paymentStatus);
-  const reason = input.reason.trim();
-  if (reason.length < 3) {
-    throw new HttpError(400, "REASON_REQUIRED", "A refund needs a reason.");
-  }
-  if (!Number.isInteger(input.amount) || input.amount <= 0) {
-    throw new HttpError(400, "INVALID_AMOUNT", "A refund of at least one paisa is required.");
-  }
-
-  const key = input.idempotencyKey?.trim() || null;
-  if (key) {
-    const [existing] = await db
-      .select()
-      .from(refunds)
-      .where(eq(refunds.idempotencyKey, key))
-      .limit(1);
-    if (existing) {
-      return {
-        id: existing.id,
-        refundNumber: existing.refundNumber,
-        amount: existing.amount,
-        status: existing.status,
-        duplicate: true,
-      };
-    }
-  }
 
   return db.transaction(async (tx) => {
-    const [row] = await tx
-      .select({ value: sql<number>`COALESCE(SUM(${refunds.amount}), 0)` })
-      .from(refunds)
-      .where(and(eq(refunds.orderId, order.id), inArray(refunds.status, [...liveRefundStatuses])));
-    const already = Number(row?.value ?? 0);
-    const remaining = Math.max(0, order.total - already);
-    if (input.amount > remaining) {
-      throw new HttpError(
-        409,
-        "EXCEEDS_REFUNDABLE",
-        `A refund of ${input.amount} exceeds the ${remaining} still refundable on this order.`,
-      );
-    }
-
-    const refundNumber = createRefundNumber();
-    await tx.insert(refunds).values({
-      refundNumber,
+    // The one writer of a `refunds` row enforces the "live refunds ≤ captured"
+    // invariant; the request layer only supplies the intent.
+    const created = await createRefundRequest(tx, {
       orderId: order.id,
       orderItemId: input.orderItemId ?? null,
       userId: order.userId,
       amount: input.amount,
       currency: order.currency,
-      reason,
-      status: "PENDING",
-      idempotencyKey: key,
+      reason: input.reason,
+      captured: order.total,
+      idempotencyKey: input.idempotencyKey ?? null,
       createdBy: actor.id,
     });
+
+    if (created.duplicate) return created;
 
     await recordOrderEvent(tx, {
       orderId: order.id,
@@ -625,32 +588,20 @@ export async function requestOrderRefund(
       toStatus: "REFUND_REQUESTED",
       actorId: actor.id,
       actorRole: actor.role,
-      note: reason,
-      metadata: { amount: input.amount, refundNumber },
-      eventKey: orderEventKey("REFUND", order.id, refundNumber),
+      note: input.reason.trim(),
+      metadata: { amount: created.amount, refundNumber: created.refundNumber },
+      eventKey: orderEventKey("REFUND", order.id, created.refundNumber),
     });
 
     await notify(tx, {
       userId: order.userId,
       type: "REFUND_REQUESTED",
       title: "A refund is being reviewed",
-      body: `A refund of ${(input.amount / 100).toFixed(2)} was requested for order ${order.orderNumber ?? `#${order.id}`}.`,
+      body: `A refund of ${(created.amount / 100).toFixed(2)} was requested for order ${order.orderNumber ?? `#${order.id}`}.`,
       context: { orderId: order.id, orderNumber: order.orderNumber },
-      eventKey: notificationEventKey("REFUND_REQUESTED", order.id, refundNumber),
+      eventKey: notificationEventKey("REFUND_REQUESTED", order.id, created.refundNumber),
     });
 
-    const [created] = await tx
-      .select()
-      .from(refunds)
-      .where(eq(refunds.refundNumber, refundNumber))
-      .limit(1);
-
-    return {
-      id: created?.id ?? 0,
-      refundNumber,
-      amount: input.amount,
-      status: "PENDING",
-      duplicate: false,
-    };
+    return created;
   });
 }

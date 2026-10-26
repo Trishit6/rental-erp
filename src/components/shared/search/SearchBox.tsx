@@ -33,9 +33,8 @@ import {
   useSearchSurface,
 } from "./use-search-suggestions";
 
-/**
- * The ONE search box (PROMPT R11) — one surface, one border, one data path.
- *
+/** The ONE search box (PROMPT R11) — one surface, one border, one data path.
+
  * ## Why the field is a bare `<input>` and not the shared `Input`
  *
  * `Input` always carries `.inset-surface`, which is authored *outside* Tailwind's
@@ -97,10 +96,8 @@ type ControllerOptions = {
   onClose?: () => void;
 };
 
-/**
- * Authority over draft, state machine, options, keyboard and navigation —
- * shared by the three variants so they cannot grow three nav models.
- */
+/** Authority over draft, state machine, options, keyboard and navigation — shared by the
+ * three variants so they cannot grow three nav models. */
 function useSearchBoxController({ variant, overlay, onClose }: ControllerOptions) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -113,7 +110,10 @@ function useSearchBoxController({ variant, overlay, onClose }: ControllerOptions
   const { surface } = useSearchSurface(true);
   const [activeIndex, setActiveIndex] = useState(-1);
 
-  const { payload, isFetching, isError, retry } = useSearchSuggestions(draft, isSearchBoxOpen(state));
+  const { payload, isFetching, isError, retry } = useSearchSuggestions(
+    draft,
+    isSearchBoxOpen(state),
+  );
   const open = isSearchBoxOpen(state);
   const options = open ? flattenOptions(state) : [];
   const activeOption = options[activeIndex];
@@ -142,7 +142,7 @@ function useSearchBoxController({ variant, overlay, onClose }: ControllerOptions
         surface: state.status === "idle" ? (surface as never) : state.surface,
       });
     } else if (isError) {
-      dispatch({ type: "fail" });
+      dispatch({ type: "fail", draft: draft.trim() });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload, isFetching, isError, open]);
@@ -152,16 +152,9 @@ function useSearchBoxController({ variant, overlay, onClose }: ControllerOptions
     setActiveIndex(-1);
   }, []);
 
-  /**
-   * Commit a search: the one URL contract (`/browse?search=<term>`), then the
+  /** Commit a search: the one URL contract (`/browse?search=<term>`), then the
    * history write fire-and-forget — its errors are ignored by design; the
-   * search has already happened.
-   */
-  /**
-   * Commit a search: the one URL contract (`/browse?search=<term>`), then the
-   * history write fire-and-forget — its errors are ignored by design; the
-   * search has already happened.
-   */
+   * search has already happened. */
   const runSearch = useCallback(
     (termRaw: string) => {
       const term = termRaw.trim();
@@ -210,18 +203,18 @@ function useSearchBoxController({ variant, overlay, onClose }: ControllerOptions
   }, [activeOption, draft, openOption]);
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        if (draft.length > 0) {
-          // "Esc clears then closes": the first press empties the field; the
-          // next press closes.
-          setDraft("");
-          return;
-        }
-        if (overlay) onClose?.();
-        close();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (draft.length > 0) {
+        // "Esc clears then closes": the first press empties the field; the
+        // next press closes.
+        setDraft("");
         return;
       }
+      if (overlay) onClose?.();
+      close();
+      return;
+    }
     if (event.key === "Tab") {
       close();
       return;
@@ -271,7 +264,10 @@ function useSearchBoxController({ variant, overlay, onClose }: ControllerOptions
 
   function onClear() {
     setDraft("");
-    dispatch({ type: "focus", surface: state.status !== "idle" ? state.surface : surface });
+    dispatch({
+      type: "focus",
+      surface: state.status !== "idle" ? state.surface : surface,
+    });
   }
 
   return {
@@ -355,77 +351,82 @@ export function SearchBar({ variant }: { variant: "navbar" | "hero" }) {
       }}
       className="rounded-full focus-within:ring-2 focus-within:ring-primary/40 focus-within:ring-offset-2 focus-within:ring-offset-background"
     >
-      <div
-        className={barClassName}
-        role="combobox"
-        aria-expanded={controller.open}
-        aria-haspopup="listbox"
-        aria-controls={listboxId}
-        aria-activedescendant={
-          controller.activeOption ? optionId(listboxId, controller.activeIndex) : undefined
-        }
-      >
-        <Search size={18} className="shrink-0 text-muted-foreground" aria-hidden />
-        <label className="sr-only" htmlFor={`${scopeId}-input`}>
-          Search the marketplace
-        </label>
-        <input
-          ref={inputRef}
-          id={`${scopeId}-input`}
-          type="search"
-          autoComplete="off"
-          enterKeyHint="search"
-          aria-autocomplete="list"
-          value={controller.draft}
-          placeholder={hero ? "Search cameras, laptops, bikes…" : "Search anything..."}
-          className={`min-w-0 flex-1 border-0 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground ${
-            hero ? "h-9 sm:h-10" : "h-8"
-          } [&::-webkit-search-cancel-button]:hidden`}
-          onChange={(event) => controller.onInputChange(event.target.value)}
-          onFocus={controller.onInputFocus}
-          onBlur={controller.close}
-          onKeyDown={controller.onKeyDown}
-        />
-        {controller.draft.length > 0 && (
-          <button
-            type="button"
-            aria-label="Clear search"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={controller.onClear}
-            className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-primary/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-          >
-            <X size={15} aria-hidden />
-          </button>
-        )}
-        {controller.isFetching && (
-          <Loader2
-            size={15}
-            className="mr-0.5 shrink-0 animate-spin text-muted-foreground"
-            aria-hidden
+      <div key="bar">
+        <div
+          className={barClassName}
+          role="combobox"
+          aria-expanded={controller.open}
+          aria-haspopup="listbox"
+          aria-controls={listboxId}
+          aria-activedescendant={
+            controller.activeOption ? optionId(listboxId, controller.activeIndex) : undefined
+          }
+        >
+          <Search size={18} className="shrink-0 text-muted-foreground" aria-hidden />
+          <label className="sr-only" htmlFor={`${scopeId}-input`}>
+            Search the marketplace
+          </label>
+          <input
+            ref={inputRef}
+            id={`${scopeId}-input`}
+            type="search"
+            autoComplete="off"
+            enterKeyHint="search"
+            aria-autocomplete="list"
+            value={controller.draft}
+            placeholder={hero ? "Search cameras, laptops, bikes…" : "Search anything..."}
+            className={`min-w-0 flex-1 border-0 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground ${
+              hero ? "h-9 sm:h-10" : "h-8"
+            } [&::-webkit-search-cancel-button]:hidden`}
+            onChange={(event) => controller.onInputChange(event.target.value)}
+            onFocus={controller.onInputFocus}
+            onBlur={controller.close}
+            onKeyDown={controller.onKeyDown}
           />
-        )}
-        {hero && (
-          <Button
-            type="submit"
-            size="icon"
-            aria-label="Search"
-            disabled={controller.draft.trim().length === 0}
-            className="shrink-0 rounded-full"
-          >
-            <ArrowRight size={16} aria-hidden />
-          </Button>
-        )}
+          {controller.draft.length > 0 && (
+            <button
+              type="button"
+              aria-label="Clear search"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={controller.onClear}
+              className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-primary/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+            >
+              <X size={15} aria-hidden />
+            </button>
+          )}
+          {controller.isFetching && (
+            <Loader2
+              size={15}
+              className="mr-0.5 shrink-0 animate-spin text-muted-foreground"
+              aria-hidden
+            />
+          )}
+          {hero && (
+            <Button
+              type="submit"
+              size="icon"
+              aria-label="Search"
+              disabled={controller.draft.trim().length === 0}
+              className="shrink-0 rounded-full"
+            >
+              <ArrowRight size={16} aria-hidden />
+            </Button>
+          )}
+        </div>
+
+        <p aria-live="polite" role="status" className="sr-only">
+          {liveAnnouncement(state, controller.isFetching)}
+        </p>
+
+        {/* AnimatePresence mode="wait" requires exactly one direct child:
+         * 'controller.open' selects between the two motion.div branches,
+         * so only one child ever exists at any time. */}
+        <AnimatePresence>
+          {controller.open && (
+            <SearchPanel key={`panel-${scopeId}`} controller={controller} listboxId={listboxId} />
+          )}
+        </AnimatePresence>
       </div>
-
-      <p aria-live="polite" role="status" className="sr-only">
-        {liveAnnouncement(state, controller.isFetching)}
-      </p>
-
-      <AnimatePresence>
-        {controller.open && (
-          <SearchPanel key={`panel-${scopeId}`} controller={controller} listboxId={listboxId} />
-        )}
-      </AnimatePresence>
     </form>
   );
 }
@@ -495,15 +496,14 @@ function SearchPanel(props: { controller: SearchBoxController; listboxId: string
     >
       <div role="listbox" id={listboxId} aria-label="Search suggestions">
         {state.status === "focusedEmpty" && (
-          <EmptyPanel
-            controller={controller}
-            optionButton={optionButton}
-            pickTerm={pickTerm}
-          />
+          <EmptyPanel controller={controller} optionButton={optionButton} pickTerm={pickTerm} />
         )}
 
         {state.status === "loading" && (
-          <div className="flex items-center gap-2 px-3 py-4 text-sm text-muted-foreground" aria-busy="true">
+          <div
+            className="flex items-center gap-2 px-3 py-4 text-sm text-muted-foreground"
+            aria-busy="true"
+          >
             <Loader2 size={15} className="animate-spin" aria-hidden /> Searching…
           </div>
         )}
@@ -546,7 +546,12 @@ function SearchPanel(props: { controller: SearchBoxController; listboxId: string
           <>
             <OptionGroup label="Products" icon={<Package size={13} aria-hidden />}>
               {state.payload.products.map((product, index) => (
-                <ProductRow key={`prod-${product.id}`} product={product} optionProps={optionButton(index)} query={state.payload.query} />
+                <ProductRow
+                  key={`prod-${product.id}`}
+                  product={product}
+                  optionProps={optionButton(index)}
+                  query={state.payload.query}
+                />
               ))}
             </OptionGroup>
             {state.payload.categories.length > 0 && (
@@ -623,9 +628,7 @@ function EmptyPanel(props: {
               optionProps={optionButton(index)}
               recent={recent}
               onPick={pickTerm}
-              onRemove={() =>
-                removeSearchRecent(recent, !!controller.user, controller.queryClient)
-              }
+              onRemove={() => removeSearchRecent(recent, !!controller.user, controller.queryClient)}
             />
           ))}
         </OptionGroup>
@@ -790,7 +793,7 @@ function SearchOverlay({ onClose, autoFocus = true }: SearchBoxProps) {
       className="fixed inset-0 z-[70] flex flex-col bg-background/95 backdrop-blur-md"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <div className="page-wrap flex w-full items-center gap-2 py-4">
+      <div key="overlay-bar" className="page-wrap flex w-full items-center gap-2 py-4">
         <div className="inset-surface relative flex min-w-0 flex-1 items-center gap-1.5 rounded-full p-1.5 pl-3.5">
           <Search size={18} className="shrink-0 text-muted-foreground" aria-hidden />
           <label className="sr-only" htmlFor={`${scopeId}-input`}>
@@ -849,19 +852,26 @@ function SearchOverlay({ onClose, autoFocus = true }: SearchBoxProps) {
       </div>
 
       <div className="page-wrap min-h-0 flex-1 overflow-y-auto pb-6">
+        {/* AnimatePresence mode="wait" requires exactly one direct child.
+         * The two branches share a key: controller.open selects the one
+         * rendered motion.div, so the component never yields a list. */}
         <AnimatePresence mode="wait">
-          {controller.open ? (
-            <OverlayPanel key="overlay-panel" controller={controller} listboxId={listboxId} />
-          ) : (
-            <motion.p
-              key="overlay-empty"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="pt-2 text-sm text-muted-foreground"
-            >
-              Start typing to search the marketplace.
-            </motion.p>
-          )}
+          <motion.div
+            key={controller.open ? "overlay-panel" : "overlay-empty"}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className={
+              controller.open
+                ? "pt-2 text-sm text-muted-foreground"
+                : "pt-2 text-sm text-muted-foreground"
+            }
+          >
+            {controller.open ? (
+              <OverlayPanel controller={controller} listboxId={listboxId} />
+            ) : (
+              "Start typing to search the marketplace."
+            )}
+          </motion.div>
         </AnimatePresence>
       </div>
     </motion.div>,
@@ -893,7 +903,9 @@ function OverlayPanel(props: { controller: SearchBoxController; listboxId: strin
       aria-label="Search suggestions"
       className="flex flex-col gap-1 py-2"
     >
-      {state.status === "focusedEmpty" && <EmptyPanelRows controller={controller} optionButton={optionButton} />}
+      {state.status === "focusedEmpty" && (
+        <EmptyPanelRows controller={controller} optionButton={optionButton} />
+      )}
       {state.status === "loading" && (
         <div className="flex items-center gap-2 px-3 py-4 text-sm text-muted-foreground">
           <Loader2 size={15} className="animate-spin" aria-hidden /> Searching…
@@ -931,7 +943,11 @@ function OverlayPanel(props: { controller: SearchBoxController; listboxId: strin
             {state.payload.products.map((product, index) => (
               <button key={`prod-${product.id}`} {...optionButton(index)}>
                 {product.image ? (
-                  <img src={product.image} alt="" className="size-10 shrink-0 rounded-lg object-cover" />
+                  <img
+                    src={product.image}
+                    alt=""
+                    className="size-10 shrink-0 rounded-lg object-cover"
+                  />
                 ) : (
                   <Package size={18} aria-hidden className="shrink-0 text-muted-foreground" />
                 )}
@@ -945,7 +961,8 @@ function OverlayPanel(props: { controller: SearchBoxController; listboxId: strin
             <OptionGroup label="Categories" icon={<Trees size={13} aria-hidden />}>
               {state.payload.categories.map((category, offset) => {
                 const index = state.payload.products.length + offset;
-                return (                    <button key={`cat-${category.slug}`} {...optionButton(index)}>
+                return (
+                  <button key={`cat-${category.slug}`} {...optionButton(index)}>
                     <Trees size={15} aria-hidden className="shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1 truncate text-left">
                       <Highlight text={category.name} query={state.payload.query} />
@@ -960,7 +977,8 @@ function OverlayPanel(props: { controller: SearchBoxController; listboxId: strin
               {state.payload.brands.map((brand, offset) => {
                 const index =
                   state.payload.products.length + state.payload.categories.length + offset;
-                return (                    <button key={`brand-${brand.slug}`} {...optionButton(index)}>
+                return (
+                  <button key={`brand-${brand.slug}`} {...optionButton(index)}>
                     <Tag size={15} aria-hidden className="shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1 truncate text-left">
                       <Highlight text={brand.name} query={state.payload.query} />
@@ -1050,7 +1068,10 @@ function subscribeHeroVisibility(notify: () => void): () => void {
     if (hero && typeof IntersectionObserver !== "undefined") {
       heroObserver = new IntersectionObserver(
         (entries) =>
-          updateHeroVisibility(entries.some((entry) => entry.isIntersecting), notify),
+          updateHeroVisibility(
+            entries.some((entry) => entry.isIntersecting),
+            notify,
+          ),
         { threshold: 0 },
       );
       heroObserver.observe(hero);
@@ -1076,16 +1097,18 @@ function getHeroVisibilitySnapshot(): boolean {
 
 /** True while `#hero-search` is on screen (IntersectionObserver; false elsewhere). */
 export function useHeroSearchVisibility(enabled: boolean): boolean {
-  const visible = useSyncExternalStore(subscribeHeroVisibility, getHeroVisibilitySnapshot, () => false);
+  const visible = useSyncExternalStore(
+    subscribeHeroVisibility,
+    getHeroVisibilitySnapshot,
+    () => false,
+  );
   return enabled ? visible : false;
 }
 
-/**
- * Where the navbar variant sits. On the homepage it collapses to an icon while
+/** Where the navbar variant sits. On the homepage it collapses to an icon while
  * the hero search is visible (IntersectionObserver) and expands when it
  * leaves; only width and opacity animate, so the navbar's own height never
- * shifts. Below 640px the bar is hidden and an icon opens the overlay.
- */
+ * shifts. Below 640px the bar is hidden and an icon opens the overlay. */
 export function NavbarSearch({ onHomepage = false }: { onHomepage?: boolean }) {
   const heroVisible = useHeroSearchVisibility(onHomepage);
   const [expanded, setExpanded] = useState(false);
@@ -1127,9 +1150,7 @@ export function NavbarSearch({ onHomepage = false }: { onHomepage?: boolean }) {
         )}
       </motion.div>
       {mobileTrigger}
-      {overlayOpen && (
-        <SearchBox variant="overlay" onClose={() => setOverlayOpen(false)} />
-      )}
+      {overlayOpen && <SearchBox variant="overlay" onClose={() => setOverlayOpen(false)} />}
     </div>
   );
 }

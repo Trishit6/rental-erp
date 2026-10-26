@@ -1,0 +1,3 @@
+- [admin-payments-routes] Created server/routes/admin-payments.ts with payments list, detail, UPI queue, COD queue, refunds queue, settings, and method toggles — depends on T2, T3 completed
+- [permission-catalogue] Added 3 new permissions: payments.settings.view, payments.settings.manage, payments.methods.toggle; added to FINANCE role grants
+- [admin-routes] Fixed router mounting: changed adminRoute.use to adminRoute.route in server/routes/admin.ts

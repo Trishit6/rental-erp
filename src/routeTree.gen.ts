@@ -62,6 +62,7 @@ import { Route as AdminSupportRouteImport } from './routes/admin/support'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as CategoriesIndexRouteImport } from './routes/categories/index'
 import { Route as CategoriesCategorySlugRouteImport } from './routes/categories/$categorySlug'
+import { Route as DevUiRouteImport } from './routes/dev/ui'
 import { Route as ProductSlugRouteImport } from './routes/product.$slug'
 import { Route as SellerIndexRouteImport } from './routes/seller/index'
 import { Route as SellerIdRouteImport } from './routes/seller.$id'
@@ -350,6 +351,11 @@ const CategoriesCategorySlugRoute = CategoriesCategorySlugRouteImport.update({
   path: '/categories/$categorySlug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DevUiRoute = DevUiRouteImport.update({
+  id: '/dev/ui',
+  path: '/dev/ui',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProductSlugRoute = ProductSlugRouteImport.update({
   id: '/product/$slug',
   path: '/product/$slug',
@@ -524,6 +530,7 @@ export interface FileRoutesByFullPath {
   '/admin/support': typeof AdminSupportRoute
   '/admin/users': typeof AdminUsersRoute
   '/categories/$categorySlug': typeof CategoriesCategorySlugRoute
+  '/dev/ui': typeof DevUiRoute
   '/product/$slug': typeof ProductSlugRoute
   '/seller/$id': typeof SellerIdRoute
   '/seller/analytics': typeof SellerAnalyticsRoute
@@ -599,6 +606,7 @@ export interface FileRoutesByTo {
   '/admin/support': typeof AdminSupportRoute
   '/admin/users': typeof AdminUsersRoute
   '/categories/$categorySlug': typeof CategoriesCategorySlugRoute
+  '/dev/ui': typeof DevUiRoute
   '/product/$slug': typeof ProductSlugRoute
   '/seller/$id': typeof SellerIdRoute
   '/seller/analytics': typeof SellerAnalyticsRoute
@@ -678,6 +686,7 @@ export interface FileRoutesById {
   '/admin/support': typeof AdminSupportRoute
   '/admin/users': typeof AdminUsersRoute
   '/categories/$categorySlug': typeof CategoriesCategorySlugRoute
+  '/dev/ui': typeof DevUiRoute
   '/product/$slug': typeof ProductSlugRoute
   '/seller/$id': typeof SellerIdRoute
   '/seller/analytics': typeof SellerAnalyticsRoute
@@ -756,6 +765,7 @@ export interface FileRouteTypes {
     | '/admin/support'
     | '/admin/users'
     | '/categories/$categorySlug'
+    | '/dev/ui'
     | '/product/$slug'
     | '/seller/$id'
     | '/seller/analytics'
@@ -831,6 +841,7 @@ export interface FileRouteTypes {
     | '/admin/support'
     | '/admin/users'
     | '/categories/$categorySlug'
+    | '/dev/ui'
     | '/product/$slug'
     | '/seller/$id'
     | '/seller/analytics'
@@ -909,6 +920,7 @@ export interface FileRouteTypes {
     | '/admin/support'
     | '/admin/users'
     | '/categories/$categorySlug'
+    | '/dev/ui'
     | '/product/$slug'
     | '/seller/$id'
     | '/seller/analytics'
@@ -949,6 +961,7 @@ export interface RootRouteChildren {
   PaymentRoute: typeof PaymentRoute
   PreLovedRoute: typeof PreLovedRoute
   CategoriesCategorySlugRoute: typeof CategoriesCategorySlugRoute
+  DevUiRoute: typeof DevUiRoute
   ProductSlugRoute: typeof ProductSlugRoute
   SellerIdRoute: typeof SellerIdRoute
   SellerAnalyticsRoute: typeof SellerAnalyticsRoute
@@ -1340,6 +1353,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CategoriesCategorySlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dev/ui': {
+      id: '/dev/ui'
+      path: '/dev/ui'
+      fullPath: '/dev/ui'
+      preLoaderRoute: typeof DevUiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/product/$slug': {
       id: '/product/$slug'
       path: '/product/$slug'
@@ -1639,6 +1659,7 @@ const rootRouteChildren: RootRouteChildren = {
   PaymentRoute: PaymentRoute,
   PreLovedRoute: PreLovedRoute,
   CategoriesCategorySlugRoute: CategoriesCategorySlugRoute,
+  DevUiRoute: DevUiRoute,
   ProductSlugRoute: ProductSlugRoute,
   SellerIdRoute: SellerIdRoute,
   SellerAnalyticsRoute: SellerAnalyticsRoute,

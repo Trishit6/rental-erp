@@ -8,6 +8,7 @@ import { notificationEventKey } from "./notification-events";
 import { notify } from "./notifications";
 import { orderEventKey, recordOrderEvent } from "./order-events";
 import { getPaymentProvider } from "./payments";
+import { createRefundNumber } from "./reference-numbers";
 import { recordEarningReversal } from "./wallet";
 
 /**
@@ -61,6 +62,117 @@ export function allowedRefundTransitions(status: string): RefundStatus[] {
 
 export function isRefundTransition(from: string, to: string): boolean {
   return isRefundStatus(from) && isRefundStatus(to) && REFUND_TRANSITIONS[from].includes(to);
+}
+
+/* ------------------------------ creation ------------------------------------ */
+
+type RefundExecutor = Pick<typeof db, "select" | "insert" | "update">;
+
+export type RefundRequestInput = {
+  orderId: number;
+  orderItemId?: number | null;
+  transactionId?: number | null;
+  /** Who the money goes back to. Server-derived, never the request body. */
+  userId: number;
+  amount: number;
+  currency: string;
+  reason: string;
+  /**
+   * The ceiling this refund is measured against. When omitted it is the order's
+   * captured total, read from the ledger — the same number finance approves against.
+   */
+  captured?: number;
+  idempotencyKey?: string | null;
+  createdBy?: number | null;
+};
+
+export type RefundRequestResult = {
+  id: number;
+  refundNumber: string;
+  amount: number;
+  status: string;
+  /** True when a refund with this idempotency key already existed. */
+  duplicate: boolean;
+};
+
+/**
+ * Open a refund request. The one writer of a new `refunds` row.
+ *
+ * Every flow that returns money — an operator's manual refund (PROMPT 27), a
+ * rental cancellation, a dispute resolution — goes through here, so the
+ * "sum of live refunds ≤ captured" invariant is enforced in exactly one place.
+ * The amount is validated against the *live* refunds in the caller's transaction,
+ * so two concurrent requests cannot jointly exceed what settled.
+ *
+ * Idempotent on `idempotencyKey` when one is supplied: the retry returns the row
+ * that already exists rather than opening a second one.
+ */
+export async function createRefundRequest(
+  executor: RefundExecutor,
+  input: RefundRequestInput,
+): Promise<RefundRequestResult> {
+  const reason = input.reason.trim();
+  if (reason.length < 3) {
+    throw new HttpError(400, "REASON_REQUIRED", "A refund needs a reason.");
+  }
+  if (!Number.isInteger(input.amount) || input.amount <= 0) {
+    throw new HttpError(400, "INVALID_AMOUNT", "A refund of at least one paisa is required.");
+  }
+
+  const key = input.idempotencyKey?.trim() || null;
+  if (key) {
+    const [existing] = await executor
+      .select()
+      .from(refunds)
+      .where(eq(refunds.idempotencyKey, key))
+      .limit(1);
+    if (existing) {
+      return {
+        id: existing.id,
+        refundNumber: existing.refundNumber,
+        amount: existing.amount,
+        status: existing.status,
+        duplicate: true,
+      };
+    }
+  }
+
+  const captured = input.captured ?? (await sumCaptured(executor, input.orderId));
+  const already = await sumRefunds(executor, input.orderId, LIVE_REFUND_STATUSES);
+  const remaining = Math.max(0, captured - already);
+  if (input.amount > remaining) {
+    throw new HttpError(
+      409,
+      "EXCEEDS_REFUNDABLE",
+      `A refund of ${input.amount} exceeds the ${remaining} still refundable on this order.`,
+    );
+  }
+
+  const refundNumber = createRefundNumber();
+  const [inserted] = await executor
+    .insert(refunds)
+    .values({
+      refundNumber,
+      orderId: input.orderId,
+      orderItemId: input.orderItemId ?? null,
+      transactionId: input.transactionId ?? null,
+      userId: input.userId,
+      amount: input.amount,
+      currency: input.currency,
+      reason,
+      status: "PENDING",
+      idempotencyKey: key,
+      createdBy: input.createdBy ?? null,
+    })
+    .$returningId();
+
+  return {
+    id: Number(inserted.id),
+    refundNumber,
+    amount: input.amount,
+    status: "PENDING",
+    duplicate: false,
+  };
 }
 
 export const adminRefundsQuerySchema = paginationQuerySchema.extend({
@@ -392,149 +504,195 @@ export async function processAdminRefund(
     }
 
     // --- approval ---------------------------------------------------------
-    const captured = await sumCaptured(tx, order.id);
-    const liveSum = await sumRefunds(tx, order.id, LIVE_REFUND_STATUSES);
-    if (liveSum > captured) {
-      throw new HttpError(
-        409,
-        "EXCEEDS_CAPTURED",
-        `Live refunds (${liveSum}) exceed the ${captured} captured on this order.`,
-      );
-    }
-
-    const [sourceTx] = await tx
-      .select({
-        id: transactions.id,
-        provider: transactions.provider,
-        providerTransactionId: transactions.providerTransactionId,
-      })
-      .from(transactions)
-      .where(
-        and(
-          eq(transactions.orderId, order.id),
-          eq(transactions.type, "PAYMENT"),
-          eq(transactions.status, "SUCCEEDED"),
-        ),
-      )
-      .orderBy(desc(transactions.createdAt))
-      .limit(1);
-    if (!sourceTx?.providerTransactionId) {
-      throw new HttpError(
-        409,
-        "NO_CAPTURED_PAYMENT",
-        "No settled payment was found to refund against.",
-      );
-    }
-
-    const result = await provider.refundPayment!({
-      providerPaymentId: sourceTx.providerTransactionId,
-      amount: refund.amount,
-      currency: refund.currency,
-      idempotencyKey: `refund-${refund.refundNumber}`,
-      reason,
-    });
-
-    if (result.status !== "SUCCEEDED") {
-      await tx
-        .update(refunds)
-        .set({
-          status: "FAILED",
-          providerReference: result.providerReference ?? input.providerReference ?? null,
-          updatedAt: new Date(),
-        })
-        .where(eq(refunds.id, refund.id));
-
-      await notify(tx, {
-        userId: refund.userId,
-        type: "REFUND_REJECTED",
-        title: "A refund could not be completed",
-        body: `The refund for order ${order.orderNumber ?? `#${order.id}`} could not be completed. ${
-          result.failureReason ?? "Please contact support."
-        }`,
-        context,
-        eventKey: notificationEventKey("REFUND_REJECTED", order.id, `${refund.refundNumber}:failed`),
-      });
-
-      return {
+    return executeRefund(tx, {
+      refund: {
         id: refund.id,
         refundNumber: refund.refundNumber,
-        status: "FAILED",
-        providerReference: result.providerReference ?? input.providerReference ?? null,
-        applied: true,
-      };
-    }
-
-    const providerReference = result.providerReference ?? input.providerReference ?? null;
-    await tx
-      .update(refunds)
-      .set({
-        status: "SUCCEEDED",
-        providerReference,
-        transactionId: sourceTx.id,
-        updatedAt: new Date(),
-      })
-      .where(eq(refunds.id, refund.id));
-
-    // The customer ledger records the return leg. `amount` stays positive; the type
-    // says which direction the money moved.
-    await tx.insert(transactions).values({
-      userId: refund.userId,
-      orderId: order.id,
-      type: "REFUND",
-      amount: refund.amount,
-      currency: refund.currency,
-      status: "SUCCEEDED",
-      provider: sourceTx.provider,
-      providerTransactionId: providerReference,
-      idempotencyKey: `refund-txn-${refund.refundNumber}`,
-    });
-
-    const succeededSum = await sumRefunds(tx, order.id, ["SUCCEEDED"]);
-    const paymentStatus =
-      succeededSum >= captured
-        ? "REFUNDED"
-        : succeededSum > 0
-          ? "PARTIALLY_REFUNDED"
-          : order.paymentStatus;
-    await tx
-      .update(orders)
-      .set({ paymentStatus, updatedAt: new Date() })
-      .where(eq(orders.id, order.id));
-
-    await recordOrderEvent(tx, {
-      orderId: order.id,
-      type: "REFUND",
-      toStatus: "REFUND_SUCCEEDED",
+        amount: refund.amount,
+        currency: refund.currency,
+        userId: refund.userId,
+        orderItemId: refund.orderItemId,
+        providerReference: refund.providerReference,
+      },
+      order,
       actorId: actor.id,
       actorRole: actor.role,
-      note: reason,
-      metadata: { refundNumber: refund.refundNumber, amount: refund.amount, providerReference },
-      eventKey: orderEventKey("REFUND", order.id, `${refund.refundNumber}:succeeded`),
+      reason,
+      providerReference: input.providerReference ?? null,
     });
+  });
+}
 
-    if (refund.orderItemId) {
-      await recordEarningReversal(tx, { orderItemId: refund.orderItemId }, reason);
-    }
+/**
+ * Execute an approved refund.
+ *
+ * Provider first, then the row: if the process dies between the two, the retry
+ * presents the same `refund-<number>` key and the provider returns its original
+ * result instead of paying twice. This is the *single* writer of a successful
+ * refund ledger row — an operator approving one and a policy refunding one on
+ * cancellation run the same code, so the ledger shape cannot drift between them.
+ *
+ * Must run inside a transaction holding the refund row `FOR UPDATE`.
+ */
+export async function executeRefund(
+  executor: RefundExecutor,
+  input: {
+    refund: {
+      id: number;
+      refundNumber: string;
+      amount: number;
+      currency: string;
+      userId: number;
+      orderItemId: number | null;
+      providerReference: string | null;
+    };
+    order: { id: number; orderNumber: string | null; paymentStatus: string };
+    actorId: number;
+    actorRole: ActorRole;
+    reason: string;
+    providerReference?: string | null;
+  },
+): Promise<RefundDecisionResult> {
+  const { refund, order } = input;
+  const provider = getPaymentProvider();
+  if (typeof provider.refundPayment !== "function") {
+    throw new HttpError(
+      501,
+      "REFUNDS_UNAVAILABLE",
+      "The configured payment provider cannot return money automatically.",
+    );
+  }
 
-    await notify(tx, {
+  const captured = await sumCaptured(executor, order.id);
+  const [sourceTx] = await executor
+    .select({
+      id: transactions.id,
+      provider: transactions.provider,
+      providerTransactionId: transactions.providerTransactionId,
+    })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.orderId, order.id),
+        eq(transactions.type, "PAYMENT"),
+        eq(transactions.status, "SUCCEEDED"),
+      ),
+    )
+    .orderBy(desc(transactions.createdAt))
+    .limit(1);
+  if (!sourceTx?.providerTransactionId) {
+    throw new HttpError(
+      409,
+      "NO_CAPTURED_PAYMENT",
+      "No settled payment was found to refund against.",
+    );
+  }
+
+  const result = await provider.refundPayment({
+    providerPaymentId: sourceTx.providerTransactionId,
+    amount: refund.amount,
+    currency: refund.currency,
+    idempotencyKey: `refund-${refund.refundNumber}`,
+    reason: input.reason,
+  });
+  const providerReference = result.providerReference ?? input.providerReference ?? null;
+
+  if (result.status !== "SUCCEEDED") {
+    await executor
+      .update(refunds)
+      .set({ status: "FAILED", providerReference, updatedAt: new Date() })
+      .where(eq(refunds.id, refund.id));
+
+    await notify(executor, {
       userId: refund.userId,
-      type: "REFUND_PROCESSED",
-      title: "Your refund is on its way",
-      body: `${formatPaise(refund.amount)} was refunded for order ${
-        order.orderNumber ?? `#${order.id}`
-      }.`,
-      context,
-      eventKey: notificationEventKey("REFUND_PROCESSED", order.id, refund.refundNumber),
+      type: "REFUND_REJECTED",
+      title: "A refund could not be completed",
+      body: `The refund for order ${order.orderNumber ?? `#${order.id}`} could not be completed. ${
+        result.failureReason ?? "Please contact support."
+      }`,
+      context: { orderId: order.id, orderNumber: order.orderNumber },
+      eventKey: notificationEventKey("REFUND_REJECTED", order.id, `${refund.refundNumber}:failed`),
     });
 
     return {
       id: refund.id,
       refundNumber: refund.refundNumber,
-      status: "SUCCEEDED",
+      status: "FAILED",
       providerReference,
       applied: true,
     };
+  }
+
+  await executor
+    .update(refunds)
+    .set({
+      status: "SUCCEEDED",
+      providerReference,
+      transactionId: sourceTx.id,
+      updatedAt: new Date(),
+    })
+    .where(eq(refunds.id, refund.id));
+
+  // The customer ledger records the return leg. `amount` stays positive; the type
+  // says which direction the money moved. The provider reference is what ties the
+  // ledger row to the movement the provider actually made.
+  await executor.insert(transactions).values({
+    userId: refund.userId,
+    orderId: order.id,
+    type: "REFUND",
+    amount: refund.amount,
+    currency: refund.currency,
+    status: "SUCCEEDED",
+    provider: sourceTx.provider,
+    providerTransactionId: providerReference,
+    idempotencyKey: `refund-txn-${refund.refundNumber}`,
   });
+
+  const succeededSum = await sumRefunds(executor, order.id, ["SUCCEEDED"]);
+  const paymentStatus =
+    succeededSum >= captured
+      ? "REFUNDED"
+      : succeededSum > 0
+        ? "PARTIALLY_REFUNDED"
+        : order.paymentStatus;
+  await executor
+    .update(orders)
+    .set({ paymentStatus, updatedAt: new Date() })
+    .where(eq(orders.id, order.id));
+
+  await recordOrderEvent(executor, {
+    orderId: order.id,
+    type: "REFUND",
+    toStatus: "REFUND_SUCCEEDED",
+    actorId: input.actorId,
+    actorRole: input.actorRole,
+    note: input.reason,
+    metadata: { refundNumber: refund.refundNumber, amount: refund.amount, providerReference },
+    eventKey: orderEventKey("REFUND", order.id, `${refund.refundNumber}:succeeded`),
+  });
+
+  if (refund.orderItemId) {
+    await recordEarningReversal(executor, { orderItemId: refund.orderItemId }, input.reason);
+  }
+
+  await notify(executor, {
+    userId: refund.userId,
+    type: "REFUND_PROCESSED",
+    title: "Your refund is on its way",
+    body: `${formatPaise(refund.amount)} was refunded for order ${
+      order.orderNumber ?? `#${order.id}`
+    }.`,
+    context: { orderId: order.id, orderNumber: order.orderNumber },
+    eventKey: notificationEventKey("REFUND_PROCESSED", order.id, refund.refundNumber),
+  });
+
+  return {
+    id: refund.id,
+    refundNumber: refund.refundNumber,
+    status: "SUCCEEDED",
+    providerReference,
+    applied: true,
+  };
 }
 
 /* --------------------------------- helpers ---------------------------------- */
@@ -542,7 +700,7 @@ export async function processAdminRefund(
 type Executor = Pick<typeof db, "select">;
 
 /** What actually settled for this order — the ceiling a refund can never exceed. */
-async function sumCaptured(executor: Executor, orderId: number): Promise<number> {
+export async function sumCaptured(executor: Executor, orderId: number): Promise<number> {
   const [row] = await executor
     .select({ value: sql<number>`COALESCE(SUM(${transactions.amount}), 0)` })
     .from(transactions)
@@ -556,7 +714,7 @@ async function sumCaptured(executor: Executor, orderId: number): Promise<number>
   return Number(row?.value ?? 0);
 }
 
-async function sumRefunds(
+export async function sumRefunds(
   executor: Executor,
   orderId: number,
   statuses: readonly string[],

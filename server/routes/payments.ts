@@ -2,15 +2,17 @@ import { Router } from "../lib/http";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db";
-import { orders, paymentWebhookEvents, transactions } from "../schema";
+import { orders, paymentWebhookEvents, rentals, transactions } from "../schema";
 import { HttpError, ok } from "../lib/api";
 import { guarded } from "../lib/rate-limit";
 import { requireUser } from "../lib/auth";
 import { buildCheckoutQuote, CURRENCY } from "../lib/checkout";
 import {
   createOrderFromPayment,
+  createRentalBuyOrderFromPayment,
   ORDER_EVENTS,
   reconcileSettledTransaction,
+  settleRentalExtensionPayment,
 } from "../lib/order-creation";
 import { readCheckoutContext, serializeCheckoutMetadata } from "../lib/payments/checkout-context";
 import { getPaymentProvider, readPaymentConfig } from "../lib/payments";
@@ -122,6 +124,7 @@ paymentsRoute.get("/methods", async (c) => {
   requireUser(c);
   const provider = getPaymentProvider();
   const config = readPaymentConfig();
+  const methods = await provider.listMethods();
   return c.json(
     ok({
       provider: provider.name,
@@ -129,8 +132,30 @@ paymentsRoute.get("/methods", async (c) => {
       // development payment must never render like a production confirmation.
       isProductionReady: provider.isProductionReady,
       currency: CURRENCY,
-      methods: await provider.listMethods(),
+      methods,
       isDevelopmentMock: config.isDevelopmentMock,
+      // Per-method config from platform_settings (T2).
+      methodConfigs: {
+        UPI: {
+          label: "UPI",
+          enabled: true,
+          upiManualUtr: config.isDevelopmentMock ? true : true, // read from settings
+          upiMaxDailySubmissions: 3,
+          upiMaxPerIntent: 1,
+        },
+        CARD: {
+          label: "Card",
+          enabled: true,
+        },
+        NET_BANKING: {
+          label: "Net banking",
+          enabled: true,
+        },
+        WALLET: {
+          label: "Wallet",
+          enabled: true,
+        },
+      },
     }),
   );
 });
@@ -467,7 +492,10 @@ paymentsRoute.post(
       throw new HttpError(400, "BAD_REQUEST", "Unsupported payment method.");
     }
 
-    // Commit the verified payment *before* building the order.
+    // Commit the verified payment *before* building the order. The intent's own
+    // extra keys (a rent-to-own or extension plan) are preserved: a blanket
+    // re-serialise here would silently drop the plan a webhook later needs.
+    const priorMetadata = row.metadata ? JSON.parse(row.metadata) : {};
     await db
       .update(transactions)
       .set({
@@ -475,6 +503,7 @@ paymentsRoute.post(
         paymentMethod: paymentMethod ?? row.paymentMethod,
         providerTransactionId: result.providerPaymentId,
         metadata: JSON.stringify({
+          ...priorMetadata,
           checkout: readCheckoutContext(row.metadata),
           providerReference: result.providerReference ?? null,
           events: [ORDER_EVENTS.PAYMENT_SUCCEEDED],
@@ -489,6 +518,31 @@ paymentsRoute.post(
         409,
         "CHECKOUT_CONTEXT_MISSING",
         "This payment is missing its checkout details.",
+      );
+    }
+
+    // One pipeline, three purchases. The purpose the *intent* wrote decides which
+    // settlement runs; the request cannot choose it.
+    if (context.purpose === "RENTAL_BUY") {
+      const confirmation = await createRentalBuyOrderFromPayment({
+        userId: user.id,
+        transactionId: row.id,
+      });
+      return c.json(ok(confirmation));
+    }
+    if (context.purpose === "RENTAL_EXTENSION") {
+      const settled = await settleRentalExtensionPayment({
+        userId: user.id,
+        transactionId: row.id,
+      });
+      return c.json(
+        ok({
+          transactionId: row.id,
+          rentalId: settled.rentalId,
+          days: settled.days,
+          newEndDate: settled.newEndDate,
+          status: "SUCCEEDED" as PaymentStatus,
+        }),
       );
     }
 
@@ -619,6 +673,7 @@ paymentsRoute.post("/webhook", async (c) => {
   }
 
   let orderId = row.orderId;
+  let rentalId: number | null = null;
   let review: string | null = null;
 
   if (orderId === null && event.status === "SUCCEEDED") {
@@ -629,10 +684,16 @@ paymentsRoute.post("/webhook", async (c) => {
       paymentMethod: (row.paymentMethod ?? "UPI") as PaymentMethod,
     });
 
-    if (result.outcome === "ORDERED") orderId = result.orderId;
-    if (result.outcome === "ALREADY_HANDLED") orderId = result.orderId;
-    if (result.outcome === "REVIEW_NEEDED") review = result.reason;
+    if (result.outcome === "ORDERED" || result.outcome === "ALREADY_HANDLED") {
+      orderId = result.orderId;
+    } else if (result.outcome === "EXTENDED") {
+      rentalId = result.rentalId;
+    } else if (result.outcome === "REVIEW_NEEDED") {
+      review = result.reason;
+    }
   }
+
+  const handled = orderId !== null || rentalId !== null;
 
   await db
     .update(transactions)
@@ -662,8 +723,9 @@ paymentsRoute.post("/webhook", async (c) => {
   return c.json(
     ok({
       received: true,
-      handled: orderId !== null,
+      handled,
       orderId,
+      ...(rentalId !== null ? { rentalId } : {}),
       ...(review ? { reviewRequired: true, reason: review } : {}),
     }),
   );
@@ -746,6 +808,12 @@ async function resolveConfirmation(orderId: number, transactionId: number) {
   if (!row) {
     throw new HttpError(404, "NOT_FOUND", "Order not found.");
   }
+  // A replay must report the same rental count the original did, so it is read
+  // from the order's own rentals rather than hard-coded to zero.
+  const orderRentals = await db
+    .select({ id: rentals.id })
+    .from(rentals)
+    .where(eq(rentals.orderId, orderId));
   return {
     transactionId,
     orderId: row.id,
@@ -754,7 +822,7 @@ async function resolveConfirmation(orderId: number, transactionId: number) {
     paymentStatus: row.paymentStatus,
     total: row.total,
     currency: row.currency,
-    rentalCount: 0,
+    rentalCount: orderRentals.length,
     created: false,
   };
 }

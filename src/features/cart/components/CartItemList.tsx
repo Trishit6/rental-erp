@@ -1,4 +1,3 @@
-import { AnimatePresence } from "framer-motion";
 import { useFavoriteToggle } from "@/lib/query/favorites";
 import { CartItemCard } from "./CartItemCard";
 import { CartSkeleton } from "./CartSkeleton";
@@ -38,32 +37,32 @@ export function CartItemList({
 
   return (
     <div className="space-y-5">
-      <AnimatePresence initial={false} mode="popLayout">
-        {active.map((item) =>
-          isUnavailable(item) ? (
-            <CartUnavailableItem
-              key={item.id}
-              item={item}
-              onRemove={onRemove}
-              isRemoving={removingItemId === item.id}
-            />
-          ) : (
-            <CartLine
-              key={item.id}
-              item={item}
-              onUpdate={onUpdate}
-              onRemove={onRemove}
-              onSave={onSave}
-              isPending={pendingItemId === item.id}
-              isRemoving={removingItemId === item.id}
-            />
-          ),
-        )}
-      </AnimatePresence>
+      {/* Lists with entering/leaving items: REMOVE mode="wait". Use the default
+          "sync" (or "popLayout") animation, give each item a stable key (product.id),
+          and use layout only where it does not cause shift. */}
+      {active.map((item) =>
+        isUnavailable(item) ? (
+          <CartUnavailableItem
+            key={item.id}
+            item={item}
+            onRemove={onRemove}
+            isRemoving={removingItemId === item.id}
+          />
+        ) : (
+          <CartLine
+            key={item.id}
+            item={item}
+            onUpdate={onUpdate}
+            onRemove={onRemove}
+            onSave={onSave}
+            isPending={pendingItemId === item.id}
+            isRemoving={removingItemId === item.id}
+          />
+        ),
+      )}
 
       {saved.length > 0 && (
         <section aria-label="Saved for later" className="space-y-3">
-          <h2 className="font-heading text-base font-extrabold">Saved for later</h2>
           {saved.map((item) => (
             <CartLine
               key={item.id}

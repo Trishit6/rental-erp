@@ -11,7 +11,6 @@ import {
   Star,
   Truck,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { MarketplaceStats } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
@@ -29,41 +28,9 @@ import type { PublicBanner } from "../api";
 const fadeUp = {
   initial: { opacity: 0, y: 12 },
   animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.4 },
 };
 
-/** Floating trust badges around the hero composition — max 3 (spec §16). */
-function FloatingBadge({
-  icon: Icon,
-  label,
-  className,
-  delay,
-}: {
-  icon: LucideIcon;
-  label: string;
-  className: string;
-  delay: number;
-}) {
-  return (
-    <motion.span
-      {...fadeUp}
-      transition={{ delay, duration: 0.3, ease: "easeOut" }}
-      className={`soft-button absolute z-10 hidden items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-bold text-foreground md:flex ${className}`}
-    >
-      <Icon size={14} className="text-primary" aria-hidden />
-      {label}
-    </motion.span>
-  );
-}
-
-/**
- * The hero — same composition, living imagery.
- *
- * The headline copy, search, CTAs and trust points keep their places; only the
- * headline text and the image rotate through four marketplace scenarios. The
- * aspect-ratio box is fixed so images of any size cannot shift the layout, the
- * next slide's image is preloaded, and auto-advance stops on hover and for
- * reduced-motion users.
- */
 export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
   const prefersReducedMotion = useReducedMotion();
   const banners = useHeroBanners();
@@ -154,15 +121,15 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
           transition={{ delay: 0.32, duration: 0.3, ease: "easeOut" }}
           className="mt-5 flex flex-wrap gap-3"
         >
-          <Button asChild size="lg">
+          <Button asChild size="lg" className="gap-2 rounded-full bg-white px-7 py-3.5 text-sm font-semibold text-[#080E18] hover:bg-white/90 focus-visible:outline-focus">
             <Link to="/browse">
-              <span>Browse products</span>
+              Browse products
               <ArrowRight size={16} />
             </Link>
           </Button>
-          <Button asChild variant="secondary" size="lg">
+          <Button asChild variant="secondary" size="lg" className="gap-2 rounded-full bg-white px-7 py-3.5 text-sm font-semibold text-[#080E18] hover:bg-white/90 focus-visible:outline-focus">
             <Link to="/list">
-              <span>Start selling</span>
+              Start selling
               <ArrowRight size={16} />
             </Link>
           </Button>
@@ -197,9 +164,6 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
                 whose image fails leaves the same box behind. */}
             <div className="aspect-[4/3] w-full bg-[var(--inset-bg)]">
               {imageFailed ? (
-                /* Deliberately *not* `slide.imageAlt`: the placeholder is a
-                   status, and the alt text is a description — showing the
-                   description would be alt text painted into the page. */
                 <ImagePlaceholder />
               ) : (
                 <AnimatePresence mode="wait" initial={false}>
@@ -286,11 +250,7 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
               onClick={() => goTo(slideIndex)}
               aria-label={`Go to slide ${slideIndex + 1}`}
               aria-current={slideIndex === index}
-              className={
-                slideIndex === index
-                  ? "h-2 w-6 rounded-full bg-primary transition-all"
-                  : "h-2 w-2 rounded-full bg-[var(--divider)] transition-all hover:bg-primary/50"
-              }
+              className={slideIndex === index ? "h-2 w-6 rounded-full bg-primary transition-all" : "h-2 w-2 rounded-full bg-[var(--divider)] transition-all hover:bg-primary/50"}
             />
           ))}
         </div>
@@ -318,8 +278,7 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
   );
 }
 
-/**
- * Turn a CMS banner into a hero slide.
+/** Turn a CMS banner into a hero slide.
  *
  * The banner's title becomes the headline (split at the first word so the second line
  * keeps the hero's two-tone treatment) and its subtitle becomes both the supporting
@@ -327,7 +286,7 @@ export function HeroSection({ stats }: { stats?: MarketplaceStats }) {
  * sell, and an administrator writing a banner is writing that copy.
  */
 function bannerToSlide(banner: PublicBanner): HeroSlide {
-  const words = banner.title.trim().split(/\s+/);
+  const words = banner.title.trim().split(/\\s+/);
   const [first = banner.title, ...rest] = words;
   return {
     id: `banner-${banner.id}`,
@@ -342,8 +301,7 @@ function bannerToSlide(banner: PublicBanner): HeroSlide {
   };
 }
 
-/**
- * The caption panel, as a link when the slide has somewhere to go.
+/** The caption panel, as a link when the slide has somewhere to go.
  *
  * A plain `<a>` rather than a router `Link`: the destination is admin-authored and can
  * be an arbitrary in-app path or an `https:` URL, which is exactly the case a typed route
@@ -356,12 +314,32 @@ function CaptionCard({ href, children }: { href?: string; children: React.ReactN
   if (!href) return <div className={className}>{children}</div>;
   const external = href.startsWith("https://");
   return (
-    <a
-      href={href}
-      className={className}
-      {...(external ? { target: "_blank", rel: "noreferrer noopener" } : {})}
-    >
+    <a href={href} className={className} {...(external ? { target: "_blank", rel: "noreferrer noopener" } : {})}>
       {children}
     </a>
+  );
+}
+
+/** Floating trust badges around the hero composition — max 3 (spec §16). */
+function FloatingBadge({
+  icon: Icon,
+  label,
+  className,
+  delay,
+}: {
+  icon: (typeof Leaf) | (typeof Truck) | (typeof ShieldCheck) | (typeof MapPin) | (typeof Repeat);
+  label: string;
+  className: string;
+  delay: number;
+}) {
+  return (
+    <motion.span
+      {...fadeUp}
+      transition={{ delay, duration: 0.3, ease: "easeOut" }}
+      className={`soft-button absolute z-10 hidden items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-bold text-foreground md:flex ${className}`}
+    >
+      <Icon size={14} className="text-primary" aria-hidden />
+      {label}
+    </motion.span>
   );
 }

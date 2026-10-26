@@ -8,6 +8,7 @@ import {
   type PreferenceKey,
 } from "../types";
 
+/** Whether a category offers an email channel. The same answer as the server's.
 /**
  * The notifications feature's client-side vocabulary: the option lists, the URL
  * parsing and the pure label/format helpers the components share.
@@ -77,6 +78,16 @@ export function categoryHasEmail(category: NotificationCategory): boolean {
  * notification's `category` column carries. They are two vocabularies, so the join
  * between them lives here, once, rather than as an ad-hoc `.toLowerCase()` at each use.
  */
+/** Every preference key, in the render order the groups define. */
+export const PREFERENCE_KEYS_IN_ORDER = [
+  "orders",
+  "rentals",
+  "payments",
+  "seller",
+  "wishlist",
+  "admin",
+] as const;
+
 export const PREFERENCE_KEYS: Record<NotificationCategory, PreferenceKey> = {
   ORDERS: "orders",
   RENTALS: "rentals",

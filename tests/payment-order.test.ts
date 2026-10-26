@@ -55,9 +55,11 @@ describe("the context a payment remembers", () => {
     );
 
     expect(readCheckoutContext(metadata)).toEqual({
+      purpose: "CART",
       deliveryMethod: "DELIVERY",
       deliveryAddressId: 4,
       couponCode: null,
+      rentalId: null,
     });
   });
 
@@ -68,9 +70,11 @@ describe("the context a payment remembers", () => {
     );
 
     expect(readCheckoutContext(metadata)).toEqual({
+      purpose: "CART",
       deliveryMethod: "PICKUP",
       deliveryAddressId: null,
       couponCode: null,
+      rentalId: null,
     });
   });
 

@@ -6,6 +6,7 @@ import {
   orderItems,
   orders,
   products,
+  rentalEvents,
   rentals,
   transactions,
 } from "../schema";
@@ -14,8 +15,11 @@ import { buildCheckoutQuote, type DeliveryMethod } from "./checkout";
 import { redeemCoupon } from "./coupon";
 import { createOrderNumber } from "./payments/order-number";
 import { readCheckoutContext } from "./payments/checkout-context";
-import { recordRentalEvent } from "./rental-lifecycle";
+import { EXTENDABLE_RENTAL_STATUSES, recordRentalEvent } from "./rental-lifecycle";
+import { evaluateRentToOwnBuy } from "./rent-to-own";
+import { readExtensionPlan } from "./rental-extension";
 import { adjustProductInventory } from "./product-inventory";
+import { orderEventKey, recordOrderEvent } from "./order-events";
 import { notificationEventKey, truncateTitle } from "./notification-events";
 import { notify, notifyAdmins, notifyMany } from "./notifications";
 import type { PaymentMethod, PaymentStatus } from "./payments/types";
@@ -485,6 +489,405 @@ export async function createOrderFromPayment(input: CreateOrderInput): Promise<O
 }
 
 /**
+ * Create the purchase order that a verified rent-to-own payment buys.
+ *
+ * ## Why this is not `createOrderFromPayment`
+ *
+ * A cart checkout is priced from the cart. A buy-out is priced from *one rental
+ * and its product*, and the thing being bought is not in the cart at all. Trying
+ * to route it through the cart path would mean inventing a cart line for
+ * something the customer never added. So this is a sibling, sharing the parts
+ * that must not drift: the order-number retry, the inventory helper, the events
+ * and the notifications.
+ *
+ * ## Everything is re-derived under the lock
+ *
+ * The transaction is locked first and its amount is compared to a freshly
+ * computed price. If a seller changed the price, the cap or the credit
+ * percentage between the intent and the settlement, the amounts disagree and the
+ * customer is sent back to review rather than charged a figure they never saw.
+ * The request body is never consulted — there is nothing here to tamper with.
+ */
+export async function createRentalBuyOrderFromPayment(input: {
+  userId: number;
+  transactionId: number;
+}): Promise<OrderConfirmation> {
+  return db.transaction(async (tx) => {
+    const [transaction] = await tx
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, input.transactionId))
+      .limit(1)
+      .for("update");
+    if (!transaction) throw new HttpError(404, "NOT_FOUND", "Payment not found.");
+    // Ownership is a 404, the same shape every rental action uses.
+    if (transaction.userId !== input.userId) {
+      throw new HttpError(404, "NOT_FOUND", "Payment not found.");
+    }
+
+    const context = readCheckoutContext(transaction.metadata);
+    if (!context || context.purpose !== "RENTAL_BUY" || !context.rentalId) {
+      throw new HttpError(
+        409,
+        "PAYMENT_CONTEXT_INVALID",
+        "This payment is not a rent-to-own purchase.",
+      );
+    }
+
+    if (transaction.orderId !== null) {
+      const [existing] = await tx
+        .select()
+        .from(orders)
+        .where(eq(orders.id, transaction.orderId))
+        .limit(1);
+      if (existing) {
+        return {
+          orderId: existing.id,
+          orderNumber: existing.orderNumber ?? `#${existing.id}`,
+          status: existing.status,
+          paymentStatus: existing.paymentStatus,
+          total: existing.total,
+          currency: existing.currency,
+          rentalCount: 0,
+          created: false,
+        };
+      }
+    }
+
+    if (transaction.status !== "PROCESSING") {
+      throw new HttpError(409, "PAYMENT_NOT_VERIFIED", "This payment has not been verified yet.");
+    }
+
+    const [rental] = await tx
+      .select()
+      .from(rentals)
+      .where(eq(rentals.id, context.rentalId))
+      .limit(1)
+      .for("update");
+    if (!rental || rental.renterId !== input.userId) {
+      throw new HttpError(404, "NOT_FOUND", "Rental not found.");
+    }
+
+    const [product] = await tx
+      .select()
+      .from(products)
+      .where(eq(products.id, rental.productId))
+      .limit(1)
+      .for("update");
+    if (!product) throw new HttpError(404, "NOT_FOUND", "Product not found.");
+
+    // A buy-out can only happen once: the recorded `PURCHASED` event is the proof,
+    // and the unique `(rental_id, type)` index is what makes that check race-free.
+    const [alreadyPurchased] = await tx
+      .select({ id: rentalEvents.id })
+      .from(rentalEvents)
+      .where(and(eq(rentalEvents.rentalId, rental.id), eq(rentalEvents.type, "PURCHASED")))
+      .limit(1);
+
+    const evaluation = evaluateRentToOwnBuy({
+      rentalStatus: rental.status,
+      alreadyPurchased: Boolean(alreadyPurchased),
+      product: {
+        purchasePrice: product.purchasePrice,
+        rentCreditPercentage: product.rentCreditPercentage,
+        rentCreditCap: product.rentCreditCap,
+        rentToOwnEnabled: product.rentToOwnEnabled,
+        availableQuantity: product.availableQuantity,
+      },
+      rental: { rentalSubtotal: rental.rentalSubtotal },
+    });
+    if (!evaluation.ok) {
+      throw new HttpError(evaluation.status, evaluation.code, evaluation.message);
+    }
+
+    const { purchasePrice, credit, price } = evaluation.price;
+    if (price !== transaction.amount) {
+      throw new HttpError(
+        409,
+        "PAYMENT_AMOUNT_CHANGED",
+        "The buy-out price has changed. Please review it again.",
+      );
+    }
+
+    let orderId = 0;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        const [inserted] = await tx
+          .insert(orders)
+          .values({
+            userId: input.userId,
+            orderType: "PURCHASE",
+            status: "CONFIRMED",
+            paymentStatus: "PAID",
+            subtotal: purchasePrice,
+            deliveryFee: 0,
+            depositTotal: 0,
+            // The rent credit is shown as a discount: the customer paid
+            // `purchasePrice` for the item and `credit` of it was already paid as
+            // rent, so the order's own arithmetic has to say both.
+            discount: credit,
+            tax: 0,
+            total: price,
+            currency: transaction.currency,
+            deliveryMethod: "PICKUP",
+            paymentProvider: transaction.provider,
+            paymentReference: transaction.providerTransactionId,
+            orderNumber: createOrderNumber(),
+          })
+          .$returningId();
+        orderId = Number(inserted.id);
+        break;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const isDuplicate = message.includes("Duplicate") || message.includes("duplicate");
+        if (!isDuplicate || attempt === 4) throw error;
+      }
+    }
+    if (orderId === 0) {
+      throw new HttpError(500, "INTERNAL_ERROR", "Could not allocate an order number.");
+    }
+
+    await tx.insert(orderItems).values({
+      orderId,
+      productId: product.id,
+      sellerId: product.sellerId,
+      mode: "BUY",
+      quantity: 1,
+      unitPrice: purchasePrice,
+      lineTotal: purchasePrice,
+      titleSnapshot: product.title,
+      rentCreditApplied: credit,
+    });
+
+    await tx.update(rentals).set({ rentCreditApplied: credit }).where(eq(rentals.id, rental.id));
+    await recordRentalEvent(tx, rental.id, "PURCHASED", { orderId, credit, price });
+
+    await adjustProductInventory(tx, product.id, -1);
+
+    await tx
+      .update(transactions)
+      .set({ orderId, status: "SUCCEEDED", failureReason: null, updatedAt: new Date() })
+      .where(eq(transactions.id, transaction.id));
+
+    const [placedOrder] = await tx
+      .select({ id: orders.id, orderNumber: orders.orderNumber })
+      .from(orders)
+      .where(eq(orders.id, orderId))
+      .limit(1);
+    const orderReference = placedOrder?.orderNumber ?? `#${orderId}`;
+    const orderContext = { orderId, orderNumber: placedOrder?.orderNumber ?? null };
+
+    await recordOrderEvent(tx, {
+      orderId,
+      type: "CREATED",
+      toStatus: "CONFIRMED",
+      note: "Rent-to-own buy-out settled",
+      metadata: { rentalId: rental.id, credit, price },
+      eventKey: orderEventKey("CREATED", orderId),
+    });
+
+    await notify(tx, {
+      userId: input.userId,
+      type: "ORDER_PLACED",
+      title: "Order placed",
+      body: `Thanks for your purchase ${orderReference}. We'll keep you posted as it moves.`,
+      context: orderContext,
+      eventKey: notificationEventKey("ORDER_PLACED", orderId),
+    });
+    await notify(tx, {
+      userId: input.userId,
+      type: "PAYMENT_SUCCESSFUL",
+      title: "Payment received",
+      body: `We received your payment for order ${orderReference}.`,
+      context: orderContext,
+      eventKey: notificationEventKey("PAYMENT_SUCCESSFUL", orderId),
+    });
+
+    if (product.sellerId !== input.userId) {
+      await notify(tx, {
+        userId: product.sellerId,
+        type: "ORDER_NEW",
+        title: "New order received",
+        body: "A customer just bought from your listings on Revaro.",
+        context: orderContext,
+        eventKey: notificationEventKey("ORDER_NEW", orderId, product.sellerId),
+        link: "/dashboard/orders",
+      });
+      await notify(tx, {
+        userId: product.sellerId,
+        type: "PRODUCT_SOLD",
+        title: `“${truncateTitle(product.title)}” sold`,
+        body: `Order ${orderReference} includes “${truncateTitle(product.title)}”.`,
+        context: { ...orderContext, productId: product.id },
+        eventKey: notificationEventKey("PRODUCT_SOLD", product.id, product.sellerId),
+      });
+    }
+
+    await notifyAdmins(tx, {
+      type: "ADMIN_NEW_ORDER",
+      title: "New order placed",
+      body: `Order ${orderReference} was placed on Revaro.`,
+      context: orderContext,
+      eventKey: notificationEventKey("ADMIN_NEW_ORDER", orderId),
+    });
+
+    return {
+      orderId,
+      orderNumber: orderReference,
+      status: "CONFIRMED",
+      paymentStatus: "PAID",
+      total: price,
+      currency: transaction.currency,
+      rentalCount: 0,
+      created: true,
+    };
+  });
+}
+
+export type ExtensionSettlement = {
+  rentalId: number;
+  days: number;
+  newEndDate: Date;
+  created: boolean;
+};
+
+/**
+ * Apply a paid extension: move the end date, record it, announce it.
+ *
+ * ## The end date moves only here
+ *
+ * An approved extension is an *offer*. The rental's dates change only when the
+ * payment for the extra days has settled, so a renter cannot gain free rental
+ * time by having a request approved and never paying. The plan the approval
+ * stored carries the previous end date, so if the rental moved in the meantime
+ * the settlement refuses rather than extending from the wrong baseline.
+ *
+ * Idempotent through the transaction's own status: a replayed webhook finds the
+ * payment already `SUCCEEDED` and returns without moving the date twice.
+ */
+export async function settleRentalExtensionPayment(input: {
+  userId: number;
+  transactionId: number;
+}): Promise<ExtensionSettlement> {
+  return db.transaction(async (tx) => {
+    const [transaction] = await tx
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, input.transactionId))
+      .limit(1)
+      .for("update");
+    if (!transaction) throw new HttpError(404, "NOT_FOUND", "Payment not found.");
+    if (transaction.userId !== input.userId) {
+      throw new HttpError(404, "NOT_FOUND", "Payment not found.");
+    }
+
+    const context = readCheckoutContext(transaction.metadata);
+    if (!context || context.purpose !== "RENTAL_EXTENSION" || !context.rentalId) {
+      throw new HttpError(
+        409,
+        "PAYMENT_CONTEXT_INVALID",
+        "This payment is not a rental extension.",
+      );
+    }
+
+    const plan = readExtensionPlan(transaction.metadata);
+    if (!plan) {
+      throw new HttpError(
+        409,
+        "PAYMENT_CONTEXT_INVALID",
+        "This extension payment is missing its plan.",
+      );
+    }
+
+    const [rental] = await tx
+      .select()
+      .from(rentals)
+      .where(eq(rentals.id, context.rentalId))
+      .limit(1)
+      .for("update");
+    if (!rental || rental.renterId !== input.userId) {
+      throw new HttpError(404, "NOT_FOUND", "Rental not found.");
+    }
+
+    const newEndDate = new Date(plan.newEndDate);
+
+    // Already applied. The event is the marker, so a replay returns the same
+    // answer without a second date move.
+    if (transaction.status === "SUCCEEDED") {
+      return { rentalId: rental.id, days: plan.additionalDays, newEndDate, created: false };
+    }
+    if (transaction.status !== "PROCESSING") {
+      throw new HttpError(409, "PAYMENT_NOT_VERIFIED", "This payment has not been verified yet.");
+    }
+    if (!EXTENDABLE_RENTAL_STATUSES.includes(rental.status as (typeof EXTENDABLE_RENTAL_STATUSES)[number])) {
+      throw new HttpError(409, "EXTENSION_NOT_ALLOWED", "This rental can no longer be extended.");
+    }
+    if (rental.endDate.getTime() !== new Date(plan.previousEndDate).getTime()) {
+      throw new HttpError(
+        409,
+        "RENTAL_CHANGED",
+        "This rental changed since the extension was approved. Please request it again.",
+      );
+    }
+
+    await tx
+      .update(rentals)
+      .set({
+        endDate: newEndDate,
+        extensionRequestedAt: null,
+        extensionRequestedDays: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(rentals.id, rental.id));
+
+    await recordRentalEvent(tx, rental.id, "EXTENSION_APPROVED", {
+      days: plan.additionalDays,
+      previousEndDate: plan.previousEndDate,
+      newEndDate: plan.newEndDate,
+      charge: plan.charge,
+      tax: plan.tax,
+      total: plan.total,
+    });
+
+    await tx
+      .update(transactions)
+      .set({ status: "SUCCEEDED", failureReason: null, updatedAt: new Date() })
+      .where(eq(transactions.id, transaction.id));
+
+    await recordOrderEvent(tx, {
+      orderId: rental.orderId,
+      type: "NOTE_ADDED",
+      toStatus: rental.status,
+      note: `Extension paid for ${plan.additionalDays} day(s)`,
+      metadata: { rentalId: rental.id, newEndDate: plan.newEndDate, total: plan.total },
+    });
+
+    const body = `Your rental was extended by ${plan.additionalDays} day(s), until ${plan.newEndDate.slice(0, 10)}.`;
+    await notify(tx, {
+      userId: rental.renterId,
+      type: "RENTAL_EXTENSION_DECIDED",
+      title: "Extension approved",
+      body,
+      context: { rentalId: rental.id, productId: rental.productId },
+      eventKey: notificationEventKey("RENTAL_EXTENSION_DECIDED", rental.id, "approved"),
+    });
+    if (rental.ownerId !== rental.renterId) {
+      await notify(tx, {
+        userId: rental.ownerId,
+        type: "RENTAL_EXTENSION_DECIDED",
+        title: "A rental was extended",
+        body: `A rental of your item was extended by ${plan.additionalDays} day(s).`,
+        context: { rentalId: rental.id, productId: rental.productId },
+        eventKey: notificationEventKey("RENTAL_EXTENSION_DECIDED", rental.id, `owner:${plan.additionalDays}`),
+        link: "/dashboard/rentals",
+      });
+    }
+
+    return { rentalId: rental.id, days: plan.additionalDays, newEndDate, created: true };
+  });
+}
+
+/**
  * Announce the rentals created on a freshly-placed order.
  *
  * ## Why this is a separate function
@@ -556,6 +959,8 @@ export type ReconcileOutcome =
   | { outcome: "ORDERED"; orderId: number }
   /** A previous event already created the order. */
   | { outcome: "ALREADY_HANDLED"; orderId: number }
+  /** A rent-to-own or extension payment settled against an existing rental. */
+  | { outcome: "EXTENDED"; rentalId: number }
   /** Nothing to do: unknown payment, or the event is not a settlement. */
   | { outcome: "NOT_APPLICABLE" }
   /**
@@ -620,8 +1025,8 @@ export async function reconcileSettledTransaction(params: {
     return { outcome: "REVIEW_NEEDED", reason };
   }
 
-  // Move it to PROCESSING before ordering: the provider has settled it, and
-  // `createOrderFromPayment` only acts on a verified (PROCESSING) payment.
+  // Move it to PROCESSING before settling: the provider has confirmed it, and
+  // the settlement path only acts on a verified (PROCESSING) payment.
   if (transaction.status === "PENDING") {
     await db
       .update(transactions)
@@ -631,6 +1036,23 @@ export async function reconcileSettledTransaction(params: {
         updatedAt: new Date(),
       })
       .where(eq(transactions.id, transaction.id));
+  }
+
+  // One pipeline, three purchases. The purpose the *intent* wrote decides which
+  // settlement runs; nothing in the webhook may choose it.
+  if (context.purpose === "RENTAL_BUY") {
+    const confirmation = await createRentalBuyOrderFromPayment({
+      userId: transaction.userId,
+      transactionId: transaction.id,
+    });
+    return { outcome: "ORDERED", orderId: confirmation.orderId };
+  }
+  if (context.purpose === "RENTAL_EXTENSION") {
+    const settled = await settleRentalExtensionPayment({
+      userId: transaction.userId,
+      transactionId: transaction.id,
+    });
+    return { outcome: "EXTENDED", rentalId: settled.rentalId };
   }
 
   const confirmation = await createOrderFromPayment({

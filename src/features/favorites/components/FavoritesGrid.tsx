@@ -1,4 +1,4 @@
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { productGridClassName } from "@/components/shared/product-grid";
 import { FavoriteProductCard } from "./FavoriteProductCard";
 import { FavoritesSkeleton } from "./FavoritesSkeleton";
@@ -53,16 +53,17 @@ export function FavoritesGrid({
       transition={{ duration: 0.2 }}
       className={productGridClassName}
     >
-      <AnimatePresence mode="popLayout" initial={false}>
-        {products.map((product) => (
-          <FavoriteProductCard
-            key={product.id}
-            product={product}
-            onRemoved={onRemoved}
-            onPrefetch={onPrefetch}
-          />
-        ))}
-      </AnimatePresence>
+      {/* Each card gets a stable key (product.id) — never the array index — and
+          AnimatePresence is left without mode="wait" (defaults to "sync" for
+          layout‑safe enter/exit animations that don't hold up the whole grid). */}
+      {products.map((product) => (
+        <FavoriteProductCard
+          key={product.id}
+          product={product}
+          onRemoved={onRemoved}
+          onPrefetch={onPrefetch}
+        />
+      ))}
     </motion.div>
   );
 }

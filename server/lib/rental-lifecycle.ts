@@ -1,6 +1,7 @@
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import type { db } from "../db";
 import { rentalEvents, rentals } from "../schema";
+import { HttpError } from "./api";
 import { notificationEventKey } from "./notification-events";
 import { notify } from "./notifications";
 
@@ -58,6 +59,111 @@ export function isRentalStatus(value: unknown): value is RentalStatus {
 export function isRentalBucket(value: unknown): value is RentalBucket {
   return typeof value === "string" && (RENTAL_BUCKETS as readonly string[]).includes(value);
 }
+
+/* ------------------------------ state machine ------------------------------- */
+
+/**
+ * The transitions the *system* may make on its own.
+ *
+ * This is deliberately narrower than the admin machine in `rental-admin.ts`: an
+ * operator resolves tangles a rule cannot, but a background reconciliation or a
+ * renter action must never be able to make an incoherent move. Terminal states
+ * stay terminal — a `COMPLETED` rental has no outgoing edges, so a replayed
+ * request or a stale tab cannot walk a finished rental backwards.
+ *
+ * It lives here, beside the statuses, so both the route layer and the admin desk
+ * can validate against one definition rather than three inline `includes` calls.
+ */
+export const RENTAL_TRANSITIONS: Record<RentalStatus, readonly RentalStatus[]> = {
+  CONFIRMED: ["ACTIVE", "CANCELLED", "DISPUTED"],
+  ACTIVE: ["RETURN_PENDING", "OVERDUE", "RETURNED", "COMPLETED", "DISPUTED"],
+  RETURN_PENDING: ["RETURNED", "ACTIVE", "DISPUTED"],
+  OVERDUE: ["RETURN_PENDING", "RETURNED", "DISPUTED"],
+  RETURNED: ["COMPLETED", "DISPUTED"],
+  COMPLETED: [],
+  CANCELLED: [],
+  DISPUTED: ["ACTIVE", "RETURN_PENDING", "RETURNED", "COMPLETED", "CANCELLED"],
+};
+
+export function canRentalTransition(from: string, to: string): boolean {
+  if (from === to) return false;
+  if (!isRentalStatus(from) || !isRentalStatus(to)) return false;
+  return RENTAL_TRANSITIONS[from].includes(to);
+}
+
+/** Throw the one documented conflict when a move is not permitted. */
+export function assertRentalTransition(from: string, to: string): void {
+  if (canRentalTransition(from, to)) return;
+  throw new HttpError(
+    409,
+    "TRANSITION_NOT_ALLOWED",
+    `A rental cannot move from ${from} to ${to}.`,
+  );
+}
+
+/* ------------------------------ extension gates ----------------------------- */
+
+/**
+ * The statuses an extension may be decided against.
+ *
+ * A rental that is already back (`RETURNED`), finished or cancelled is past the
+ * point of extending — an extension buys time the renter no longer has. Absent
+ * this list the request handler and the approval handler drifted: one allowed
+ * only `CONFIRMED`/`ACTIVE`, the other anything but `CANCELLED`/`COMPLETED`, so a
+ * request could be refused while an approval of the very same rental succeeded.
+ * One list, read by both, is the whole point.
+ */
+export const EXTENDABLE_RENTAL_STATUSES: readonly RentalStatus[] = [
+  "CONFIRMED",
+  "ACTIVE",
+  "OVERDUE",
+  "RETURN_PENDING",
+];
+
+/** The subset of a rental these gates read. */
+export type ExtendableRental = {
+  status: string;
+  extensionRequestedAt: Date | null;
+  extensionRequestedDays: number | null;
+};
+
+/** Whether the renter may *open* an extension request on this rental. */
+export function canRequestExtension(
+  rental: Pick<ExtendableRental, "status" | "extensionRequestedAt">,
+): boolean {
+  if (rental.status !== "CONFIRMED" && rental.status !== "ACTIVE") return false;
+  // One open request at a time: a second would overwrite the first's quote.
+  return rental.extensionRequestedAt === null;
+}
+
+/** Whether a *pending* extension request on this rental may be approved. */
+export function canApproveExtension(rental: ExtendableRental): boolean {
+  if (!EXTENDABLE_RENTAL_STATUSES.includes(rental.status as RentalStatus)) return false;
+  return rental.extensionRequestedDays !== null && rental.extensionRequestedDays > 0;
+}
+
+/* ------------------------------ buy-out gate -------------------------------- */
+
+/**
+ * Statuses from which a renter may buy the item out (rent-to-own).
+ *
+ * A rental that was cancelled or is in dispute has no purchase to make — the
+ * booking is being unwound, not converted. Everything else (`CONFIRMED` through
+ * `COMPLETED`) is a real rental the customer may choose to own.
+ */
+export const PURCHASABLE_RENTAL_STATUSES: readonly RentalStatus[] = [
+  "CONFIRMED",
+  "ACTIVE",
+  "RETURN_PENDING",
+  "OVERDUE",
+  "RETURNED",
+  "COMPLETED",
+];
+
+export function canPurchaseRental(status: string): boolean {
+  return PURCHASABLE_RENTAL_STATUSES.includes(status as RentalStatus);
+}
+
 
 /**
  * Which tab a rental belongs under, given its stored status and its start date.
@@ -125,6 +231,11 @@ export const RENTAL_EVENT_TYPES = [
   "DELIVERY_COMPLETED",
   "STARTED",
   "RETURN_REQUESTED",
+  "PURCHASED",
+  "EXTENSION_REQUESTED",
+  "EXTENSION_APPROVED",
+  "EXTENSION_DECLINED",
+  "EXTENSION_EXPIRED",
   "RETURNED",
   "COMPLETED",
   "CANCELLED",
@@ -137,6 +248,11 @@ const EVENT_ORDER: RentalEventType[] = [
   "CONFIRMED",
   "DELIVERY_COMPLETED",
   "STARTED",
+  "EXTENSION_REQUESTED",
+  "EXTENSION_APPROVED",
+  "EXTENSION_DECLINED",
+  "EXTENSION_EXPIRED",
+  "PURCHASED",
   "RETURN_REQUESTED",
   "RETURNED",
   "COMPLETED",
@@ -148,6 +264,11 @@ const EVENT_LABELS: Record<RentalEventType, string> = {
   DELIVERY_COMPLETED: "Delivery completed",
   STARTED: "Rental started",
   RETURN_REQUESTED: "Return requested",
+  PURCHASED: "Purchased after rent",
+  EXTENSION_REQUESTED: "Extension requested",
+  EXTENSION_APPROVED: "Extension approved",
+  EXTENSION_DECLINED: "Extension declined",
+  EXTENSION_EXPIRED: "Extension expired",
   RETURNED: "Returned",
   COMPLETED: "Completed",
   CANCELLED: "Rental cancelled",
@@ -456,7 +577,14 @@ export type RentalTimelineInput = {
  * `DELIVERY_COMPLETED` needs a logistics integration that does not exist yet. The
  * type stays declared so that integration has a home.
  */
-const RECORD_ONLY: ReadonlySet<string> = new Set(["DELIVERY_COMPLETED"]);
+const RECORD_ONLY: ReadonlySet<string> = new Set([
+  "DELIVERY_COMPLETED",
+  "PURCHASED",
+  "EXTENSION_REQUESTED",
+  "EXTENSION_APPROVED",
+  "EXTENSION_DECLINED",
+  "EXTENSION_EXPIRED",
+]);
 
 export function buildRentalTimeline({
   events,

@@ -9,6 +9,7 @@ import { RentToOwnSection } from "./components/RentToOwnSection";
 import { RentalSection } from "./components/RentalSection";
 import { SellerCTA } from "./components/SellerCTA";
 import { SalePings } from "@/components/motion-effects/sale-pings";
+import { ReviewDeck } from "@/components/motion-effects/review-deck";
 import {
   useFeaturedProducts,
   useHomeCategories,
@@ -60,6 +61,8 @@ export function HomePage() {
       />
 
       <RentToOwnSection />
+
+      <ReviewDeck />
 
       <PreLovedSection
         products={preLoved.data ?? []}

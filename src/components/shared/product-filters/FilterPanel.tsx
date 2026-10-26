@@ -39,7 +39,9 @@ export function FilterPanel({
 }) {
   return (
     <aside aria-label="Filters" className="hidden lg:block">
-      <div className="raised-surface sticky top-24 max-h-[calc(100vh-8rem)] space-y-5 overflow-y-auto rounded-3xl p-5 [scrollbar-width:thin]">
+      <div
+        className="sticky top-[var(--header-height)+16px bg-background/80 backdrop-blur-sm z-10 max-h-[calc(100vh_-_var(--header-height)_-_32px)] space-y-5 overflow-y-auto rounded-3xl p-5 [scrollbar-width:thin] [scrollbar-color:var(--primary-foreground)_var(--background)] [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar-thumb]:visible [&::-webkit-scrollbar-thumb]:bg-[var(--primary-foreground)] [&::-webkit-scrollbar-thumb]:rounded-full"
+      >
         <div className="flex items-center justify-between">
           <h2 className="font-heading text-sm font-extrabold">Filters</h2>
           {activeCount > 0 && (
@@ -50,8 +52,8 @@ export function FilterPanel({
             >
               Clear all ({activeCount})
             </button>
-          )}
-        </div>
+          )
+        }</div>
 
         <div className="neumo-divider" />
 

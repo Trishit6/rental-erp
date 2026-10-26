@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { NotificationsPage } from "@/features/notifications";
+import { NotificationPreferencesSection } from "@/features/notifications";
 
 /**
  * `/notifications` — the full notification feed.
@@ -29,3 +29,11 @@ export const Route = createFileRoute("/_authenticated/notifications")({
   },
   component: NotificationsPage,
 });
+
+function NotificationsPage() {
+  return (
+    <div>
+      <NotificationPreferencesSection />
+    </div>
+  );
+}

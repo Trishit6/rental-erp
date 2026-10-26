@@ -132,7 +132,7 @@ describe("the route table itself", () => {
       .map((route) => route.path)
       .sort();
     expect(getPaths).toEqual(
-      ["/product/:idOrSlug", "/mine", "/seller", "/moderation", "/:id{[0-9]+}"].sort(),
+      ["/product/:idOrSlug", "/mine", "/seller", "/moderation", "/:id{[0-9]+}", "/featured"].sort(),
     );
   });
 });

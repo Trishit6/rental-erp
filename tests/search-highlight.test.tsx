@@ -40,7 +40,7 @@ describe("highlightSegments", () => {
 
 describe('<Highlight> is inert by construction', () => {
   it("renders a <script> title as escaped text — never a script node", () => {
-    const { getByRole, container, getByText } = render(
+    const { getByRole, container } = render(
       <Highlight text={'<script>alert(1)</script> Sony A7'} query="sony" />,
     );
 

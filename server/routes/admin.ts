@@ -58,6 +58,7 @@ import {
   reorderCategories,
   updateCategory,
 } from "../lib/admin-categories";
+
 import {
   BANNER_STATUSES,
   BLOCK_STATUSES,
@@ -101,6 +102,7 @@ import {
 import { recordAudit, withAudit } from "../lib/audit";
 import { CUSTOMER_CANCELLABLE_FROM } from "../lib/order-cancellation";
 import { reconcileRentalStatuses } from "../lib/rental-lifecycle";
+import { expireStaleExtensionApprovals } from "../lib/rental-payments";
 import { notificationEventKey } from "../lib/notification-events";
 import { notify } from "../lib/notifications";
 import {
@@ -162,6 +164,7 @@ import {
   type TicketPriority,
   type TicketStatus,
 } from "../lib/support";
+import { adminPaymentsRoute } from "./admin-payments";
 import {
   COUPON_DISCOUNT_TYPES,
   COUPON_STATUSES,
@@ -976,6 +979,7 @@ adminRoute.get("/order-health", async (c) => {
 adminRoute.get("/rentals", async (c) => {
   const query = adminRentalsQuerySchema.parse(c.req.query());
   await reconcileRentalStatuses(db, {});
+  await expireStaleExtensionApprovals(db);
   const { rows, total } = await listAdminRentals(query);
   return c.json(ok(rows, buildPagination(query.page, query.pageSize, total)));
 });
@@ -1000,6 +1004,7 @@ async function loadAdminRental(id: number) {
       securityDeposit: rentals.securityDeposit,
       endDate: rentals.endDate,
       dailyRate: rentals.dailyRate,
+      extensionRequestedAt: rentals.extensionRequestedAt,
       extensionRequestedDays: rentals.extensionRequestedDays,
       currency: orders.currency,
     })
@@ -1022,6 +1027,7 @@ adminRoute.get("/rentals/:id", async (c) => {
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id) || id <= 0) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
   await reconcileRentalStatuses(db, {});
+  await expireStaleExtensionApprovals(db);
   const detail = await getAdminRentalDetail(id);
   if (!detail) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
   return c.json(ok({ ...detail, nextStatuses: adminRentalNextStatuses(detail.rental.status) }));
@@ -1424,6 +1430,10 @@ adminRoute.get("/revenue", async (c) => {
 adminRoute.get("/reconciliation", async (c) => {
   return c.json(ok(await getReconciliation()));
 });
+
+/* ------------------------------ admin payments ------------------------------ */
+
+adminRoute.route("/payments", adminPaymentsRoute);
 
 /* --------------------------------- reviews ---------------------------------- */
 
@@ -3163,3 +3173,4 @@ adminRoute.patch(
     ),
   ),
 );
+

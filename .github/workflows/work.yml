@@ -1,28 +1,3 @@
-# Revaro — continuous integration and deployment.
-#
-# Two jobs, deliberately:
-#
-#   verify  — pushes to `main` and *every* pull request: install, typecheck,
-#             lint, test, build, audit. This is the gate.
-#   deploy  — only a push to `main`, only after `verify` passed, and only with
-#             the `production` environment's approvers/reviewers attached.
-#
-# The deploy is release-based and reversible:
-#
-#   $SSH_PATH/releases/<sha>/   immutable release folders
-#   $SSH_PATH/shared/           .env + uploads, symlinked into every release
-#   $SSH_PATH/current           atomically-swapped symlink to the live release
-#   $SSH_PATH/backups/          mysqldump output, 10 most recent kept
-#
-# Migrations run *before* the symlink moves, so a bad migration aborts the
-# deploy with the previous release still serving. A failed health check after
-# the switch moves the symlink back. Neither step ever touches the live folder
-# in place — nothing is rsynced onto `current`.
-#
-# Secrets: only GitHub Secrets and the server-side `$SSH_PATH/shared/.env`.
-# No value is ever echoed here — reference secret names only. The required
-# names, the first-time setup and the manual rollback all live in
-# docs/deploy/VPS.md.
 name: Rental_erp CI/CD
 
 on:
@@ -31,14 +6,9 @@ on:
       - main
   pull_request:
 
-# The pipeline reads the repository and nothing else. Deploy authenticates over
-# SSH with its own key, so no token write scope is needed anywhere.
 permissions:
   contents: read
 
-# One group per ref. A pull request may cancel its own earlier run (a newer push
-# makes the old one irrelevant); a `main` run may not, because it is also the
-# deploy path. The `deploy` job overrides this with its own serialised group.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -80,10 +50,11 @@ jobs:
       - name: Test
         run: pnpm test
 
-      # Typechecking already ran, but `pnpm build` is also what produces
-      # `dist/` — and it re-checks both tsconfigs on the way through.
       - name: Build
         run: pnpm build
+
+      - name: Bundle size check (warning)
+        run: pnpm analyze:bundle --check || true
 
       - name: Audit production dependencies
         run: pnpm audit --prod --audit-level=high
@@ -96,8 +67,6 @@ jobs:
     timeout-minutes: 30
     environment: production
 
-    # Serialised, never cancelled: half a release is worse than a queued one.
-    # Deliberately *not* per-ref, so two `main` pushes cannot deploy at once.
     concurrency:
       group: deploy
       cancel-in-progress: false
@@ -131,15 +100,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # `dist/` is gitignored (see .gitignore), so the deploy job rebuilds it
-      # here rather than receiving an artifact — which keeps this workflow to
-      # checkout / setup-node / pnpm only.
       - name: Build production bundle
         run: pnpm build
 
-      # The deploy key and the pinned host key both arrive as secrets. With
-      # `StrictHostKeyChecking yes` every later ssh/rsync fails closed if the
-      # server's key ever changes, which is the point.
       - name: Configure SSH (deploy key + pinned known_hosts)
         env:
           SSH_KEY: ${{ secrets.SSH_KEY }}
@@ -168,8 +131,6 @@ jobs:
           set -euo pipefail
           ssh revaro-deploy "mkdir -p '$SSH_PATH/releases/$GITHUB_SHA/dist'"
 
-      # Copy into a *new* release folder. Never `rsync --delete` over the live
-      # directory: the running release must not change until the switch below.
       - name: Upload release files
         run: |
           set -euo pipefail
@@ -191,9 +152,6 @@ jobs:
             tsconfig.server.json \
             "revaro-deploy:$RELEASE/"
 
-      # Install inside the release, then point the two pieces of state that must
-      # outlive a release at `shared/`: the environment file and the seller
-      # uploads directory. Both are symlinks, never copies.
       - name: Install release dependencies and link shared state
         run: |
           set -euo pipefail
@@ -214,8 +172,6 @@ jobs:
           ln -sfn "$SHARED/uploads" "$RELEASE/server/uploads"
           REMOTE
 
-      # Backup first: the dump is taken before anything touches the schema, so a
-      # bad migration always has a restore point that matches the running code.
       - name: Back up database
         run: |
           set -euo pipefail
@@ -256,9 +212,6 @@ jobs:
           echo "backup written: $DUMP"
           REMOTE
 
-      # Migrations run from the new release, before the symlink moves. If this
-      # fails the current release keeps running — a deploy that stops here is a
-      # no-op for users.
       - name: Run migrations from the new release
         run: |
           set -euo pipefail
@@ -268,11 +221,6 @@ jobs:
           pnpm db:migrate
           REMOTE
 
-      # Phase 1 — atomic switch + restart (the previous release is remembered
-      # first, because after the swap it is no longer discoverable).
-      # Phase 2 — health check, and roll the symlink back if it fails.
-      # `/api/health` is authoritative: it runs `SELECT 1` against MariaDB and
-      # answers 503 when the database is unreachable, so `curl -f` is enough.
       - name: Switch release, restart service and health check
         run: |
           set -euo pipefail
@@ -320,8 +268,6 @@ jobs:
           fi
           REMOTE
 
-      # Keep the 5 most recent releases. The live release is skipped explicitly
-      # so a stale mtime can never delete what `current` points at.
       - name: Prune old releases
         run: |
           set -euo pipefail

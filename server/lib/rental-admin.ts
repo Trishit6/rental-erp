@@ -9,12 +9,14 @@ import { orderEventKey, recordOrderEvent } from "./order-events";
 import { createRefundNumber } from "./reference-numbers";
 import {
   buildRentalTimeline,
+  canApproveExtension,
   IN_HAND_STATUSES,
   recordRentalEvent,
   RENTAL_STATUSES,
   type RentalEventType,
   type RentalStatus,
 } from "./rental-lifecycle";
+import { startRentalExtensionPayment } from "./rental-payments";
 
 /**
  * The admin rental desk (PROMPT 27).
@@ -444,10 +446,15 @@ export type ExtensionDecision = "APPROVE" | "REJECT";
 /**
  * Decide an extension request that the renter already made.
  *
- * Approval moves the rental's end date; the extra days are quoted in the record
- * (rate × days) so the decision's money consequence is on the books, and an
- * administrator can see what was waived. Rejection only clears the request. Both
- * are recorded on the parent order's timeline and announced to the renter.
+ * The gate is `canApproveExtension` — the same function the renter's request path
+ * reads — so an approval can never succeed on a rental whose request the request
+ * path would refuse to open.
+ *
+ * **Approval does not move the end date.** It opens a payment for the extra days
+ * through the payment pipeline; the date moves only when that payment settles
+ * (`settleRentalExtensionPayment`). A decision is therefore a quote, not a
+ * giveaway of rental time, and the administrator can see the amount the renter
+ * was quoted. Rejection clears the request and tells the renter.
  */
 export async function decideAdminRentalExtension(
   actor: Actor,
@@ -459,16 +466,14 @@ export async function decideAdminRentalExtension(
     productId: number;
     endDate: Date;
     dailyRate: number;
+    extensionRequestedAt: Date | null;
     extensionRequestedDays: number | null;
   },
   decision: ExtensionDecision,
   input: { days?: number; reason: string },
-): Promise<{ days: number; newEndDate: Date | null }> {
-  if (rental.extensionRequestedDays === null || rental.extensionRequestedDays <= 0) {
+): Promise<{ days: number; newEndDate: Date | null; transactionId?: number }> {
+  if (!canApproveExtension(rental)) {
     throw new HttpError(409, "NO_REQUEST", "There is no pending extension request on this rental.");
-  }
-  if (["CANCELLED", "COMPLETED"].includes(rental.status)) {
-    throw new HttpError(409, "CLOSED", "A closed rental cannot be extended.");
   }
   const reason = input.reason.trim();
   if (reason.length < 3) {
@@ -481,46 +486,48 @@ export async function decideAdminRentalExtension(
         .update(rentals)
         .set({ extensionRequestedAt: null, extensionRequestedDays: null, updatedAt: new Date() })
         .where(eq(rentals.id, rental.id));
+      await recordRentalEvent(tx, rental.id, "EXTENSION_DECLINED", { reason });
       await recordExtensionNote(tx, actor, rental, `Extension declined: ${reason}`);
       await notifyRentalExtension(tx, rental, "Extension declined", reason, actor.id);
     });
     return { days: 0, newEndDate: null };
   }
 
-  const days = Math.floor(input.days ?? rental.extensionRequestedDays);
+  const days = Math.floor(input.days ?? rental.extensionRequestedDays ?? 0);
   if (!Number.isFinite(days) || days < 1 || days > 365) {
     throw new HttpError(400, "INVALID_DAYS", "An extension must be between 1 and 365 days.");
   }
-  const newEndDate = new Date(rental.endDate.getTime() + days * 86_400_000);
-  const quoted = rental.dailyRate * days;
+
+  // Approval is not the extension: it opens the payment for it. The end date is
+  // untouched until that payment settles, so approving grants nothing for free.
+  const intent = await startRentalExtensionPayment({ rentalId: rental.id, days });
 
   await db.transaction(async (tx) => {
-    await tx
-      .update(rentals)
-      .set({
-        endDate: newEndDate,
-        extensionRequestedAt: null,
-        extensionRequestedDays: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(rentals.id, rental.id));
     await recordExtensionNote(
       tx,
       actor,
       rental,
-      `Extension approved for ${days} day(s): ${reason}`,
-      { days, quoted, newEndDate: newEndDate.toISOString() },
-    );
-    await notifyRentalExtension(
-      tx,
-      rental,
-      "Extension approved",
-      `Your rental was extended by ${days} day(s), until ${newEndDate.toISOString().slice(0, 10)}.`,
-      actor.id,
+      `Extension approved for ${days} day(s), awaiting payment: ${reason}`,
+      {
+        days,
+        transactionId: intent.transactionId,
+        quoted: intent.extension?.total ?? null,
+      },
     );
   });
 
-  return { days, newEndDate };
+  await notifyRentalExtension(
+    db,
+    rental,
+    "Extension approved",
+    `Your extension of ${days} day(s) is approved. Pay the extra to confirm it.`,
+    actor.id,
+  );
+
+  return {
+    days,
+    newEndDate: intent.extension ? new Date(intent.extension.newEndDate) : null,
+  };
 }
 
 async function recordExtensionNote(

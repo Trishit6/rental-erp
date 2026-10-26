@@ -29,7 +29,9 @@ import {
 import { checkReviewEligibility, purchaseTypeForLine } from "../lib/review-queries";
 import {
   addRentalDays,
+  assertRentalTransition,
   buildRentalTimeline,
+  canRequestExtension,
   depositStatus,
   reconcileRentalStatuses,
   recordRentalEvent,
@@ -45,9 +47,28 @@ import {
   isCancellationReason,
 } from "../lib/order-cancellation";
 import { getOrCreateCart, mergeCartItem } from "../lib/cart";
-import { adjustProductInventory, restoreCancelledOrderStock } from "../lib/product-inventory";
+import { restoreCancelledOrderStock } from "../lib/product-inventory";
 import { isPurchasable } from "../lib/product-status";
 import { recordEarningReversal, recordRentalEarning } from "../lib/wallet";
+import {
+  computeCancellationRefund,
+  readRentalCancellationPolicy,
+} from "../lib/rental-cancellation";
+import {
+  createRefundRequest,
+  executeRefund,
+  LIVE_REFUND_STATUSES,
+  sumCaptured,
+  sumRefunds,
+} from "../lib/refund-admin";
+import {
+  expireStaleExtensionApprovals,
+  startRentalBuy,
+  startRentalExtensionPayment,
+} from "../lib/rental-payments";
+import { reconcileSettledTransaction } from "../lib/order-creation";
+import { readIdempotencyKey } from "../lib/idempotency";
+import { getPaymentProvider } from "../lib/payments";
 import { notificationEventKey } from "../lib/notification-events";
 import { notify, notifyAdmins, notifyMany } from "../lib/notifications";
 
@@ -455,19 +476,11 @@ ordersRoute.post(
         alreadyCancelled.map((row) => row.id),
       );
 
-      // Ledger row for the refund owed. No gateway call happens here — the
-      // payment architecture owns settlement — but the money story is on record.
-      if (order.paymentStatus === "PAID") {
-        await tx.insert(transactions).values({
-          userId: user.id,
-          orderId: order.id,
-          type: "REFUND",
-          amount: order.total,
-          status: "PENDING",
-          provider: order.paymentProvider,
-          providerTransactionId: `cancel_${order.orderNumber ?? order.id}`,
-        });
-      }
+      // Ledger row for the refund owed is now handled by the refund service
+      // (server/lib/refunds.ts). The payment architecture owns settlement —
+      // any refund ledger rows are created through the refund service to
+      // ensure the "sum of live refunds ≤ captured" invariant is enforced
+      // in exactly one place.
 
       // The seller's ledger is unwound too. Cancellation is only allowed before the goods
       // leave, so a *sale* earning — recorded at delivery — normally does not exist yet
@@ -939,6 +952,9 @@ rentalsRoute.get("/", async (c) => {
     renterId: filters.role === "owner" ? undefined : user.id,
     ownerId: filters.role === "renter" ? undefined : user.id,
   });
+  // The unpaid-extension sweep has no scheduler either; the rentals list is the
+  // moment a lapsed approval is demonstrably worth checking for.
+  await expireStaleExtensionApprovals(db);
 
   const where = and(rentalRoleCondition(user.id, filters.role), buildRentalFilters(filters));
 
@@ -1026,6 +1042,7 @@ rentalsRoute.get("/:id", async (c) => {
 
   await reconcileRentalStatuses(db, { renterId: user.id });
   await reconcileRentalStatuses(db, { ownerId: user.id });
+  await expireStaleExtensionApprovals(db);
 
   const [row] = await db
     .select({
@@ -1205,17 +1222,16 @@ const extensionRequestSchema = z
 /**
  * Request extra rental time.
  *
- * The server decides everything that matters: current status, the maximum rental
- * duration, conflicting future bookings, and the price of the extra days. The
- * client sends a number of days and nothing else — no end date, no total, no
+ * The server decides everything that matters: whether a request may be opened at
+ * all (`canRequestExtension`, the same gate the approval path reads), the maximum
+ * rental duration, conflicting future bookings, and the price of the extra days.
+ * The client sends a number of days and nothing else — no end date, no total, no
  * deposit.
  *
  * The request is **recorded, not applied**. Applying it would extend the rental
- * without charging for the extra days, because no approval or settlement flow
- * exists yet (there is nowhere to take the money). So the end date is left
- * alone, `extensionRequestedAt` records the ask, and the response returns the
- * server-computed quote for the future approval step to honour. Claiming the
- * rental had been extended would be handing out free rental time.
+ * without charging for the extra days. The quote is stored on the
+ * `EXTENSION_REQUESTED` event, `extensionRequestedAt` records the ask, and the
+ * approval path prices and settles it through the payment pipeline.
  */
 rentalsRoute.post(
   "/:id/extension-request",
@@ -1232,8 +1248,28 @@ rentalsRoute.post(
       .where(and(eq(rentals.id, id), eq(rentals.renterId, user.id)))
       .limit(1);
     if (!rental) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
-    if (rental.status !== "ACTIVE" && rental.status !== "CONFIRMED") {
-      throw new HttpError(409, "EXTENSION_NOT_ALLOWED", "This rental can no longer be extended.");
+
+    // Already asked: the same ask is the same request (idempotent), a different
+    // one has to wait for this to be decided. `canRequestExtension` is the shared
+    // gate — the approval path reads the same one, so the two cannot disagree.
+    if (!canRequestExtension(rental)) {
+      if (rental.extensionRequestedDays === input.additionalDays) {
+        return c.json(
+          ok({
+            requested: true,
+            additionalDays: input.additionalDays,
+            currentEndDate: rental.endDate,
+            proposedEndDate: addRentalDays(rental.endDate, input.additionalDays),
+            status: rental.status,
+            requestedAt: rental.extensionRequestedAt,
+          }),
+        );
+      }
+      throw new HttpError(
+        409,
+        "EXTENSION_NOT_ALLOWED",
+        "This rental already has an extension request in review.",
+      );
     }
 
     const [product] = await db
@@ -1278,7 +1314,7 @@ rentalsRoute.post(
     // rule the cart uses, and always cheaper for the customer, never dearer.
     const oldRate = effectiveDailyRate(product, currentDays);
     const newRate = effectiveDailyRate(product, newDays);
-    const additionalCost = Math.max(0, newRate * newDays - oldRate * currentDays);
+    const additionalCost = Math.max(0, Math.round(newRate * newDays - oldRate * currentDays));
 
     const now = new Date();
     await db.transaction(async (tx) => {
@@ -1290,6 +1326,15 @@ rentalsRoute.post(
           updatedAt: now,
         })
         .where(eq(rentals.id, id));
+      // The quote is recorded with the ask, so the approval path honours exactly
+      // the number the renter was shown rather than re-reading the request.
+      await recordRentalEvent(tx, id, "EXTENSION_REQUESTED", {
+        additionalDays: input.additionalDays,
+        previousEndDate: rental.endDate.toISOString(),
+        newEndDate: newEndDate.toISOString(),
+        charge: additionalCost,
+        currency: "INR",
+      });
     });
 
     return c.json(
@@ -1304,6 +1349,86 @@ rentalsRoute.post(
         currency: "INR",
         status: rental.status,
         requestedAt: now,
+      }),
+    );
+  }),
+);
+
+/* --------------------------- extension decision ---------------------------- */
+
+const extensionDecisionSchema = z
+  .object({
+    decision: z.enum(["APPROVE", "REJECT"]),
+    /** An owner may propose a shorter extension than the renter asked for. */
+    days: z.number().int().min(1).max(180).optional(),
+    reason: z.string().trim().max(300).optional(),
+  })
+  .strict();
+
+/**
+ * The item's owner decides a pending extension request.
+ *
+ * Approval does **not** move the end date. It opens a payment for the extra days
+ * (`startRentalExtensionPayment`), because rental time is not given away: the date
+ * moves only when that payment settles, in `settleRentalExtensionPayment`. The
+ * approval therefore is not a money movement itself — the intent is, and it is
+ * keyed so a double-submitted approval yields one payment.
+ *
+ * Rejection clears the request and records the decision.
+ */
+rentalsRoute.post(
+  "/:id/extension-decision",
+  guarded("rentals.action", async (c) => {
+    const user = c.get("user")!;
+    const id = Number(c.req.param("id"));
+    const input = extensionDecisionSchema.parse(await c.req.json().catch(() => ({})));
+
+    // Ownership in the lookup: only the item's owner decides. A rental that is not
+    // yours is the same 404 as one that does not exist.
+    const [rental] = await db
+      .select()
+      .from(rentals)
+      .where(and(eq(rentals.id, id), eq(rentals.ownerId, user.id)))
+      .limit(1);
+    if (!rental) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
+    if (rental.extensionRequestedDays === null || rental.extensionRequestedDays <= 0) {
+      throw new HttpError(409, "NO_REQUEST", "There is no pending extension request on this rental.");
+    }
+
+    if (input.decision === "REJECT") {
+      await db.transaction(async (tx) => {
+        await tx
+          .update(rentals)
+          .set({ extensionRequestedAt: null, extensionRequestedDays: null, updatedAt: new Date() })
+          .where(eq(rentals.id, id));
+        await recordRentalEvent(tx, id, "EXTENSION_DECLINED", {
+          reason: input.reason ?? null,
+        });
+        await notify(tx, {
+          userId: rental.renterId,
+          type: "RENTAL_EXTENSION_DECIDED",
+          title: "Extension declined",
+          body: "The owner declined your request to extend this rental.",
+          context: { rentalId: id, productId: rental.productId },
+          eventKey: notificationEventKey("RENTAL_EXTENSION_DECIDED", id, "declined"),
+        });
+      });
+      return c.json(ok({ decision: "REJECT" as const, days: 0 }));
+    }
+
+    const days = input.days ?? rental.extensionRequestedDays;
+    const intent = await startRentalExtensionPayment({ rentalId: id, days });
+    return c.json(
+      ok({
+        decision: "APPROVE" as const,
+        days,
+        transactionId: intent.transactionId,
+        provider: intent.provider,
+        providerPaymentId: intent.providerPaymentId,
+        amount: intent.amount,
+        currency: intent.currency,
+        isProductionReady: intent.isProductionReady,
+        extension: intent.extension ?? null,
       }),
     );
   }),
@@ -1388,55 +1513,124 @@ rentalsRoute.post(
       .where(and(eq(rentals.id, id), eq(rentals.renterId, user.id)))
       .limit(1);
     if (!rental) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
-    if (rental.status !== "CONFIRMED") {
-      throw new HttpError(400, "BAD_REQUEST", "Only upcoming rentals can be cancelled.");
-    }
 
-    const now = new Date();
-    await db.transaction(async (tx) => {
+    // Idempotent: a second cancellation is the same answer, not a second refund.
+    if (rental.status === "CANCELLED") {
+      return c.json(ok({ cancelled: true, refunded: 0 }));
+    }
+    assertRentalTransition(rental.status, "CANCELLED");
+
+    const [order] = await db
+      .select({
+        id: orders.id,
+        orderNumber: orders.orderNumber,
+        paymentStatus: orders.paymentStatus,
+        currency: orders.currency,
+      })
+      .from(orders)
+      .where(eq(orders.id, rental.orderId))
+      .limit(1);
+    if (!order) throw new HttpError(404, "NOT_FOUND", "Order not found.");
+
+    const outcome = await db.transaction(async (tx) => {
+      // Lock the rental so two concurrent cancellations serialise on one answer.
+      const [locked] = await tx
+        .select()
+        .from(rentals)
+        .where(eq(rentals.id, id))
+        .limit(1)
+        .for("update");
+      if (!locked) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
+      if (locked.status === "CANCELLED") {
+        return { cancelled: true, refunded: 0 };
+      }
+      assertRentalTransition(locked.status, "CANCELLED");
+
+      // What is owed comes from the stored policy and the captured ledger, not
+      // from the request. `computeCancellationRefund` is pure, so the ceiling
+      // (captured − already refunded) is enforced before any provider call.
+      const policy = await readRentalCancellationPolicy(tx);
+      const captured = await sumCaptured(tx, rental.orderId);
+      const alreadyRefunded = await sumRefunds(tx, rental.orderId, LIVE_REFUND_STATUSES);
+      const refund = computeCancellationRefund({
+        policy,
+        rental: {
+          rentalSubtotal: rental.rentalSubtotal,
+          securityDeposit: rental.securityDeposit,
+          startDate: rental.startDate,
+        },
+        captured,
+        alreadyRefunded,
+      });
+
+      const now = new Date();
       await tx
         .update(rentals)
         .set({ status: "CANCELLED", updatedAt: now })
         .where(eq(rentals.id, id));
-      await recordRentalEvent(tx, id, "CANCELLED", { cancelledAt: now.toISOString() });
-
-      // Unwind the owner's earning for this booking. Only a `CONFIRMED` rental can be
-      // cancelled, and a rental is only ever earned at return, so there is normally
-      // nothing to unwind — the call finds nothing and returns. It is made anyway so
-      // that the invariant "a cancelled rental leaves no credit behind" holds without
-      // depending on the current cancellation rules continuing to be as strict.
-      await recordEarningReversal(tx, { rentalId: id }, "Rental cancelled by the renter");
-
-      await tx.insert(transactions).values({
-        userId: rental.renterId,
-        orderId: rental.orderId,
-        type: "REFUND",
-        amount: rental.total,
-        status: "SUCCEEDED",
-        provider: "mock",
-        providerTransactionId: `refund_${Date.now()}`,
+      await recordRentalEvent(tx, id, "CANCELLED", {
+        cancelledAt: now.toISOString(),
+        refundTotal: refund.total,
+        beforeStart: refund.beforeStart,
       });
-      // Both parties: the renter paid and needs the refund confirmed, the owner needs to
-      // know the booking is gone and the item is free again. Keyed on the rental so a
-      // double-submitted cancellation speaks once.
-      const context = { rentalId: id, orderId: rental.orderId, orderNumber: null };
+
+      // The refund — when the policy owes one — goes through the refund service
+      // to enforce the "sum of live refunds ≤ captured" invariant in exactly one
+      // place. Never a fabricated SUCCEEDED row.
+      let refunded = 0;
+      if (refund.total > 0) {
+        const created = await createRefundRequest(tx, {
+          orderId: rental.orderId,
+          userId: rental.renterId,
+          amount: refund.total,
+          currency: order.currency,
+          reason: refund.beforeStart
+            ? "Rental cancelled before its start date."
+            : "Rental cancelled after its start date.",
+          captured,
+          idempotencyKey: `rental-cancel:${id}`,
+        });
+        if (!created.duplicate) {
+          const executed = await executeRefund(tx, {
+            refund: {
+              id: created.id,
+              refundNumber: created.refundNumber,
+              amount: created.amount,
+              currency: order.currency,
+              userId: rental.renterId,
+              orderItemId: null,
+              providerReference: null,
+            },
+            order: {
+              id: rental.orderId,
+              orderNumber: order.orderNumber,
+              paymentStatus: order.paymentStatus,
+            },
+            actorId: rental.renterId,
+            actorRole: "USER",
+            reason: refund.beforeStart
+              ? "Rental cancelled before its start date."
+              : "Rental cancelled after its start date.",
+          });
+          if (executed.status === "SUCCEEDED") refunded = created.amount;
+        }
+      }
+
+      // Both parties: the renter paid and needs to know where the booking now
+      // stands, the owner needs to know the item is free again. Keyed on the
+      // rental so a double-submitted cancellation speaks once. The refund notice
+      // is written by `executeRefund` on success, so it is not repeated here.
+      const context = { rentalId: id, orderId: rental.orderId, orderNumber: order.orderNumber };
       await notify(tx, {
         userId: rental.renterId,
         type: "RENTAL_CANCELLED",
         title: "Rental cancelled",
-        body: "Your rental was cancelled and your refund has been issued.",
+        body:
+          refund.total > 0
+            ? "Your rental was cancelled and your refund is being processed."
+            : "Your rental was cancelled.",
         context,
         eventKey: notificationEventKey("RENTAL_CANCELLED", id, rental.renterId),
-      });
-      await notify(tx, {
-        userId: rental.renterId,
-        type: "REFUND_PROCESSED",
-        title: "Refund processed",
-        body: "The refund for your cancelled rental is on its way to your original payment method.",
-        context,
-        // The refund transaction is written unconditionally above, so this must not
-        // collapse into the RENTAL_CANCELLED key — the discriminator keeps them distinct.
-        eventKey: notificationEventKey("RENTAL_CANCELLED", id, `refund:${rental.renterId}`),
       });
       if (rental.ownerId !== rental.renterId) {
         await notify(tx, {
@@ -1449,13 +1643,31 @@ rentalsRoute.post(
           link: "/dashboard/rentals",
         });
       }
+
+      return { cancelled: true, refunded };
     });
-    return c.json(ok({ cancelled: true }));
+
+    return c.json(ok(outcome));
   }),
 );
 
 /* ------------------------------ buy-after-rent ----------------------------- */
 
+/**
+ * Buy an item you are renting.
+ *
+ * The expensive part — pricing, the already-bought check, the stock gate — is
+ * evaluated on the server in `startRentalBuy`, and this handler's only jobs are
+ * ownership and transport: it scopes the lookup to the caller's own rental (a 404
+ * for anyone else's) and opens the payment.
+ *
+ * The order is **not** created here. `createRentalBuyOrderFromPayment` writes it,
+ * and only after a provider-confirmed payment — the same pipeline a cart checkout
+ * runs. The one exception is development: when the configured provider is the
+ * mock, this call also settles it server-side and answers with the order, so the
+ * existing client keeps working. A production provider returns the intent and
+ * waits for the browser (or webhook) to verify, exactly like checkout.
+ */
 rentalsRoute.post(
   "/:id/buy",
   guarded("rentals.action", async (c) => {
@@ -1465,86 +1677,71 @@ rentalsRoute.post(
     // rental is the same 404 as one that does not exist. A 403 here confirmed the id
     // was real, which is what an IDOR probe is looking for.
     const [rental] = await db
-      .select()
+      .select({ id: rentals.id })
       .from(rentals)
       .where(and(eq(rentals.id, id), eq(rentals.renterId, user.id)))
       .limit(1);
     if (!rental) throw new HttpError(404, "NOT_FOUND", "Rental not found.");
 
-    const [product] = await db
-      .select()
-      .from(products)
-      .where(eq(products.id, rental.productId))
-      .limit(1);
-    if (!product || !product.rentToOwnEnabled || !product.purchasePrice) {
-      throw new HttpError(400, "RENT_TO_OWN_UNAVAILABLE", "This item doesn't support rent-to-own.");
+    const body = (await c.req.json().catch(() => ({}))) as { idempotencyKey?: unknown };
+    const idempotencyKey = readIdempotencyKey(body?.idempotencyKey) ?? `rental-buy:${id}`;
+
+    const intent = await startRentalBuy({ userId: user.id, rentalId: id, idempotencyKey });
+    const provider = getPaymentProvider();
+
+    if (provider.isProductionReady) {
+      return c.json(
+        ok({
+          transactionId: intent.transactionId,
+          provider: intent.provider,
+          providerPaymentId: intent.providerPaymentId,
+          amount: intent.amount,
+          currency: intent.currency,
+          status: intent.status,
+          credit: intent.credit ?? 0,
+          isProductionReady: true,
+        }),
+        201,
+      );
     }
-    if (product.availableQuantity < 1) {
-      throw new HttpError(409, "UNAVAILABLE", "This item is no longer available to buy.");
+
+    // Development mock: the server asks the provider (never the browser) and, only
+    // on a settled answer, settles the order through the shared pipeline.
+    if (!intent.providerPaymentId) {
+      throw new HttpError(409, "PAYMENT_NOT_FOUND", "This payment attempt is not recognised.");
     }
-
-    // Credit = eligible rental payments × configured % capped at configured cap
-    const creditPercentage = product.rentCreditPercentage ?? 0;
-    const creditCap = product.rentCreditCap ?? product.purchasePrice;
-    const eligiblePayments = rental.rentalSubtotal;
-    const credit = Math.min(
-      Math.round((eligiblePayments * creditPercentage) / 100),
-      creditCap,
-      product.purchasePrice,
-    );
-
-    const result = await db.transaction(async (tx) => {
-      const [order] = await tx
-        .insert(orders)
-        .values({
-          userId: user.id,
-          orderType: "PURCHASE",
-          status: "PAID",
-          subtotal: product.purchasePrice!,
-          deliveryFee: 0,
-          depositTotal: 0,
-          total: product.purchasePrice! - credit,
-          deliveryMethod: "PICKUP",
-          paymentProvider: "mock",
-          paymentReference: `rto_${Date.now()}`,
-        })
-        .$returningId();
-      const orderId = Number(order.id);
-
-      await tx.insert(orderItems).values({
-        orderId: orderId,
-        productId: product.id,
-        sellerId: product.sellerId,
-        mode: "BUY",
-        quantity: 1,
-        unitPrice: product.purchasePrice!,
-        lineTotal: product.purchasePrice!,
-        titleSnapshot: product.title,
-        rentCreditApplied: credit,
-      });
-
-      await tx.update(rentals).set({ rentCreditApplied: credit }).where(eq(rentals.id, id));
-
-      // Goes through the shared stock helper rather than an inline decrement: this
-      // path used to write `'SOLD'`, which is not a member of `PRODUCT_STATUSES`.
-      // Since every public query opts rows *in* via `PUBLIC_PRODUCT_STATUSES`, a
-      // listing bought down to its last unit silently vanished from Browse, from
-      // the category pages and from search.
-      await adjustProductInventory(tx, product.id, -1);
-
-      await tx.insert(transactions).values({
-        userId: user.id,
-        orderId: orderId,
-        type: "PAYMENT",
-        amount: product.purchasePrice! - credit,
-        status: "SUCCEEDED",
-        provider: "mock",
-        providerTransactionId: `rto_${Date.now()}`,
-      });
-
-      return { orderId, credit };
+    const verified = await provider.verifyPayment({
+      providerPaymentId: intent.providerPaymentId,
     });
+    if (verified.status !== "SUCCEEDED") {
+      throw new HttpError(409, "PAYMENT_FAILED", "The buy-out payment was not completed.");
+    }
 
-    return c.json(ok({ orderId: result.orderId, credit: result.credit }), 201);
+    const settled = await reconcileSettledTransaction({
+      transactionId: intent.transactionId,
+      providerStatus: "SUCCEEDED",
+      providerAmount: verified.amount,
+      paymentMethod: "UPI",
+    });
+    if (settled.outcome === "ORDERED" || settled.outcome === "ALREADY_HANDLED") {
+      const [order] = await db
+        .select({ orderNumber: orders.orderNumber })
+        .from(orders)
+        .where(eq(orders.id, settled.orderId))
+        .limit(1);
+      return c.json(
+        ok({
+          orderId: settled.orderId,
+          orderNumber: order?.orderNumber ?? null,
+          credit: intent.credit ?? 0,
+          transactionId: intent.transactionId,
+        }),
+        201,
+      );
+    }
+    if (settled.outcome === "REVIEW_NEEDED") {
+      throw new HttpError(409, "PAYMENT_REVIEW_REQUIRED", settled.reason);
+    }
+    throw new HttpError(409, "PAYMENT_NOT_VERIFIED", "The buy-out payment was not completed.");
   }),
 );

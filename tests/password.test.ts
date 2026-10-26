@@ -65,6 +65,19 @@ describe("password hashing (scrypt)", () => {
     await expect(verifyPassword("a-b-c-d-e", tampered)).resolves.toBe(false);
   });
 
+  it("refuses a tampered digest deterministically across 30 iterations", async () => {
+    for (let i = 0; i < 30; i++) {
+      const hash = await hashPassword(`password-${i}`);
+      const parts = hash.split("$");
+      const digest = Buffer.from(parts[6]!, "base64url");
+      digest.writeUInt8(digest.readUInt8(0) ^ 0x01, 0);
+      const tampered = [...parts.slice(0, 6), digest.toString("base64url")].join("$");
+
+      expect(tampered).not.toBe(hash);
+      await expect(verifyPassword(`password-${i}`, tampered)).resolves.toBe(false);
+    }
+  });
+
   it("refuses a tampered salt without throwing", async () => {
     const hash = await hashPassword("a-b-c-d-e");
     const parts = hash.split("$");
