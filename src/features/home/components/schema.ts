@@ -133,6 +133,9 @@ export function useHeroSlides(
 } {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [pageVisible, setPageVisible] = useState(
+    () => typeof document === "undefined" || document.visibilityState === "visible",
+  );
   const timerRef = useRef<number | null>(null);
 
   const goTo = useCallback(
@@ -145,7 +148,14 @@ export function useHeroSlides(
   const previous = useCallback(() => goTo(index - 1), [goTo, index]);
 
   useEffect(() => {
-    if (prefersReducedMotion || paused || count < 2) return;
+    const updateVisibility = () => setPageVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", updateVisibility);
+    updateVisibility();
+    return () => document.removeEventListener("visibilitychange", updateVisibility);
+  }, []);
+
+  useEffect(() => {
+    if (prefersReducedMotion || paused || !pageVisible || count < 2) return;
     timerRef.current = window.setInterval(() => {
       setIndex((current) => (current + 1) % count);
     }, AUTO_ADVANCE_MS);
@@ -153,7 +163,7 @@ export function useHeroSlides(
       if (timerRef.current !== null) window.clearInterval(timerRef.current);
       timerRef.current = null;
     };
-  }, [prefersReducedMotion, paused, count]);
+  }, [prefersReducedMotion, paused, pageVisible, count]);
 
   return { index, next, previous, goTo, paused, setPaused };
 }

@@ -203,6 +203,27 @@ export const queryKeys = {
   activity: ["activity"] as const,
   activityList: (params: Record<string, unknown> = {}) => ["activity", "list", params] as const,
   /**
+   * Delivery eligibility check.
+   */
+  deliveryEligibility: (params: {
+    deliveryMethod: "STANDARD" | "EXPRESS" | "SCHEDULED" | "PICKUP" | "RENTER_RETURN";
+    addressId?: number | null;
+  }) => ["delivery", "eligibility", params] as const,
+  /**
+   * Delivery pricing calculation.
+   */
+  deliveryPrice: (params: {
+    deliveryMethod: "STANDARD" | "EXPRESS" | "SCHEDULED" | "PICKUP" | "RENTER_RETURN";
+    addressId?: number | null;
+  }) => ["delivery", "price", params] as const,
+  /**
+   * Delivery estimate generation.
+   */
+  deliveryEstimate: (params: {
+    deliveryMethod: "STANDARD" | "EXPRESS" | "SCHEDULED" | "PICKUP" | "RENTER_RETURN";
+    addressId?: number | null;
+  }) => ["delivery", "estimate", params] as const,
+  /**
    * Reviews.
    *
    * `["reviews", productId]` is the **prefix** every entry for one product hangs

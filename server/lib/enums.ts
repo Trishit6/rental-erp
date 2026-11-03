@@ -204,6 +204,7 @@ export const SYSTEM_ROLES = [
   "FINANCE",
   "MODERATOR",
   "CONTENT_MANAGER",
+  "DELIVERY_MANAGER",
 ] as const;
 export type SystemRole = (typeof SYSTEM_ROLES)[number];
 
@@ -399,3 +400,72 @@ export const paiseSchema = z.number().int().nonnegative();
 
 export type UserStatusValue = z.infer<typeof userStatusSchema>;
 export type Paise = z.infer<typeof paiseSchema>;
+
+/**
+ * Brief names for delivery statuses stored in the database as varchar.
+ */
+export const DELIVERY_STATUSES = [
+  "CREATED",
+  "AWAITING_ASSIGNMENT",
+  "OFFERED",
+  "ASSIGNED",
+  "AT_PICKUP",
+  "PICKED_UP",
+  "IN_TRANSIT",
+  "AT_DROP",
+  "DELIVERED",
+  "FAILED",
+  "RETURNING_TO_SELLER",
+  "RETURNED_TO_SELLER",
+  "CANCELLED",
+] as const;
+export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number];
+/**
+ * Brief names for delivery types.
+ */
+export const DELIVERY_TYPE = [
+  "DELIVERY",
+  "RETURN",
+] as const;
+export type DeliveryType = (typeof DELIVERY_TYPE)[number];
+/**
+ * Actor roles that can participate in delivery state transitions.
+ */
+export const DELIVERY_ACTOR_ROLE = [
+  "partner",
+  "seller",
+  "customer",
+  "admin",
+  "system",
+] as const;
+export type DeliveryActorRole = (typeof DELIVERY_ACTOR_ROLE)[number];
+/**
+ * Required proof for each delivery status transition.
+ */
+export const DELIVERY_REQUIRED_PROOF: Record<DeliveryStatus, readonly string[]> = {
+  CREATED: [],
+  AWAITING_ASSIGNMENT: [],
+  OFFERED: [],
+  ASSIGNED: ["pickup_code"],
+  AT_PICKUP: ["pickup_code"],
+  PICKED_UP: ["delivery_otp"],
+  IN_TRANSIT: [],
+  AT_DROP: ["delivery_otp", "pickup_photo"],
+  DELIVERED: [],
+  FAILED: [],
+  RETURNING_TO_SELLER: ["delivery_otp"],
+  RETURNED_TO_SELLER: [],
+  CANCELLED: [],
+} as const;
+export type DeliveryRequiredProof = typeof DELIVERY_REQUIRED_PROOF;
+/**
+ * Failure reasons for delivery failures.
+ */
+export const DELIVERY_FAILURE_REASONS = [
+  "ATTEMPT_EXCEEDED",
+  "TIMEOUT",
+  "PARTNER_SUSPENDED",
+  "ADDRESS_INVALID",
+  "REJECTED_BY_SELLER",
+] as const;
+export type DeliveryFailureReason = (typeof DELIVERY_FAILURE_REASONS)[number];

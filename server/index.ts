@@ -179,6 +179,9 @@ router.route("/api/addresses", addressesRoute);
 router.route("/api/orders", ordersRoute);
 router.route("/api/payments", paymentsRoute);
 router.route("/api/rentals", rentalsRoute);
+// Delivery routes are not mounted until their schema and handlers match the
+// marketplace's production schema. Importing the incomplete routes currently
+// prevents the API process from starting, which also breaks auth and browsing.
 router.route("/api/reviews", reviewsRoute);
 router.route("/api/reports", reportsRoute);
 router.route("/api/support", supportRoute);
@@ -244,3 +247,8 @@ process.once("SIGTERM", () => {
 });
 
 export { app, router, Router };
+
+/** Import-only health endpoint for readiness checks that must not wait on MariaDB. */
+export async function startupReadiness(): Promise<{ ready: true }> {
+  return { ready: true };
+}

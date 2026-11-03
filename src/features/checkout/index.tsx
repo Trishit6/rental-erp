@@ -9,20 +9,47 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { AddressPicker } from "./components/AddressPicker";
 import { DeliveryMethodSelector } from "./components/DeliveryMethodSelector";
 import { useAddresses, useCartItems } from "./query";
+import { useDeliveryEligibility } from "@/features/delivery/query";
 
 export function CheckoutPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [deliveryMethod, setDeliveryMethod] = useState<"DELIVERY" | "PICKUP">("DELIVERY");
   const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null);
+  const [deliveryPrice, setDeliveryPrice] = useState<{
+    deliveryFeePaise: number;
+    currency: string;
+    message?: string | null;
+  } | null>(null);
 
   const { data: items, totals, isLoading } = useCartItems();
   const { data: addresses } = useAddresses();
+  const { data: eligibility, isLoading: isEligibilityLoading } = useDeliveryEligibility({
+    deliveryMethod: "STANDARD",
+    addressId: selectedAddressId,
+  });
 
   const activeItems = (items ?? []).filter((item) => !item.savedForLater);
   const needsAddress = deliveryMethod === "DELIVERY" && !selectedAddressId;
   const blockedIssues = activeItems.filter((item) => item.issues.length > 0);
-  const canContinue = activeItems.length > 0 && blockedIssues.length === 0 && !needsAddress;
+  const canContinue =
+    activeItems.length > 0 &&
+    blockedIssues.length === 0 &&
+    !needsAddress &&
+    !isEligibilityLoading;
+
+  function handleDeliveryMethodChange(method: "DELIVERY" | "PICKUP") {
+    setDeliveryMethod(method);
+    setSelectedAddressId(method === "DELIVERY" ? null : selectedAddressId);
+    setDeliveryPrice(null);
+  }
+
+  function handleAddressSelect(addressId: number | null) {
+    setSelectedAddressId(addressId);
+    if (addressId && deliveryMethod === "DELIVERY") {
+      // Trigger refetch of eligibility and estimate
+    }
+  }
 
   function handleContinue() {
     // Hand the *choices* forward. The amount is recomputed by the server on the
@@ -100,11 +127,27 @@ export function CheckoutPage() {
             <AddressPicker
               addresses={addresses}
               selectedId={selectedAddressId}
-              onSelect={setSelectedAddressId}
+              onSelect={handleAddressSelect}
             />
           )}
 
-          <DeliveryMethodSelector value={deliveryMethod} onChange={setDeliveryMethod} />
+          <DeliveryMethodSelector
+            value={deliveryMethod}
+            onChange={handleDeliveryMethodChange}
+          />
+
+          {deliveryMethod === "DELIVERY" && selectedAddressId && (
+            <DeliveryEstimatePreview
+              price={deliveryPrice}
+              estimate={null}
+            />
+          )}
+
+          {eligibility && !eligibility.isEligible && (
+            <p className="rounded-xl bg-destructive/10 p-3 text-xs text-destructive" role="alert">
+              {eligibility.reason ?? "Delivery is not available for this address and product combination."}
+            </p>
+          )}
         </div>
 
         {/* Summary */}
@@ -143,6 +186,11 @@ export function CheckoutPage() {
               Choose a delivery address to continue.
             </p>
           )}
+          {eligibility && !eligibility.isEligible && (
+            <p className="text-xs text-muted-foreground" role="status">
+              {eligibility.reason ?? "Delivery unavailable for selected address."}
+            </p>
+          )}
 
           <Button size="lg" className="w-full" onClick={handleContinue} disabled={!canContinue}>
             Continue to payment
@@ -154,5 +202,60 @@ export function CheckoutPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+/** Preview of delivery estimate and price. */
+function DeliveryEstimatePreview({
+  estimate,
+  price,
+}: {
+  estimate: {
+    estimatedDeliveryStart: string | null;
+    estimatedDeliveryEnd: string | null;
+    scheduledDate: string | null;
+    scheduledSlot: string | null;
+  } | null;
+  price: {
+    deliveryFeePaise: number;
+    currency: string;
+    message?: string | null;
+  } | null;
+}) {
+  return (
+    <Card className="p-4">
+      <h3 className="font-heading text-sm font-extrabold mb-3">Delivery</h3>
+
+      {price && (
+        <div className="mb-3">
+          <span className="text-sm text-muted-foreground">Delivery fee</span>
+          <span className="font-bold">{formatInr(price.deliveryFeePaise)}</span>
+        </div>
+      )}
+
+      {!price?.message || price.message !== "" ? (
+        <p className="text-xs text-muted-foreground">{price?.message ?? ""}</p>
+      ) : null}
+
+      {estimate && (
+        <div>
+          {estimate.estimatedDeliveryStart && (
+            <p className="text-xs text-muted-foreground">
+              Estimated delivery: {new Date(estimate.estimatedDeliveryStart).toLocaleDateString()}
+            </p>
+          )}
+          {estimate.scheduledDate && (
+            <p className="text-xs text-muted-foreground">
+              Scheduled delivery: {new Date(estimate.scheduledDate).toLocaleDateString()}
+            </p>
+          )}
+          {estimate.scheduledSlot && (
+            <p className="text-xs text-muted-foreground">
+              Slot: {estimate.scheduledSlot}
+            </p>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }

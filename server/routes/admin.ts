@@ -316,6 +316,19 @@ export const ADMIN_ROUTE_PERMISSIONS: readonly AdminRoutePermission[] = [
   { method: "GET", path: "/permissions", permission: "rbac.manage" },
 
   { method: "GET", path: "/audit-log", permission: "audit.view" },
+
+  { method: "GET", path: "/payments", permission: "payments.view" },
+  { method: "GET", path: "/payments/:id", permission: "payments.view" },
+  { method: "GET", path: "/payments/manual-upi-queue", permission: "payments.verify_manual" },
+  { method: "POST", path: "/payments/manual-upi-queue/:id/confirm", permission: "payments.verify_manual" },
+  { method: "POST", path: "/payments/manual-upi-queue/:id/reject", permission: "payments.verify_manual" },
+  { method: "GET", path: "/payments/cod-queue", permission: "payments.cod_collect" },
+  { method: "POST", path: "/payments/cod-queue/:id/collect", permission: "payments.cod_collect" },
+  { method: "GET", path: "/payments/refunds/manual-queue", permission: "refunds.approve_manual" },
+  { method: "POST", path: "/payments/refunds/manual-queue/:id/mark-paid", permission: "refunds.approve_manual" },
+  { method: "GET", path: "/payments/settings", permission: "payments.settings.view" },
+  { method: "PATCH", path: "/payments/settings", permission: "payments.settings.manage" },
+  { method: "PATCH", path: "/payments/methods/:method/toggle", permission: "payments.methods.toggle" },
 ];
 
 for (const gate of ADMIN_ROUTE_PERMISSIONS) {

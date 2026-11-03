@@ -98,7 +98,8 @@ import { mulberry32 } from "./data/seed-realistic";
 
 const ROLE_DESCRIPTIONS: Record<(typeof ALL_ROLE_NAMES)[number], string> = {
   SUPER_ADMIN: "Unrestricted access. Grants rbac.manage and must be assigned by hand.",
-  ADMIN: "Full operational access, except granting roles.",
+  ADMIN: "Full operational access, including delivery management.",
+  DELIVERY_MANAGER: "Operational delivery leads: run the delivery state machine, review partners, manage zones, settle earnings.",
   SUPPORT: "Reads accounts and orders, answers tickets.",
   FINANCE: "Reads the ledger, approves payouts, reads the audit log.",
   MODERATOR: "Reviews listings and reports.",

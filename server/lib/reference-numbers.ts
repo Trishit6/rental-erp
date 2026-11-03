@@ -11,9 +11,9 @@ import { randomBytes } from "node:crypto";
  */
 
 const ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
-const ALPHABET_LENGTH = ALPHABET.length;
+const ALPHABET_LENGTH: number = ALPHABET.length;
 
-function suffix(length = 6): string {
+function suffix(length: number = 6): string {
   const bytes = randomBytes(length);
   let out = "";
   for (let i = 0; i < length; i += 1) {
@@ -31,4 +31,11 @@ export function createRefundNumber(): string {
 /** `RV-DSP-8F3K2A`. */
 export function createDisputeNumber(): string {
   return `RV-DSP-${suffix()}`;
+}
+
+/** `RV-DL-YYYY-XXXXXX`. */
+export function generateReferenceNumber(prefix: string): string {
+  const year = new Date().getFullYear().toString().slice(-2);
+  const referenceSuffix = suffix(6);
+  return `${prefix}-${year}-${referenceSuffix}`;
 }

@@ -1,6 +1,5 @@
 import {
   and,
-  asc,
   count,
   desc,
   eq,
@@ -9,20 +8,13 @@ import {
   like,
   ne,
   or,
-  sql,
   type SQL,
 } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db";
-import {
-  orders,
-  payments,
-  transactions,
-  users,
-} from "../../schema";
+import { orders, refunds, transactions, users } from "../../schema";
 import { paginationQuerySchema } from "../../lib/api";
 import { getSetting } from "../settings/service";
-import { getRegistryEntry } from "../../lib/settings/registry";
 
 /* --------------------------------- payments view --------------------------------- */
 
@@ -58,6 +50,7 @@ export type AdminPaymentRow = {
   orderNumber: string | null;
   customerName: string | null;
   createdAt: Date;
+  retryHint: string | null;
 };
 
 /**
@@ -103,20 +96,22 @@ function adminPaymentConditions(query: AdminPaymentsQuery): SQL[] {
   return conditions;
 }
 
+function extractUtr(metadata: string | null): string | null {
+  if (!metadata) return null;
+  try {
+    const parsed: unknown = JSON.parse(metadata);
+    if (typeof parsed !== "object" || parsed === null || !("utr" in parsed)) return null;
+    return typeof parsed.utr === "string" && parsed.utr.trim() ? parsed.utr.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function listAdminPayments(query: AdminPaymentsQuery): Promise<{
   rows: AdminPaymentRow[];
   total: number;
 }> {
-  const resolved = {
-    page: query.page,
-    pageSize: query.pageSize,
-    sort: query.sort,
-  };
-
-  const where = and(
-    ...adminPaymentConditions(query),
-    ...(resolved.sort ? [asc(transactions.createdAt)] : []),
-  );
+  const where = and(...adminPaymentConditions(query));
 
   const [rows, [totalRow]] = await Promise.all([
     db
@@ -177,15 +172,15 @@ export async function listManualUpiQueue(): Promise<{
   utr: string | null;
   createdAt: Date;
   ageMinutes: number;
-}> {
+}[]> {
   const now = new Date();
-  const [rows] = await db
+  const rows = await db
     .select({
       id: transactions.id,
       orderNumber: orders.orderNumber,
       amount: transactions.amount,
       currency: transactions.currency,
-      utr: transactions.metadata, // UTR stored in metadata
+      metadata: transactions.metadata,
       createdAt: transactions.createdAt,
     })
     .from(transactions)
@@ -205,7 +200,7 @@ export async function listManualUpiQueue(): Promise<{
       orderNumber: row.orderNumber,
       amount: row.amount,
       currency: row.currency,
-      utr: row.utr as string | null,
+      utr: extractUtr(row.metadata),
       createdAt: row.createdAt,
       ageMinutes,
     };
@@ -222,14 +217,14 @@ export async function listManualUpiQueue(): Promise<{
  */
 export async function listCodQueue(): Promise<{
   id: number;
-  orderNumber: string;
+  orderNumber: string | null;
   total: number;
   currency: string;
   createdAt: Date;
   daysSincePlaced: number;
-}> {
+}[]> {
   const now = new Date();
-  const [rows] = await db
+  const rows = await db
     .select({
       id: orders.id,
       orderNumber: orders.orderNumber,
@@ -271,9 +266,9 @@ export async function listManualRefundsQueue(): Promise<{
   orderNumber: string | null;
   createdAt: Date;
   ageMinutes: number;
-}> {
+}[]> {
   const now = new Date();
-  const [rows] = await db
+  const rows = await db
     .select({
       id: refunds.id,
       refundNumber: refunds.refundNumber,

@@ -8,6 +8,28 @@ import { PERMISSION_CATALOGUE, ROLE_PERMISSION_GRANTS } from "./lib/permission-c
  * `pnpm db:sync:rbac` — bring an existing database up to the current permission
  * catalogue without touching anything else.
  *
+ * ## DELIVERY_MANAGER
+ *
+ * Operated by the admin UI, never by a client. It holds the delivery surface the
+ * brief asks for: view deliveries, drive the state machine, review and manage
+ * partner applications, manage zones, and settle earnings. It has no money
+ * movement beyond the settlement it publishes, and no access to orders or
+ * customers outside its delivery scope.
+ */
+
+/** The `DELIVERY_MANAGER` catalogue keys, in declaration order. */
+export const DELIVERY_MANAGER_PERMISSIONS = [
+  "delivery.view",
+  "delivery.manage",
+  "delivery.partners.review",
+  "delivery.partners.manage",
+  "delivery.zones.manage",
+  "delivery.settle",
+];
+
+/** `pnpm db:sync:rbac` — bring an existing database up to the current permission
+ * catalogue without touching anything else.
+ *
  * ## Why this exists next to `db:seed`
  *
  * `db:seed` rebuilds the demo world and refuses to run against production; it is
@@ -69,6 +91,7 @@ for (const row of await db.select({ id: roles.id, name: roles.name }).from(roles
 }
 
 const grantRows: { roleId: number; permissionId: number }[] = [];
+
 for (const [roleName, keys] of Object.entries(ROLE_PERMISSION_GRANTS)) {
   const roleId = roleIds.get(roleName);
   if (roleId === undefined) throw new Error(`RBAC sync: role "${roleName}" is missing`);

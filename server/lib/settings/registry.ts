@@ -5,6 +5,7 @@ export type SettingGroup =
   | "general"
   | "commerce"
   | "rentals"
+  | "delivery"
   | "uploads"
   | "notifications"
   | "moderation"
@@ -121,6 +122,146 @@ export const SETTINGS_REGISTRY: SettingDef[] = [
     description: "Used by rental cancellation/refunds.",
     defaultValue: { fullRefundBeforeStart: true, depositAlwaysRefunded: true, chargePercentAfterStart: 0 },
     validate: (v) => v,
+  },
+  {
+    key: "delivery.enabled",
+    group: "delivery",
+    label: "Delivery enabled",
+    description: "Whether delivery is enabled globally.",
+    defaultValue: true,
+    validate: (v) => {
+      if (typeof v === "boolean") return v;
+      if (v === "true") return true;
+      if (v === "false") return false;
+      throw new Error("Invalid boolean");
+    },
+  },
+  {
+    key: "delivery.offerExpirySeconds",
+    group: "delivery",
+    label: "Offer expiry (seconds)",
+    description: "How long an delivery offer remains valid.",
+    defaultValue: 120,
+    validate: (v) => {
+      const n = Number(v);
+      if (Number.isNaN(n) || n < 5 || n > 86400) throw new Error("Must be between 5 and 86400 seconds");
+      return Math.round(n);
+    },
+  },
+  {
+    key: "delivery.maxOfferRounds",
+    group: "delivery",
+    label: "Maximum offer rounds",
+    description: "Maximum number of offer rounds before delivery is cancelled.",
+    defaultValue: 3,
+    validate: (v) => {
+      const n = Number(v);
+      if (Number.isNaN(n) || n < 1 || n > 10) throw new Error("Must be between 1 and 10");
+      return Math.round(n);
+    },
+  },
+  {
+    key: "delivery.maxActiveJobsPerPartner",
+    group: "delivery",
+    label: "Max active jobs per partner",
+    description: "Maximum number of active deliveries a partner can handle.",
+    defaultValue: 3,
+    validate: (v) => {
+      const n = Number(v);
+      if (Number.isNaN(n) || n < 1 || n > 20) throw new Error("Must be between 1 and 20");
+      return Math.round(n);
+    },
+  },
+  {
+    key: "delivery.otpTtlHours",
+    group: "delivery",
+    label: "OTP TTL (hours)",
+    description: "How long an OTP remains valid in hours.",
+    defaultValue: 72,
+    validate: (v) => {
+      const n = Number(v);
+      if (Number.isNaN(n) || n < 1 || n > 336) throw new Error("Must be between 1 and 336 hours");
+      return Math.round(n);
+    },
+  },
+  {
+    key: "delivery.otpMaxAttempts",
+    group: "delivery",
+    label: "Max OTP attempts",
+    description: "Maximum number of OTP attempts allowed.",
+    defaultValue: 5,
+    validate: (v) => {
+      const n = Number(v);
+      if (Number.isNaN(n) || n < 1 || n > 10) throw new Error("Must be between 1 and 10");
+      return Math.round(n);
+    },
+  },
+  {
+    key: "delivery.maxDeliveryAttempts",
+    group: "delivery",
+    label: "Max delivery attempts",
+    description: "Maximum number of delivery attempts before marking failed.",
+    defaultValue: 2,
+    validate: (v) => {
+      const n = Number(v);
+      if (Number.isNaN(n) || n < 1 || n > 5) throw new Error("Must be between 1 and 5");
+      return Math.round(n);
+    },
+  },
+  {
+    key: "delivery.failureReasons",
+    group: "delivery",
+    label: "Failure reasons",
+    description: "Comma-separated list of failure reason codes.",
+    defaultValue: "ATTEMPT_EXCEEDED,TIMEOUT,PARTNER_SUSPENDED,ADDRESS_INVALID,REJECTED_BY_SELLER",
+    validate: (v) => {
+      const reasons = String(v).split(",").map((s) => s.trim());
+      const valid = ["ATTEMPT_EXCEEDED", "TIMEOUT", "PARTNER_SUSPENDED", "ADDRESS_INVALID", "REJECTED_BY_SELLER"];
+      for (const r of reasons) {
+        if (!valid.includes(r)) throw new Error("Invalid failure reason: " + r);
+      }
+      return reasons;
+    },
+  },
+  {
+    key: "delivery.liveLocation",
+    group: "delivery",
+    label: "Live location tracking",
+    description: "Whether live location tracking is enabled for deliveries.",
+    defaultValue: false,
+    validate: (v) => {
+      if (typeof v === "boolean") return v;
+      if (v === "true") return true;
+      if (v === "false") return false;
+      throw new Error("Invalid boolean");
+    },
+  },
+  {
+    key: "delivery.codMaxPerPartnerPaise",
+    group: "delivery",
+    label: "COD max per partner (paise)",
+    description: "Maximum COD amount in paise per partner.",
+    defaultValue: 50000,
+    validate: (v) => {
+      const n = Number(v);
+      if (Number.isNaN(n) || n < 0 || n > 1_000_000) throw new Error("Must be between 0 and 1_000_000 paise");
+      return Math.round(n);
+    },
+  },
+  {
+    key: "delivery.slotWindows",
+    group: "delivery",
+    label: "Slot windows",
+    description: "Comma-separated list of available delivery slot windows.",
+    defaultValue: "MORNING,AFTERNOON,EVENING",
+    validate: (v) => {
+      const windows = String(v).split(",").map((s) => s.trim());
+      const valid = ["MORNING", "AFTERNOON", "EVENING", "ANY"];
+      for (const w of windows) {
+        if (!valid.includes(w)) throw new Error("Invalid slot window: " + w);
+      }
+      return windows;
+    },
   },
   {
     key: "tax.rules",

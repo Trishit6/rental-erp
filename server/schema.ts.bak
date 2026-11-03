@@ -1,0 +1,527 @@
+/* =============================================================================
+ *  DELIVERY CONTROLS (the platform's delivery foundation)
+ *
+ *  State machine + control tables for customer deliveries, seller pickups,
+ *  rental returns, delivery partner lifecycle/routing, payments (payouts and
+ *  settlements) and partner ratings.
+ *
+ *  Tables here are additive only. Customers create deliveries themselves on
+ *  purchase; partners apply, get matched to deliveries and get paid out of
+ *  `partner_ledger`; the state machine transitions are written by the machine,
+ *  never by a direct `UPDATE deliveries SET delivery_status`.
+ *
+ *  All money is integer paise. `delivery_fee_paise` / `partner_pay_paise` /
+ *  `cod_amount_paise` / `cash_in_hand_paise` / `amount_paise` / `rating` are all
+ *  paise (or 1-5), never floats.
+ * ========================================================================== */
+
+/* ------------------------------ delivery zones ----------------------------- */
+
+/** One postal-code range the platform delivers into, with a nick for admin. */
+
+export const deliveryZones = mysqlTable(
+  "delivery_zones",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    name: varchar("name", { length: 120 }).notNull(),
+    city: varchar("city", { length: 80 }).notNull(),
+    state: varchar("state", { length: 60 }).notNull(),
+    /**
+     * Normalised 6-digit ZIP list. A ZIP prefix (e.g. "400001-4005") is stored
+     * as a single 6-digit string; the matching function expands the range at
+     * query time, so the column stays a `varchar(10)` — a 10000-row zone with
+     * 200 ZIPs per row would bloat the table and defeat the lookup index.
+     */
+    pincodes: varchar("pincodes", { length: 4000 }).notNull().default("[]"),
+    baseFeePaise: int("base_fee_paise").notNull().default(4900),
+    freeAbovePaise: int("free_above_paise").nullable().defaultNull(),
+    etaDaysMin: int("eta_days_min").notNull().default(1),
+    etaDaysMax: int("eta_days_max").notNull().default(3),
+    cutoffTime: varchar("cutoff_time", { length: 16 }).notNull().default("18:00"),
+    partnerPayPaise: int("partner_pay_paise").notNull().default(2900),
+    returnPayPaise: int("return_pay_paise").notNull().default(1400),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    index("delivery_zones_name_idx").on(table.name),
+    index("delivery_zones_city_idx").on(table.city),
+    index("delivery_zones_state_idx").on(table.state),
+    index("delivery_zones_pincodes_idx").on(table.pincodes),
+    index("delivery_zones_status_idx").on(table.isActive),
+  ],
+);
+
+/* ---------- delivery_zone_pincodes — the fast zone-by-PIN lookup ----------- */
+
+/** One row per 6-digit pincode. `pincode PK` makes the zone join a point query. */
+
+export const deliveryZonePincodes = mysqlTable(
+  "delivery_zone_pincodes",
+  {
+    pincode: varchar("pincode", { length: 6 }).notNull().primaryKey(),
+    zoneId: int("zone_id")
+      .notNull()
+      .references(() => deliveryZones.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    // The admin "which zone is this PIN in" query filters on `pincode` only.
+    index("delivery_zone_pincodes_zone_id_idx").on(table.zoneId),
+    // Re-key row when the zone that owns a PIN changes.
+    uniqueIndex("delivery_zone_pincodes_pincode_zone_id_unique").on(
+      table.pincode,
+      table.zoneId,
+    ),
+  ],
+);
+
+/* ------------------------------ delivery partners -------------------------- */
+
+/** A registered delivery partner: a user account that accepts jobs. */
+
+export const deliveryPartners = mysqlTable(
+  "delivery_partners",
+  {
+    userId: int("user_id")
+      .notNull()
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: varchar("status", { length: 16 }).notNull().default("PENDING"),
+    vehicleType: varchar("vehicle_type", { length: 16 })
+      .notNull()
+      .default("BICYCLE"),
+    vehicleNumber: varchar("vehicle_number", { length: 40 }).notNull(),
+    city: varchar("city", { length: 80 }).notNull(),
+    isOnline: boolean("is_online").notNull().default(true),
+    maxActiveJobs: int("max_active_jobs").notNull().default(3),
+    ratingAvg: double("rating_avg").notNull().default(0),
+    ratingCount: int("rating_count").notNull().default(0),
+    totalDeliveries: int("total_deliveries").notNull().default(0),
+    cashInHandPaise: int("cash_in_hand_paise").notNull().default(0),
+    displayName: varchar("display_name", { length: 120 }).notNull(),
+    approvedAt: timestamp("approved_at").nullable().defaultNull(),
+    approvedBy: int("approved_by").nullable().defaultNull(),
+    suspendedReason: varchar("suspended_reason", { length: 300 }).nullable().defaultNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    index("delivery_partners_user_id_idx").on(table.userId),
+    index("delivery_partners_status_idx").on(table.status),
+    index("delivery_partners_city_idx").on(table.city),
+    // Active partners get a varbinary-equivalent index on the unique user id for
+    // the per-request re-read the guard requires.
+    index("delivery_partners_active_idx").on(table.status, table.userId),
+    check(
+      "delivery_partners_rating_range",
+      sql`${table.ratingAvg} >= 0 AND ${table.ratingAvg} <= 5`,
+    ),
+  ],
+);
+
+/* --------------------- delivery_partner_zones — partner's zone set --------- */
+
+/**
+ * Joint PK `(partner_id, zone_id)` — each partner may work a fixed set of
+ * zones, and a query for "active partners in zone X" is a straight index scan.
+ */
+export const deliveryPartnerZones = mysqlTable(
+  "delivery_partner_zones",
+  {
+    partnerId: int("partner_id")
+      .notNull()
+      .references(() => deliveryPartners.userId, {
+        onDelete: "cascade",
+      }),
+    zoneId: int("zone_id")
+      .notNull()
+      .references(() => deliveryZones.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.partnerId, table.zoneId] }),
+    index("delivery_partner_zones_zone_id_idx").on(table.zoneId),
+    index("delivery_partner_zones_partner_id_idx").on(table.partnerId),
+  ],
+);
+
+/* ---------------- delivery_partner_applications — the partner pipeline ----- */
+
+/**
+ * One application per candidate partner. `status` walks DRAFT → SUBMITTED →
+ * IN_REVIEW → (APPROVED|REJECTED) with a branch to NEEDS_INFO, driven by the
+ * review UI, never by a client.
+ *
+ * Personal + vehicle fields are denormalised here because the review lives in
+ * the admin UI and the candidate may not yet be a `users` row.
+ */
+export const deliveryPartnerApplications = mysqlTable(
+  "delivery_partner_applications",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("user_id").references(() => users.id, { onDelete: "set null" }),
+    status: varchar("status", { length: 16 }).notNull().default("DRAFT"),
+    fullName: varchar("full_name", { length: 120 }).notNull(),
+    phone: varchar("phone", { length: 20 }).notNull(),
+    email: varchar("email", { length: 200 }).notNull(),
+    dob: date("dob").nullable().defaultNull(),
+    city: varchar("city", { length: 80 }).notNull(),
+    state: varchar("state", { length: 60 }).notNull(),
+    pincode: varchar("pincode", { length: 10 }).notNull(),
+    address: varchar("address", { length: 300 }).notNull(),
+    vehicleType: varchar("vehicle_type", { length: 16 }).notNull(),
+    vehicleNumber: varchar("vehicle_number", { length: 40 }).notNull(),
+   languages: json("languages").default("[]"),
+    /** Availability JSON: `{ mon: true, tue: true, …, maxActiveJobs: 3 }`. */
+    availability: json("availability").default("{}"),
+    emergencyContactName: varchar("emergency_contact_name", { length: 120 }).nullable().defaultNull(),
+    emergencyContactPhone: varchar("emergency_contact_phone", { length: 20 }).nullable().defaultNull(),
+    payoutMethodLabel: varchar("payout_method_label", { length: 40 }).notNull(),
+    payoutRefHash: varchar("payout_ref_hash", { length: 64 }).notNull(),
+    consentTermsAt: timestamp("consent_terms_at").nullable().defaultNull(),
+    consentBackgroundAt: timestamp("consent_background_at").nullable().defaultNull(),
+    consentPrivacyAt: timestamp("consent_privacy_at").nullable().defaultNull(),
+    reviewerId: int("reviewer_id").references(() => users.id, { onDelete: "set null" }),
+    reviewNotes: varchar("review_notes", { length: 600 }).nullable().defaultNull(),
+    /**
+     * Short rejection reason, shown to the applicant. `REJECTED` rows without
+     * one are a support ticket nobody can answer.
+     */
+    rejectionReason: varchar("rejection_reason", { length: 300 }).nullable().defaultNull(),
+    submittedAt: timestamp("submitted_at").nullable().defaultNull(),
+    reviewedAt: timestamp("reviewed_at").nullable().defaultNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    index("delivery_partner_applications_status_submitted_idx").on(
+      table.status,
+      table.submittedAt,
+    ),
+    index("delivery_partner_applications_user_id_idx").on(table.userId),
+    index("delivery_partner_applications_reviewer_id_idx").on(table.reviewerId),
+    index("delivery_partner_applications_submitted_idx").on(table.submittedAt),
+    uniqueIndex(
+      "delivery_partner_applications_user_id_unique",
+    ).on(table.userId),
+    check(
+      "delivery_partner_applications_pincode_pattern",
+      sql`${table.pincode} REGEXP '^[0-9]{6}$' OR ${table.pincode} = ''`,
+    ),
+  ],
+);
+
+/* ------ delivery_partner_documents — evidence attachments ---------------- */
+
+/**
+ * Every document a candidate submits. `documentNumber` is never stored in
+ * clear: we store the last 4 characters (`documentNumberMask`) and a salted
+ * HMAC (`documentNumberHash`) only if the platform *must* recall the number —
+ * which it usually must not.
+ */
+export const deliveryPartnerDocuments = mysqlTable(
+  "delivery_partner_documents",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    applicationId: int("application_id")
+      .notNull()
+      .references(() => deliveryPartnerApplications.id, { onDelete: "cascade" }),
+    type: varchar("type", { length: 24 }).notNull(),
+    storageKey: varchar("storage_key", { length: 200 }).notNull(),
+    mimeType: varchar("mime_type", { length: 120 }).notNull(),
+    sizeBytes: int("size_bytes").notNull(),
+    documentNumberMask: varchar("document_number_mask", { length: 10 }).nullable().defaultNull(),
+    documentNumberHash: varchar("document_number_hash", { length: 64 }).nullable().defaultNull(),
+    status: varchar("status", { length: 16 }).notNull().default("PENDING"),
+    rejectReason: varchar("reject_reason", { length: 400 }).nullable().defaultNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    index("delivery_partner_documents_application_id_idx").on(table.applicationId),
+    index("delivery_partner_documents_type_idx").on(table.type),
+    index("delivery_partner_documents_status_idx").on(table.status),
+    index("delivery_partner_documents_application_status_idx").on(
+      table.applicationId,
+      table.status,
+    ),
+    uniqueIndex("delivery_partner_documents_application_id_type_unique").on(
+      table.applicationId,
+      table.type,
+    ),
+  ],
+);
+
+/* -------------------------------- deliveries ------------------------------- */
+
+/**
+ * The delivery. `deliveryNumber` is the customer-facing ID (DL-YYYY-XXXXXX,
+ * unique). `order_item_ids` is a JSON array of the order items that this
+ * delivery/return moves; an alternative design is a separate
+ * `delivery_items` table, but a JSON array keeps the state machine on one row
+ * and the admin queries on one scan.
+ */
+export const deliveries = mysqlTable(
+  "deliveries",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    deliveryNumber: varchar("delivery_number", { length: 20 }).notNull().unique(),
+    orderId: int("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    orderItemIds: json("order_item_ids").notNull().default("[]"),
+    type: varchar("type", { length: 16 }).notNull(),
+    rentalId: int("rental_id").nullable().defaultNull(),
+    sellerId: int("seller_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    customerId: int("customer_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    partnerId: int("partner_id").nullable().defaultNull(),
+    zoneId: int("zone_id")
+      .notNull()
+      .references(() => deliveryZones.id, { onDelete: "restrict" }),
+    /** Pickup snapshot — immutable copy of the source of the cargo. */
+    pickupName: varchar("pickup_name", { length: 120 }).notNull(),
+    pickupPhone: varchar("pickup_phone", { length: 20 }).notNull(),
+    pickupAddressLine1: varchar("pickup_address_line1", { length: 120 }).notNull(),
+    pickupAddressLine2: varchar("pickup_address_line2", { length: 120 }),
+    pickupCity: varchar("pickup_city", { length: 80 }).notNull(),
+    pickupState: varchar("pickup_state", { length: 60 }).notNull(),
+    pickupPincode: varchar("pickup_pincode", { length: 10 }).notNull(),
+    /** Drop snapshot — where the cargo lands. */
+    dropName: varchar("drop_name", { length: 120 }).notNull(),
+    dropPhone: varchar("drop_phone", { length: 20 }).notNull(),
+    dropAddressLine1: varchar("drop_address_line1", { length: 120 }).notNull(),
+    dropAddressLine2: varchar("drop_address_line2", { length: 120 }),
+    dropCity: varchar("drop_city", { length: 80 }).notNull(),
+    dropState: varchar("drop_state", { length: 60 }).notNull(),
+    dropPincode: varchar("drop_pincode", { length: 10 }).notNull(),
+    status: varchar("status", { length: 20 }).notNull().default("CREATED"),
+    serviceFeePaise: int("service_fee_paise").notNull().default(0),
+    partnerPayPaise: int("partner_pay_paise").notNull().default(0),
+    codAmountPaise: int("cod_amount_paise").notNull().default(0),
+    pickupCodeHash: varchar("pickup_code_hash", { length: 64 }).nullable().defaultNull(),
+    deliveryOtpHash: varchar("delivery_otp_hash", { length: 64 }).nullable().defaultNull(),
+    otpAttempts: int("otp_attempts").notNull().default(0),
+    otpExpiresAt: timestamp("otp_expires_at").nullable().defaultNull(),
+    failureReason: varchar("failure_reason", { length: 300 }).nullable().defaultNull(),
+    attemptNo: int("attempt_no").notNull().default(1),
+    notes: varchar("notes", { length: 400 }).nullable().defaultNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    index("deliveries_status_zone_idx").on(table.status, table.zoneId),
+    index("deliveries_partner_status_idx").on(table.partnerId, table.status),
+    index("deliveries_order_id_idx").on(table.orderId),
+    index("deliveries_seller_status_idx").on(table.sellerId, table.status),
+    index("deliveries_created_at_idx").on(table.createdAt),
+    index("deliveries_partner_id_idx").on(table.partnerId),
+    index("deliveries_zone_id_idx").on(table.zoneId),
+    // The re-read the partner guard uses: one partner's active jobs.
+    index("deliveries_partner_active_idx").on(table.partnerId, table.status),
+    check(
+      "deliveries_service_fee_nonneg",
+      sql`${table.serviceFeePaise} >= 0`,
+    ),
+    check(
+      "deliveries_partner_pay_nonneg",
+      sql`${table.partnerPayPaise} >= 0`,
+    ),
+    check(
+      "deliveries_cod_nonneg",
+      sql`${table.codAmountPaise} >= 0`,
+    ),
+    check("deliveries_otp_attempts_range", sql`${table.otpAttempts} >= 0`),
+    check("deliveries_attempt_no_positive", sql`${table.attemptNo} > 0`),
+  ],
+);
+
+/* ------------------------------ delivery offers ---------------------------- */
+
+/**
+ * A partner bids on a `CREATED`/`AWAITING_ASSIGNMENT` delivery.
+ *
+ * `unique (delivery_id, partner_id)` guards against duplicate offers from the
+ * same partner, and `expires_at` is what makes offer rounds deplete.
+ */
+export const deliveryOffers = mysqlTable(
+  "delivery_offers",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    deliveryId: int("delivery_id")
+      .notNull()
+      .references(() => deliveries.id, { onDelete: "cascade" }),
+    partnerId: int("partner_id")
+      .notNull()
+      .references(() => deliveryPartners.userId, { onDelete: "cascade" }),
+    quotePaise: int("quote_paise").notNull().default(0),
+    status: varchar("status", { length: 16 }).notNull().default("OFFERED"),
+    expiresAt: timestamp("expires_at").notNull(),
+    respondedAt: timestamp("responded_at").nullable().defaultNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    uniqueIndex("delivery_offers_delivery_partner_unique").on(
+      table.deliveryId,
+      table.partnerId,
+    ),
+    index("delivery_offers_delivery_idx").on(table.deliveryId),
+    index("delivery_offers_partner_idx").on(table.partnerId),
+    index("delivery_offers_status_idx").on(table.status),
+    index("delivery_offers_expires_idx").on(table.expiresAt),
+  ],
+);
+
+/* -------------------------------- delivery events ------------------------ */
+
+/**
+ * One row per state change. `eventKey` is a UUID the machine writes so a
+ * retrying transition is a no-op instead of a duplicate event.
+ *
+ * `order_status`, `from_status`, `to_status`, `actor_id` and `actor_role` are
+ * informational denormalised rows — the driver is the transaction that called
+ * `transitionDelivery`.
+ */
+export const deliveryEvents = mysqlTable(
+  "delivery_events",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    deliveryId: int("delivery_id")
+      .notNull()
+      .references(() => deliveries.id, { onDelete: "cascade" }),
+    orderStatus: varchar("order_status", { length: 20 }).nullable().defaultNull(),
+    fromStatus: varchar("from_status", { length: 20 }).nullable().defaultNull(),
+    toStatus: varchar("to_status", { length: 20 }).notNull(),
+    actorId: int("actor_id").references(() => users.id, { onDelete: "set null" }),
+    actorRole: varchar("actor_role", { length: 16 }).notNull(),
+    note: varchar("note", { length: 300 }).notNull(),
+    metadata: text("metadata").default("{}"),
+    eventKey: varchar("event_key", { length: 64 }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("delivery_events_delivery_id_idx").on(table.deliveryId),
+    index("delivery_events_to_status_idx").on(table.toStatus),
+    index("delivery_events_created_idx").on(table.createdAt),
+    // Idempotency: a retried transition must not write two rows under one key.
+    uniqueIndex("delivery_events_event_key_unique").on(table.eventKey),
+  ],
+);
+
+/* ---------------------------- delivery proofs ---------------------------- */
+
+/**
+ * The pick-up photo, the delivery photo, and the return-condition photo the
+ * customer submits after `AT_DROP`. `storageKey` is `PRIVATE` (see
+ * `server/lib/storage/types.ts`).
+ */
+export const deliveryProofs = mysqlTable(
+  "delivery_proofs",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    deliveryId: int("delivery_id")
+      .notNull()
+      .references(() => deliveries.id, { onDelete: "cascade" }),
+    kind: varchar("kind", { length: 24 }).notNull(),
+    storageKey: varchar("storage_key", { length: 200 }).notNull(),
+    note: varchar("note", { length: 400 }).nullable().defaultNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("delivery_proofs_delivery_id_idx").on(table.deliveryId),
+    index("delivery_proofs_kind_idx").on(table.kind),
+    index("delivery_proofs_created_idx").on(table.createdAt),
+  ],
+);
+
+/* ------------------------------- partner ledger ---------------------------- */
+
+/**
+ * Every credit and debit against a partner's balance. `amount_paise` is signed
+ * (EARNING + / ADJUSTMENT ± / CASH_COLLECTED + / CASH_REMITTED − / PAYOUT −).
+ *
+ * This is the single source of truth a `GET /partner/wallet` report reconciles
+ * against. `idempotency_key UNIQUE` makes a double-submitted payout harmless.
+ */
+export const partnerLedger = mysqlTable(
+  "partner_ledger",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    partnerId: int("partner_id")
+      .notNull()
+      .references(() => deliveryPartners.userId, { onDelete: "cascade" }),
+    deliveryId: int("delivery_id").nullable().defaultNull(),
+    type: varchar("type", { length: 20 }).notNull(),
+    amountPaise: int("amount_paise").notNull(),
+    status: varchar("status", { length: 16 }).notNull().default("PENDING"),
+    reference: varchar("reference", { length: 120 }).nullable().defaultNull(),
+    idempotencyKey: varchar("idempotency_key", { length: 64 }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("partner_ledger_partner_id_idx").on(table.partnerId),
+    index("partner_ledger_type_idx").on(table.type),
+    index("partner_ledger_status_idx").on(table.status),
+    index("partner_ledger_created_idx").on(table.createdAt),
+    uniqueIndex("partner_ledger_idempotency_key_unique").on(table.idempotencyKey),
+  ],
+);
+
+/* ------------------------------ delivery ratings --------------------------- */
+
+/** One 1–5 rating + optional comment against a delivery. */
+
+export const deliveryRatings = mysqlTable(
+  "delivery_ratings",
+  {
+    deliveryId: int("delivery_id")
+      .notNull()
+      .primaryKey()
+      .references(() => deliveries.id, { onDelete: "cascade" }),
+    rating: int("rating").notNull(),
+    comment: varchar("comment", { length: 600 }).nullable().defaultNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("delivery_ratings_created_idx").on(table.createdAt),
+    check("delivery_ratings_range", sql`${table.rating} BETWEEN 1 AND 5`),
+  ],
+);
+
+/* ------------------------- delivery locations (flag-gated) ---------------- */
+
+/**
+ * The partner's live tracking point. `partner_id PK` means "latest only" is
+ * the row itself: a `REPLACE` writes the newest position and drops any older
+ * one, which is exactly what a tracking endpoint needs.
+ */
+export const deliveryLocations = mysqlTable(
+  "delivery_locations",
+  {
+    partnerId: int("partner_id")
+      .notNull()
+      .primaryKey()
+      .references(() => deliveryPartners.userId, { onDelete: "cascade" }),
+    lat: double("lat").notNull(),
+    lng: double("lng").notNull(),
+    accuracy: double("accuracy").notNull(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("delivery_locations_updated_idx").on(table.updatedAt),
+  ],
+);
+
+/* =============================================================================
+ *  JOURNAL MARKER
+ *
+ *  The entry added at the head of `drizzle/meta/_journal.json`. Every table and
+ *  every index in this file is part of a single journal entry; the marker
+ *  records it so `db:migrate` (which applies the journal) picks it up.
+ * ========================================================================== */

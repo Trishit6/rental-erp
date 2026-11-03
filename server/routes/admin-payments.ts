@@ -1,8 +1,7 @@
 import { Router } from "../lib/http";
-import { eq, sql } from "drizzle-orm";
+import { eq, getTableColumns } from "drizzle-orm";
 import { db } from "../db";
 import { ok, HttpError, buildPagination } from "../lib/api";
-import { requirePermission } from "../lib/permissions";
 import { requireStepUp } from "../lib/auth";
 import { notificationEventKey } from "../lib/notification-events";
 import { notify } from "../lib/notifications";
@@ -17,13 +16,11 @@ export const adminPaymentsRoute = new Router();
 
 adminPaymentsRoute.get(
   "/",
-  requirePermission("payments.view"),
   async (c) => {
-    const { rows, total } = await listAdminPayments({
-      page: Number(c.req.query("page")) || 1,
-      pageSize: Number(c.req.query("pageSize")) || 20,
-    });
-    return c.json(ok(rows, buildPagination(1, 20, total)));
+    const page = Number(c.req.query("page")) || 1;
+    const pageSize = Number(c.req.query("pageSize")) || 20;
+    const { rows, total } = await listAdminPayments({ page, pageSize });
+    return c.json(ok(rows, buildPagination(page, pageSize, total)));
   },
 );
 
@@ -31,7 +28,6 @@ adminPaymentsRoute.get(
 
 adminPaymentsRoute.get(
   "/:id",
-  requirePermission("payments.view"),
   async (c) => {
     const id = Number(c.req.param("id"));
     if (!Number.isInteger(id) || id <= 0) {
@@ -47,7 +43,6 @@ adminPaymentsRoute.get(
 
 adminPaymentsRoute.get(
   "/manual-upi-queue",
-  requirePermission("payments.verify_manual"),
   async (c) => {
     const items = await listManualUpiQueue();
     return c.json(ok(items));
@@ -58,7 +53,6 @@ adminPaymentsRoute.get(
 
 adminPaymentsRoute.post(
   "/manual-upi-queue/:id/confirm",
-  requirePermission("payments.verify_manual"),
   async (c) => {
     await requireStepUp(c);
     const id = Number(c.req.param("id"));
@@ -85,7 +79,15 @@ adminPaymentsRoute.post(
       throw new HttpError(501, "PROVIDER_UNAVAILABLE", "Payment provider cannot verify payments.");
     }
 
-    const utr = tx.metadata?.utr || null;
+    let utr: string | null = null;
+    try {
+      const metadata: unknown = tx.metadata ? JSON.parse(tx.metadata) : null;
+      if (typeof metadata === "object" && metadata !== null && "utr" in metadata && typeof metadata.utr === "string") {
+        utr = metadata.utr.trim() || null;
+      }
+    } catch {
+      utr = null;
+    }
     if (!utr) {
       throw new HttpError(400, "MISSING_UTR", "No UTR found for this transaction.");
     }
@@ -100,12 +102,15 @@ adminPaymentsRoute.post(
         .set({ status: "FAILED", failureReason: result.failureReason, updatedAt: new Date() })
         .where(eq(transactions.id, id));
 
+      const [order] = tx.orderId
+        ? await db.select({ orderNumber: orders.orderNumber }).from(orders).where(eq(orders.id, tx.orderId)).limit(1)
+        : [];
       await notify(db, {
         userId: tx.userId,
         type: "PAYMENT_FAILED",
         title: "Payment verification failed",
-        body: `The UPI payment for order ${tx.orderNumber ?? `#${tx.id}`} was not verified.`,
-        context: { orderId: tx.orderId, orderNumber: tx.orderNumber },
+        body: `The UPI payment for order ${order?.orderNumber ?? `#${tx.id}`} was not verified.`,
+        context: { orderId: tx.orderId, orderNumber: order?.orderNumber },
         eventKey: notificationEventKey("PAYMENT_FAILED", id, `${tx.id}:failed`),
       });
 
@@ -117,12 +122,15 @@ adminPaymentsRoute.post(
       .set({ status: "SUCCEEDED", updatedAt: new Date() })
       .where(eq(transactions.id, id));
 
+    const [order] = tx.orderId
+      ? await db.select({ orderNumber: orders.orderNumber }).from(orders).where(eq(orders.id, tx.orderId)).limit(1)
+      : [];
     await notify(db, {
       userId: tx.userId,
       type: "PAYMENT_PROCESSED",
       title: "Your payment has been verified",
       body: `Your UPI payment of ₹${(tx.amount / 100).toFixed(2)} has been verified.`,
-      context: { orderId: tx.orderId, orderNumber: tx.orderNumber },
+      context: { orderId: tx.orderId, orderNumber: order?.orderNumber },
       eventKey: notificationEventKey("PAYMENT_PROCESSED", id, `${tx.id}:succeeded`),
     });
 
@@ -134,34 +142,32 @@ adminPaymentsRoute.post(
 
 adminPaymentsRoute.post(
   "/manual-upi-queue/:id/reject",
-  requirePermission("payments.verify_manual"),
   async (c) => {
     await requireStepUp(c);
     const id = Number(c.req.param("id"));
-    const body = await c.req.json();
-    const reason = body?.reason?.trim();
+    const body = await c.req.json<{ reason?: unknown }>();
+    const reason = typeof body.reason === "string" ? body.reason.trim() : "";
 
     if (!reason || reason.length < 3) {
       throw new HttpError(400, "REASON_REQUIRED", "A reason is required to reject a payment.");
     }
 
+    const [tx] = await db.select().from(transactions).where(eq(transactions.id, id)).limit(1);
+    if (!tx) throw new HttpError(404, "NOT_FOUND", "Transaction not found.");
     await db
       .update(transactions)
       .set({ status: "FAILED", failureReason: reason, updatedAt: new Date() })
       .where(eq(transactions.id, id));
 
-    const [tx] = await db
-      .select()
-      .from(transactions)
-      .where(eq(transactions.id, id))
-      .limit(1);
-
+    const [order] = tx.orderId
+      ? await db.select({ orderNumber: orders.orderNumber }).from(orders).where(eq(orders.id, tx.orderId)).limit(1)
+      : [];
     await notify(db, {
-      userId: tx?.userId,
+      userId: tx.userId,
       type: "PAYMENT_REJECTED",
       title: "Payment rejected",
-      body: `The UPI payment for order ${tx?.orderNumber ?? `#${tx?.id}`} was rejected.`,
-      context: { orderId: tx?.orderId, orderNumber: tx?.orderNumber },
+      body: `The UPI payment for order ${order?.orderNumber ?? `#${tx.id}`} was rejected.`,
+      context: { orderId: tx.orderId, orderNumber: order?.orderNumber },
       eventKey: notificationEventKey("PAYMENT_REJECTED", id, `${tx.id}:rejected`),
     });
 
@@ -173,7 +179,6 @@ adminPaymentsRoute.post(
 
 adminPaymentsRoute.get(
   "/cod-queue",
-  requirePermission("payments.cod_collect"),
   async (c) => {
     const items = await listCodQueue();
     return c.json(ok(items));
@@ -184,7 +189,6 @@ adminPaymentsRoute.get(
 
 adminPaymentsRoute.post(
   "/cod-queue/:id/collect",
-  requirePermission("payments.cod_collect"),
   async (c) => {
     const id = Number(c.req.param("id"));
     if (!Number.isInteger(id) || id <= 0) {
@@ -219,18 +223,6 @@ adminPaymentsRoute.post(
       eventKey: notificationEventKey("COD_COLLECTED", order.id, `${order.id}:cod-collected`),
     });
 
-    if (order.ownerId !== order.userId) {
-      await notify(db, {
-        userId: order.ownerId,
-        type: "COD_COLLECTED",
-        title: "COD payment collected",
-        body: `COD payment of ₹${(order.total / 100).toFixed(2)} has been collected for order ${order.orderNumber ?? `#${order.id}`}.`,
-        context: { orderId: order.id, orderNumber: order.orderNumber },
-        eventKey: notificationEventKey("COD_COLLECTED", order.id, `${order.id}:cod-collected-admin`),
-        link: "/dashboard/orders",
-      });
-    }
-
     return c.json(ok({ status: "PAID", orderId: order.id }));
   },
 );
@@ -239,7 +231,6 @@ adminPaymentsRoute.post(
 
 adminPaymentsRoute.get(
   "/refunds/manual-queue",
-  requirePermission("refunds.approve_manual"),
   async (c) => {
     const items = await listManualRefundsQueue();
     return c.json(ok(items));
@@ -250,7 +241,6 @@ adminPaymentsRoute.get(
 
 adminPaymentsRoute.post(
   "/refunds/manual-queue/:id/mark-paid",
-  requirePermission("refunds.approve_manual"),
   async (c) => {
     await requireStepUp(c);
     const id = Number(c.req.param("id"));
@@ -259,8 +249,9 @@ adminPaymentsRoute.post(
     }
 
     const [refund] = await db
-      .select()
+      .select({ ...getTableColumns(refunds), orderNumber: orders.orderNumber })
       .from(refunds)
+      .leftJoin(orders, eq(refunds.orderId, orders.id))
       .where(eq(refunds.id, id))
       .limit(1);
 
@@ -299,7 +290,6 @@ adminPaymentsRoute.post(
 
 adminPaymentsRoute.get(
   "/settings",
-  requirePermission("settings.manage"),
   async (c) => {
     const settings: Record<string, unknown> = {};
 
@@ -320,11 +310,10 @@ adminPaymentsRoute.get(
 
 adminPaymentsRoute.patch(
   "/settings",
-  requirePermission("settings.manage"),
   async (c) => {
     await requireStepUp(c);
-    const body = await c.req.json();
-    const updates = body?.settings || {};
+    const body = await c.req.json<{ settings?: Record<string, unknown> }>();
+    const updates = body.settings ?? {};
 
     const results: Record<string, { success: boolean; value?: unknown; error?: string }> = {};
 
@@ -356,11 +345,10 @@ adminPaymentsRoute.patch(
 
 adminPaymentsRoute.patch(
   "/methods/:method/toggle",
-  requirePermission("payments.view"),
   async (c) => {
     const method = c.req.param("method");
-    const body = await c.req.json();
-    const enabled = body?.enabled;
+    const body = await c.req.json<{ enabled?: unknown }>();
+    const enabled = body.enabled;
 
     if (typeof enabled !== "boolean") {
       throw new HttpError(400, "INVALID_PARAM", "enabled must be a boolean.");

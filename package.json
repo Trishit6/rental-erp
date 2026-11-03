@@ -29,6 +29,8 @@
     "generate:routes": "tsr generate",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:startup": "vitest run tests/api-startup.test.ts --pool=forks --maxWorkers=1",
+    "test:e2e": "playwright test -c playwright.config.ts",
     "analyze:bundle": "node scripts/analyze-bundle.mjs",
     "payments:reconcile": "tsx server/payments-reconcile.ts",
     "db:migrate:legacy-paid": "tsx server/db-migrate-legacy-paid.ts"
@@ -71,6 +73,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.1.11",
     "@tanstack/router-cli": "^1.167.38",
     "@tanstack/router-plugin": "^1.168.40",

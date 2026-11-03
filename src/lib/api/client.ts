@@ -174,11 +174,23 @@ async function request<T>(
   if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (mutating && csrfToken) headers.set(CSRF_HEADER, csrfToken);
 
-  const response = await fetch(path.startsWith("/api") ? path : `/api${path}`, {
-    ...options,
-    credentials: "include",
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(path.startsWith("/api") ? path : `/api${path}`, {
+      ...options,
+      credentials: "include",
+      headers,
+    });
+  } catch (error) {
+    // Preserve cancellation so TanStack Query can stop obsolete requests; make
+    // actual connection failures understandable on login and product screens.
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    throw new ApiError(
+      "NETWORK_ERROR",
+      "Can't connect to Revaro. Check your internet connection and try again.",
+      0,
+    );
+  }
 
   // The server may rotate the token at any time; adopt whatever this response carried.
   rememberCsrfToken(response);

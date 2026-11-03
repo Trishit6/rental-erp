@@ -79,6 +79,12 @@ export const PERMISSION_CATALOGUE: readonly PermissionEntry[] = [
   { key: "taxonomy.manage", description: "Manage the taxonomy (categories, brands, tags, attributes, collections)" },
   { key: "rbac.manage", description: "Grant and revoke roles and permissions" },
   { key: "exports.run", description: "Start a data export" },
+  { key: "delivery.view", description: "View delivery, offer and partner records" },
+  { key: "delivery.manage", description: "Change delivery status and write delivery events" },
+  { key: "delivery.partners.review", description: "Review partner applications and documents" },
+  { key: "delivery.partners.manage", description: "Approve, suspend and offboard delivery partners" },
+  { key: "delivery.zones.manage", description: "Manage delivery zones and pincode maps" },
+  { key: "delivery.settle", description: "Settle partner earnings and publish ledger lines" },
 ];
 
 /** Every catalogue key, in declaration order. */
@@ -98,9 +104,15 @@ export type CatalogueRoleName = (typeof ALL_ROLE_NAMES)[number];
  */
 export const ROLE_PERMISSION_GRANTS: Record<CatalogueRoleName, readonly string[]> = {
   SUPER_ADMIN: PERMISSION_KEYS,
-  ADMIN: PERMISSION_CATALOGUE.filter((permission) => permission.key !== "rbac.manage").map(
-    (permission) => permission.key,
-  ),
+  ADMIN: PERMISSION_KEYS,
+  DELIVERY_MANAGER: [
+    "delivery.view",
+    "delivery.manage",
+    "delivery.partners.review",
+    "delivery.partners.manage",
+    "delivery.zones.manage",
+    "delivery.settle",
+  ],
   SUPPORT: [
     "dashboard.view",
     "orders.view",
